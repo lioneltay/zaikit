@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import type { UIMessage } from "ai";
@@ -39,9 +39,11 @@ const markdownStyles = {
 function ChatView({
   threadId,
   initialMessages,
+  onResponseComplete,
 }: {
   threadId: string;
   initialMessages: UIMessage[];
+  onResponseComplete?: () => void;
 }) {
   const transport = useMemo(
     () =>
@@ -58,6 +60,7 @@ function ChatView({
   const { messages, sendMessage, status } = useChat({
     transport,
     messages: initialMessages,
+    onFinish: () => onResponseComplete?.(),
   });
   const [input, setInput] = useState("");
 
@@ -165,16 +168,33 @@ export default function App() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
+  const initialThreadId = useRef(new URLSearchParams(window.location.search).get("threadId"));
 
+  // Persist activeThreadId in URL
   useEffect(() => {
-    trpc.thread.list.query().then(setThreads);
+    const url = new URL(window.location.href);
+    if (activeThreadId) {
+      url.searchParams.set("threadId", activeThreadId);
+    } else {
+      url.searchParams.delete("threadId");
+    }
+    history.replaceState(null, "", url.toString());
+  }, [activeThreadId]);
+
+  // Load threads and auto-select from URL
+  useEffect(() => {
+    trpc.thread.list.query().then((loadedThreads) => {
+      setThreads(loadedThreads);
+      const urlThreadId = initialThreadId.current;
+      if (urlThreadId && loadedThreads.some((t) => t.id === urlThreadId)) {
+        handleSelectThread(urlThreadId);
+      }
+    });
   }, []);
 
-  const handleCreateThread = async () => {
+  const handleCreateThread = () => {
     const id = crypto.randomUUID();
-    const thread = await trpc.thread.create.mutate({ id });
-    setThreads((prev) => [thread, ...prev]);
-    setActiveThreadId(thread.id);
+    setActiveThreadId(id);
     setInitialMessages([]);
   };
 
@@ -225,6 +245,9 @@ export default function App() {
               key={activeThreadId}
               threadId={activeThreadId}
               initialMessages={initialMessages}
+              onResponseComplete={async () => {
+                setThreads(await trpc.thread.list.query());
+              }}
             />
           ) : (
             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>

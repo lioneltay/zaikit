@@ -12,6 +12,7 @@ export type Memory = {
   getThread(id: string): Promise<Thread | null>;
   listThreads(): Promise<Thread[]>;
   deleteThread(id: string): Promise<void>;
+  updateThread(id: string, updates: { title?: string }): Promise<Thread>;
 
   getMessages(threadId: string): Promise<UIMessage[]>;
   addMessage(threadId: string, message: UIMessage): Promise<void>;
