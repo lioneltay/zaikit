@@ -1,28 +1,36 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serve } from "@hono/node-server";
-import { streamText, convertToModelMessages, model } from "@lioneltay/aikit-core";
+import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { agent } from "./agent/index.js";
+import { createAppRouter } from "./trpc.js";
+
+const appRouter = createAppRouter(agent);
 
 const app = new Hono();
 
-app.use(
-  "/api/*",
-  cors({
-    origin: "http://localhost:7300",
-  })
-);
+app.use("*", cors({ origin: "http://localhost:7300" }));
 
 app.get("/health", (c) => {
   return c.json({ status: "ok" });
 });
 
-app.post("/api/chat", async (c) => {
-  const { messages } = await c.req.json();
-
-  const result = streamText({
-    model,
-    messages: await convertToModelMessages(messages),
+// tRPC handler
+app.all("/trpc/*", async (c) => {
+  const response = await fetchRequestHandler({
+    endpoint: "/trpc",
+    req: c.req.raw,
+    router: appRouter,
+    createContext: () => ({}),
   });
+  return response;
+});
+
+// Streaming chat endpoint
+app.post("/api/chat", async (c) => {
+  const { threadId, message } = await c.req.json();
+
+  const result = await agent.chat({ threadId, message });
 
   return result.toUIMessageStreamResponse();
 });

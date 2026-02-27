@@ -3,6 +3,7 @@ dist
 .env*
 .turbo
 .DS_Store
+.playwright-cli
 *.tsbuildinfo
 *.d.ts.map
 
