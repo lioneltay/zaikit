@@ -6,7 +6,9 @@ type PostgresMemoryOptions = {
   connectionString: string;
 };
 
-export function createPostgresMemory({ connectionString }: PostgresMemoryOptions) {
+export function createPostgresMemory({
+  connectionString,
+}: PostgresMemoryOptions) {
   const sql = postgres(connectionString);
 
   async function initialize() {
@@ -77,18 +79,36 @@ export function createPostgresMemory({ connectionString }: PostgresMemoryOptions
       await sql`DELETE FROM aikit_threads WHERE id = ${id}`;
     },
 
+    async updateThread(id, updates) {
+      const [row] = await sql`
+        UPDATE aikit_threads
+        SET title = COALESCE(${updates.title ?? null}, title), updated_at = NOW()
+        WHERE id = ${id}
+        RETURNING id, title, created_at, updated_at
+      `;
+      if (!row) throw new Error(`Thread not found: ${id}`);
+      return {
+        id: row.id,
+        title: row.title,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      };
+    },
+
     async getMessages(threadId) {
       const rows = await sql`
         SELECT id, role, parts, metadata FROM aikit_messages
         WHERE thread_id = ${threadId}
         ORDER BY created_at
       `;
-      return rows.map((row): UIMessage => ({
-        id: row.id,
-        role: row.role,
-        parts: row.parts,
-        ...(row.metadata ? { metadata: row.metadata } : {}),
-      }));
+      return rows.map(
+        (row): UIMessage => ({
+          id: row.id,
+          role: row.role,
+          parts: row.parts,
+          ...(row.metadata ? { metadata: row.metadata } : {}),
+        }),
+      );
     },
 
     async addMessage(threadId, message) {

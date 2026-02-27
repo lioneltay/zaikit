@@ -15,16 +15,16 @@ export function createAppRouter(agent: Agent) {
         return memory.listThreads();
       }),
 
-      create: t.procedure
-        .input(z.object({ id: z.string(), title: z.string().optional() }))
-        .mutation(async ({ input }) => {
-          return memory.createThread(input.id, input.title);
-        }),
-
       delete: t.procedure
         .input(z.object({ id: z.string() }))
         .mutation(async ({ input }) => {
           await memory.deleteThread(input.id);
+        }),
+
+      update: t.procedure
+        .input(z.object({ id: z.string(), title: z.string().optional() }))
+        .mutation(async ({ input }) => {
+          return memory.updateThread(input.id, { title: input.title });
         }),
 
       getMessages: t.procedure
