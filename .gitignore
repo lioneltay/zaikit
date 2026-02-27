@@ -1,0 +1,13 @@
+node_modules
+dist
+.env*
+.turbo
+.DS_Store
+*.tsbuildinfo
+*.d.ts.map
+
+# tsc project reference output
+apps/assistant-client/vite.config.js
+apps/assistant-client/vite.config.js.map
+apps/assistant-client/vite.config.d.ts
+apps/assistant-client/vite.config.d.ts.map
