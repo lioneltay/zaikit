@@ -3,6 +3,9 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./trpc": "./src/trpc.ts"
+  },
   "scripts": {
     "dev": "tsx watch --env-file=../../.env src/index.ts",
     "build": "tsc --noEmit",
@@ -10,6 +13,10 @@
   },
   "dependencies": {
     "@lioneltay/aikit-core": "workspace:*",
+    "@lioneltay/aikit-memory-postgres": "workspace:*",
+    "@trpc/server": "^11",
+    "ai": "^6",
+    "zod": "^4",
     "hono": "^4",
     "@hono/node-server": "^1"
   },

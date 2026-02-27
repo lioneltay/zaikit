@@ -9,17 +9,26 @@
     "check-types": "tsc -b"
   },
   "dependencies": {
-    "ai": "^6",
     "@ai-sdk/react": "^3",
+    "@emotion/react": "^11",
+    "@emotion/styled": "^11",
+    "@mui/icons-material": "^7",
+    "@mui/material": "^7",
+    "@tanstack/react-query": "^5",
+    "@trpc/client": "^11",
+    "@trpc/react-query": "^11",
+    "ai": "^6",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
+    "@lioneltay/aikit-assistant-backend": "workspace:*",
     "@lioneltay/aikit-typescript-config": "workspace:*",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",
-    "vite": "^6",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vite": "^6"
   }
 }

@@ -1,0 +1,14 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    ports:
+      - "7302:5432"
+    environment:
+      POSTGRES_USER: aikit
+      POSTGRES_PASSWORD: aikit
+      POSTGRES_DB: aikit
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
