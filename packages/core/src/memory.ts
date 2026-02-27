@@ -16,4 +16,5 @@ export type Memory = {
 
   getMessages(threadId: string): Promise<UIMessage[]>;
   addMessage(threadId: string, message: UIMessage): Promise<void>;
+  updateMessage(threadId: string, messageId: string, updates: { parts: UIMessage["parts"] }): Promise<void>;
 };

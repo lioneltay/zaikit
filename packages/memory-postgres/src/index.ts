@@ -129,6 +129,17 @@ export function createPostgresMemory({
         UPDATE aikit_threads SET updated_at = NOW() WHERE id = ${threadId}
       `;
     },
+
+    async updateMessage(threadId, messageId, updates) {
+      await sql`
+        UPDATE aikit_messages
+        SET parts = ${sql.json(updates.parts as any)}
+        WHERE id = ${messageId} AND thread_id = ${threadId}
+      `;
+      await sql`
+        UPDATE aikit_threads SET updated_at = NOW() WHERE id = ${threadId}
+      `;
+    },
   };
 
   return { ...memory, initialize };
