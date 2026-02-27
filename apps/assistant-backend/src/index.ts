@@ -28,11 +28,8 @@ app.all("/trpc/*", async (c) => {
 
 // Streaming chat endpoint
 app.post("/api/chat", async (c) => {
-  const { threadId, message } = await c.req.json();
-
-  const result = await agent.chat({ threadId, message });
-
-  return result.toUIMessageStreamResponse();
+  const body = await c.req.json();
+  return agent.chat(body);
 });
 
 serve({ fetch: app.fetch, port: 7301 }, (info) => {
