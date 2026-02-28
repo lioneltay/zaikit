@@ -1,7 +1,11 @@
 import { useState, useMemo, useCallback } from "react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
+import {
+  DefaultChatTransport,
+  lastAssistantMessageIsCompleteWithToolCalls,
+} from "ai";
 import type { UIMessage } from "ai";
+import type { FrontendToolRegistration } from "./types.js";
 
 export type UseAgentChatOptions = {
   api: string;
@@ -9,7 +13,18 @@ export type UseAgentChatOptions = {
   initialMessages: UIMessage[];
   fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
+  getFrontendTools: () => FrontendToolRegistration[];
+  isFrontendTool: (name: string) => boolean;
 };
+
+/** Extract tool name from a UIMessage part (handles both toolName prop and type prefix). */
+function getToolName(p: unknown): string | undefined {
+  const part = p as Record<string, unknown>;
+  if (typeof part.toolName === "string") return part.toolName;
+  if (typeof part.type === "string" && part.type.startsWith("tool-"))
+    return part.type.slice(5);
+  return undefined;
+}
 
 export function useAgentChat({
   api,
@@ -17,6 +32,8 @@ export function useAgentChat({
   initialMessages,
   fetchMessages,
   onFinish,
+  getFrontendTools,
+  isFrontendTool,
 }: UseAgentChatOptions) {
   const transport = useMemo(
     () =>
@@ -24,66 +41,84 @@ export function useAgentChat({
         api,
         prepareSendMessagesRequest: ({ messages }) => {
           const lastMessage = messages[messages.length - 1];
-          return { body: { threadId, message: lastMessage } };
+          const frontendTools = getFrontendTools();
+
+          if (lastMessage.role === "assistant") {
+            // Tool output continuation — collect frontend tool outputs
+            const toolOutputs = lastMessage.parts
+              .filter((p) => {
+                const name = getToolName(p);
+                return (
+                  "toolCallId" in p &&
+                  name != null &&
+                  isFrontendTool(name) &&
+                  (p as any).state === "output-available"
+                );
+              })
+              .map((p) => ({
+                toolCallId: (p as any).toolCallId,
+                output: (p as any).output,
+              }));
+            return { body: { threadId, toolOutputs, frontendTools } };
+          }
+
+          return { body: { threadId, message: lastMessage, frontendTools } };
         },
       }),
-    [api, threadId],
+    [api, threadId, getFrontendTools, isFrontendTool],
   );
 
   const chat = useChat({
     transport,
     messages: initialMessages,
     onFinish: () => onFinish?.(),
+    sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });
 
-  const [resumedMessageId, setResumedMessageId] = useState<string | null>(
-    null,
-  );
   const [isResuming, setIsResuming] = useState(false);
 
   // Transform messages:
-  // 1. Join follow-up into original message by ID
+  // 1. Merge consecutive assistant messages (follow-ups after tool output continuation)
   // 2. Merge data-tool-suspend parts onto their corresponding tool parts as a `suspend` field
-  // 3. Strip data-tool-suspend parts from the output
+  // 3. Strip resolved data-tool-suspend parts from the output
   const messages = useMemo(() => {
     let result = chat.messages;
 
-    // Join by ID: merge follow-up message into the resumed message
-    if (resumedMessageId) {
-      const merged: UIMessage[] = [];
-      let targetIdx = -1;
-
-      for (const msg of result) {
-        if (msg.id === resumedMessageId) {
-          targetIdx = merged.length;
-          merged.push(msg);
-        } else if (
-          targetIdx >= 0 &&
-          msg.role === "assistant" &&
-          merged[targetIdx].id === resumedMessageId
-        ) {
-          // Follow-up — merge parts into the target
-          merged[targetIdx] = {
-            ...merged[targetIdx],
-            parts: [...merged[targetIdx].parts, ...msg.parts],
-          };
-        } else {
-          merged.push(msg);
-        }
+    // Merge consecutive assistant messages
+    const merged: UIMessage[] = [];
+    for (const msg of result) {
+      const prev = merged[merged.length - 1];
+      if (prev?.role === "assistant" && msg.role === "assistant") {
+        merged[merged.length - 1] = {
+          ...prev,
+          parts: [...prev.parts, ...msg.parts],
+        };
+      } else {
+        merged.push(msg);
       }
-      result = merged;
     }
+    result = merged;
 
     // Enrich tool parts with suspend data, then strip data-tool-suspend parts
     return result.map((m) => {
       const suspendMap = new Map<string, unknown>();
       for (const p of m.parts) {
-        if (p.type === "data-tool-suspend") {
+        if (p.type === "data-tool-suspend" && !(p as any).data?.resolved) {
           const data = (p as any).data;
           suspendMap.set(data.toolCallId, data);
         }
       }
-      if (suspendMap.size === 0) return m;
+      if (suspendMap.size === 0) {
+        // Still strip resolved data-tool-suspend parts
+        const hasDataToolSuspend = m.parts.some(
+          (p) => p.type === "data-tool-suspend",
+        );
+        if (!hasDataToolSuspend) return m;
+        return {
+          ...m,
+          parts: m.parts.filter((p) => p.type !== "data-tool-suspend"),
+        };
+      }
 
       const parts = m.parts
         .filter((p) => p.type !== "data-tool-suspend")
@@ -101,41 +136,40 @@ export function useAgentChat({
 
       return { ...m, parts };
     });
-  }, [chat.messages, resumedMessageId]);
+  }, [chat.messages]);
 
   const hasSuspendedTools = useMemo(
-    () =>
-      messages.some((m) =>
-        m.parts.some(
-          (p) =>
-            "suspend" in p &&
-            (p as { state: string }).state !== "output-available",
-        ),
-      ),
+    () => messages.some((m) => m.parts.some((p) => "suspend" in p)),
     [messages],
   );
 
+  const hasPendingFrontendTools = useMemo(() => {
+    const lastMsg = chat.messages[chat.messages.length - 1];
+    if (lastMsg?.role !== "assistant") return false;
+    return lastMsg.parts.some((p) => {
+      const name = getToolName(p);
+      return (
+        "toolCallId" in p &&
+        name != null &&
+        isFrontendTool(name) &&
+        (p as any).state === "input-available"
+      );
+    });
+  }, [chat.messages, isFrontendTool]);
+
   const resumeTool = useCallback(
     async (toolCallId: string, data: unknown) => {
-      // Track which message we're resuming (for merging)
-      const suspendedMsg = chat.messages.find((m) =>
-        m.parts.some(
-          (p) =>
-            p.type === "data-tool-suspend" &&
-            (p as { data: { toolCallId: string } }).data.toolCallId ===
-              toolCallId,
-        ),
-      );
-      setResumedMessageId(suspendedMsg?.id ?? null);
       setIsResuming(true);
 
       try {
+        const frontendTools = getFrontendTools();
         const response = await fetch(api, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             threadId,
             resume: { toolCallId, data },
+            frontendTools,
           }),
         });
 
@@ -145,7 +179,6 @@ export function useAgentChat({
             const msgs = await fetchMessages(threadId);
             chat.setMessages(msgs);
           }
-          setResumedMessageId(null);
           return;
         }
 
@@ -158,20 +191,23 @@ export function useAgentChat({
           const msgs = await fetchMessages(threadId);
           chat.setMessages(msgs);
         }
-        setResumedMessageId(null);
       } finally {
         setIsResuming(false);
       }
     },
-    [chat, api, threadId, fetchMessages],
+    [chat, api, threadId, fetchMessages, getFrontendTools],
   );
 
   return {
     rawMessages: chat.messages,
     messages,
-    sendMessage: hasSuspendedTools ? undefined : chat.sendMessage,
+    sendMessage:
+      hasSuspendedTools || hasPendingFrontendTools
+        ? undefined
+        : chat.sendMessage,
     status: isResuming ? ("streaming" as const) : chat.status,
     resumeTool,
+    addToolOutput: chat.addToolOutput,
     hasSuspendedTools,
     setMessages: chat.setMessages,
   };
