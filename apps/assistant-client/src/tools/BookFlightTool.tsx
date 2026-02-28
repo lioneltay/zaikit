@@ -1,0 +1,101 @@
+import { useState } from "react";
+import { Box, Button, Paper, TextField, Typography } from "@mui/material";
+import type { ToolRenderProps } from "@lioneltay/aikit-react";
+import { ResolvedBanner } from "../components/ResolvedBanner";
+
+type Flight = { id: string; airline: string; price: number; departure: string };
+
+export function BookFlightTool(props: ToolRenderProps) {
+  const flights =
+    (props.suspendPayload as { flights?: Flight[] } | undefined)?.flights ?? [];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [seat, setSeat] = useState<"window" | "aisle" | "middle">("window");
+
+  if (props.state === "result") {
+    return <ResolvedBanner>Flight selection — Resolved</ResolvedBanner>;
+  }
+
+  return (
+    <Paper
+      elevation={2}
+      sx={{
+        p: 2,
+        my: 1,
+        border: "1px solid",
+        borderColor: "info.light",
+        bgcolor: "info.50",
+      }}
+    >
+      <Typography variant="body2" fontWeight={600} sx={{ mb: 1.5 }}>
+        Select a Flight
+      </Typography>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 2 }}>
+        {flights.map((f) => (
+          <Paper
+            key={f.id}
+            variant="outlined"
+            onClick={() => setSelectedId(f.id)}
+            sx={{
+              p: 1.5,
+              cursor: "pointer",
+              borderColor: selectedId === f.id ? "primary.main" : "divider",
+              borderWidth: selectedId === f.id ? 2 : 1,
+              bgcolor: selectedId === f.id ? "primary.50" : "background.paper",
+              "&:hover": { borderColor: "primary.light" },
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <Box>
+                <Typography variant="body2" fontWeight={600}>
+                  {f.airline} — {f.id}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Departs: {f.departure}
+                </Typography>
+              </Box>
+              <Typography variant="body2" fontWeight={600} color="primary">
+                ${f.price}
+              </Typography>
+            </Box>
+          </Paper>
+        ))}
+      </Box>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
+        <Typography variant="body2">Seat preference:</Typography>
+        <TextField
+          select
+          size="small"
+          value={seat}
+          onChange={(e) =>
+            setSeat(e.target.value as "window" | "aisle" | "middle")
+          }
+          SelectProps={{ native: true }}
+          sx={{ minWidth: 120 }}
+        >
+          <option value="window">Window</option>
+          <option value="aisle">Aisle</option>
+          <option value="middle">Middle</option>
+        </TextField>
+      </Box>
+      <Button
+        variant="contained"
+        size="small"
+        disabled={!selectedId}
+        onClick={() =>
+          props.resume({
+            selectedFlightId: selectedId,
+            seatPreference: seat,
+          })
+        }
+      >
+        Book
+      </Button>
+    </Paper>
+  );
+}
