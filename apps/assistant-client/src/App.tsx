@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { UIMessage } from "ai";
 import { Box, Drawer, Typography, CssBaseline } from "@mui/material";
+import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import { AgentProvider } from "@lioneltay/aikit-react";
 import ConversationList from "./ConversationList";
 import { trpc } from "./trpc";
@@ -76,6 +77,8 @@ export default function App() {
             "& .MuiDrawer-paper": {
               width: DRAWER_WIDTH,
               boxSizing: "border-box",
+              bgcolor: "#202123",
+              borderRight: "1px solid #393b40",
             },
           }}
         >
@@ -115,13 +118,18 @@ export default function App() {
             <Box
               sx={{
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
                 height: "100%",
+                gap: 2,
               }}
             >
-              <Typography color="text.secondary">
-                Select a conversation or create a new one
+              <ChatBubbleOutlineIcon
+                sx={{ fontSize: 64, color: "text.disabled" }}
+              />
+              <Typography color="text.secondary" sx={{ fontSize: 16 }}>
+                Select a conversation or start a new one
               </Typography>
             </Box>
           )}
