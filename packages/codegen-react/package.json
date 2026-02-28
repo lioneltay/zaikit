@@ -1,0 +1,33 @@
+{
+  "name": "@lioneltay/aikit-codegen-react",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "aikit-codegen-react": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ts-morph": "^25"
+  },
+  "devDependencies": {
+    "@lioneltay/aikit-core": "workspace:*",
+    "@lioneltay/aikit-typescript-config": "workspace:*",
+    "@types/node": "^22",
+    "tsup": "^8",
+    "typescript": "^5",
+    "vitest": "^3",
+    "zod": "^4"
+  }
+}
