@@ -41,8 +41,18 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
   const renderToolPart = useCallback(
     (part: unknown): React.ReactNode | null => {
       const p = part as Record<string, unknown>;
-      const toolName = (p.toolName as string) ?? "";
       const toolCallId = (p.toolCallId as string) ?? "";
+
+      // toolName can live at p.toolName, inside p.suspend.toolName,
+      // or encoded in the part type as "tool-<name>"
+      const toolName =
+        (p.toolName as string) ??
+        ((p.suspend as Record<string, unknown> | undefined)
+          ?.toolName as string) ??
+        ((p.type as string)?.startsWith("tool-")
+          ? (p.type as string).slice(5)
+          : "") ??
+        "";
 
       const renderer =
         registryRef.current.get(toolName) ?? registryRef.current.get("*");
@@ -65,7 +75,7 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
         toolCallId,
         toolName,
         state,
-        args: (p.args as Record<string, unknown>) ?? {},
+        args: ((p.args ?? p.input) as Record<string, unknown>) ?? {},
         suspendPayload: suspend
           ? (suspend as Record<string, unknown>).payload
           : undefined,
