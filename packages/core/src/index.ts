@@ -1,6 +1,6 @@
 export { model, fastModel, proModel } from "./model.js";
 export { createAgent } from "./agent.js";
-export type { Agent, ChatOptions } from "./agent.js";
+export type { Agent, ChatOptions, FrontendToolDef } from "./agent.js";
 export { streamText, convertToModelMessages } from "ai";
 export type { Memory, Thread } from "./memory.js";
 export { createTool } from "./create-tool.js";

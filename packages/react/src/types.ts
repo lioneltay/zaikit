@@ -19,12 +19,23 @@ export type ToolRenderProps<
 
 export type ToolRenderFn = (props: ToolRenderProps) => React.ReactNode;
 
+export type FrontendToolRegistration = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
 export type AgentContextValue = {
   messages: UIMessage[];
   rawMessages: UIMessage[];
   status: string;
   sendMessage: ((opts: { text: string }) => void) | undefined;
   resumeTool: (toolCallId: string, data: unknown) => void;
+  addToolOutput: (opts: {
+    tool: string;
+    toolCallId: string;
+    output: unknown;
+  }) => Promise<void>;
   hasSuspendedTools: boolean;
   setMessages: (msgs: UIMessage[]) => void;
   renderToolPart: (part: unknown) => React.ReactNode | null;
@@ -32,4 +43,5 @@ export type AgentContextValue = {
     toolName: string;
     render: ToolRenderFn;
   }) => () => void;
+  registerFrontendTool: (tool: FrontendToolRegistration) => () => void;
 };

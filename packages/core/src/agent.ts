@@ -4,6 +4,8 @@ import {
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
+  tool,
+  jsonSchema,
   type LanguageModel,
   type UIMessage,
   type ToolSet,
@@ -22,9 +24,24 @@ type CreateAgentOptions<T extends ToolSet = ToolSet> = {
   stopWhen?: StopCondition<ToolSet>;
 };
 
+export type FrontendToolDef = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
 export type ChatOptions =
-  | { threadId: string; message: UIMessage }
-  | { threadId: string; resume: { toolCallId: string; data: unknown } };
+  | { threadId: string; message: UIMessage; frontendTools?: FrontendToolDef[] }
+  | {
+      threadId: string;
+      resume: { toolCallId: string; data: unknown };
+      frontendTools?: FrontendToolDef[];
+    }
+  | {
+      threadId: string;
+      toolOutputs: { toolCallId: string; output: unknown }[];
+      frontendTools?: FrontendToolDef[];
+    };
 
 export type Agent<T extends ToolSet = ToolSet> = {
   tools: T;
@@ -48,7 +65,24 @@ export function createAgent<T extends ToolSet>({
   ];
   if (stopWhen) composedStopWhen.push(stopWhen as unknown as StopCondition<T>);
 
-  const streamOptions = { model, system, tools, stopWhen: composedStopWhen };
+  function buildDynamicTools(defs: FrontendToolDef[]): ToolSet {
+    const result: ToolSet = {};
+    for (const def of defs) {
+      // Strip JSON Schema meta-fields that providers like Gemini reject
+      const { $schema, additionalProperties, ...params } = def.parameters as Record<string, unknown>;
+      // No execute — frontend tools stay at input-available so the client
+      // can provide output via addToolOutput / toolOutputs.
+      result[def.name] = tool({
+        description: def.description,
+        inputSchema: jsonSchema({ type: "object" as const, ...params }),
+      } as any);
+    }
+    return result;
+  }
+
+  function mergeTools(frontendTools?: FrontendToolDef[]): ToolSet {
+    return { ...tools, ...buildDynamicTools(frontendTools ?? []) };
+  }
 
   /**
    * Stream an LLM response back to the client.
@@ -62,8 +96,10 @@ export function createAgent<T extends ToolSet>({
       memory: Memory;
       threadId: string;
       messageId?: string;
+      frontendTools?: FrontendToolDef[];
     },
   ): Response {
+    const mergedTools = mergeTools(options.frontendTools);
     // toolName isn't available on tool-output-available chunks, so we track
     // the mapping from tool-input-start/tool-input-available chunks.
     const toolNameMap = new Map<string, string>();
@@ -72,7 +108,10 @@ export function createAgent<T extends ToolSet>({
       originalMessages: messages,
       execute: async ({ writer }) => {
         const result = streamText({
-          ...streamOptions,
+          model,
+          system,
+          tools: mergedTools,
+          stopWhen: composedStopWhen as unknown as StopCondition<ToolSet>[],
           messages: await convertToModelMessages(messages),
         });
 
@@ -96,8 +135,9 @@ export function createAgent<T extends ToolSet>({
                 chunk.type === "tool-output-available" &&
                 isSuspendResult(chunk.output)
               ) {
-                // Replace the output chunk with a data part the client can render.
-                // The original chunk is swallowed — never reaches the client or onFinish.
+                // Strip the tool-output-available so the tool stays at
+                // input-available on the client and in the persisted message.
+                // Only emit data-tool-suspend so the client can show UI.
                 controller.enqueue({
                   type: "data-tool-suspend" as const,
                   id: chunk.toolCallId,
@@ -184,13 +224,17 @@ export function createAgent<T extends ToolSet>({
   async function handleResume(
     threadId: string,
     resume: { toolCallId: string; data: unknown },
+    frontendTools?: FrontendToolDef[],
   ): Promise<Response> {
     if (!memory) {
       throw new Error(
         "handleResume requires memory to be configured on the agent",
       );
     }
-    if (!tools) {
+
+    const allTools = mergeTools(frontendTools);
+
+    if (Object.keys(allTools).length === 0) {
       throw new Error("handleResume requires tools to be configured");
     }
 
@@ -239,7 +283,7 @@ export function createAgent<T extends ToolSet>({
       );
     }
 
-    const toolDef = tools[toolName];
+    const toolDef = allTools[toolName];
     if (!toolDef || !toolDef.execute) {
       throw new Error(`Tool not found or has no execute: ${toolName}`);
     }
@@ -256,8 +300,19 @@ export function createAgent<T extends ToolSet>({
     );
 
     // 4. Update the message — fill in the tool output for the resolved tool
-    const updatedParts = suspendedMsg.parts.map(
-      (p): UIMessage["parts"][number] => {
+    //    and mark the corresponding data-tool-suspend part as resolved.
+    const updatedParts = suspendedMsg.parts
+      .map((p) => {
+        if (
+          p.type === "data-tool-suspend" &&
+          (p as { data: { toolCallId: string } }).data.toolCallId ===
+            resume.toolCallId
+        ) {
+          return { ...p, data: { ...(p as any).data, resolved: true } };
+        }
+        return p;
+      })
+      .map((p): UIMessage["parts"][number] => {
         if (
           "toolCallId" in p &&
           (p as { toolCallId: string }).toolCallId === resume.toolCallId &&
@@ -266,8 +321,7 @@ export function createAgent<T extends ToolSet>({
           return { ...(p as any), state: "output-available", output };
         }
         return p;
-      },
-    );
+      });
 
     await memory.updateMessage(threadId, suspendedMsg.id, {
       parts: updatedParts,
@@ -275,21 +329,10 @@ export function createAgent<T extends ToolSet>({
 
     // 5. Check for remaining unresolved suspensions (supports multiple
     //    suspendable tools called in a single LLM step)
-    const resolvedToolCallIds = new Set(
-      updatedParts
-        .filter(
-          (p) =>
-            "toolCallId" in p &&
-            (p as { state: string }).state === "output-available",
-        )
-        .map((p) => (p as { toolCallId: string }).toolCallId),
-    );
     const hasRemainingSuspensions = updatedParts.some(
       (p) =>
         p.type === "data-tool-suspend" &&
-        !resolvedToolCallIds.has(
-          (p as { data: { toolCallId: string } }).data.toolCallId,
-        ),
+        !(p as any).data?.resolved,
     );
 
     if (hasRemainingSuspensions) {
@@ -303,6 +346,85 @@ export function createAgent<T extends ToolSet>({
       memory,
       threadId,
       messageId: suspendedMsg.id,
+      frontendTools,
+    });
+  }
+
+  /**
+   * Handle frontend tool outputs submitted via addToolOutput / sendAutomaticallyWhen.
+   *
+   * Steps:
+   *  1. Get messages from memory
+   *  2. Find last assistant message
+   *  3. Update matching tool parts: input-available → output-available with output
+   *  4. Save updated message to memory
+   *  5. Check for remaining backend suspensions → if any, return 204
+   *  6. Continue LLM with updated conversation
+   */
+  async function handleToolOutputs(
+    threadId: string,
+    toolOutputs: { toolCallId: string; output: unknown }[],
+    frontendTools?: FrontendToolDef[],
+  ): Promise<Response> {
+    if (!memory) {
+      throw new Error(
+        "handleToolOutputs requires memory to be configured on the agent",
+      );
+    }
+
+    const messages = await memory.getMessages(threadId);
+    // Find the last assistant message (where tool calls live)
+    const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
+
+    if (!lastAssistantMsg) {
+      throw new Error("No assistant message found to apply tool outputs to");
+    }
+
+    // Build a map of toolCallId → output for quick lookup
+    const outputMap = new Map(
+      toolOutputs.map((o) => [o.toolCallId, o.output]),
+    );
+
+    // Update matching tool parts: input-available → output-available
+    const updatedParts = lastAssistantMsg.parts.map(
+      (p): UIMessage["parts"][number] => {
+        if (
+          "toolCallId" in p &&
+          outputMap.has((p as { toolCallId: string }).toolCallId)
+        ) {
+          return {
+            ...(p as any),
+            state: "output-available",
+            output: outputMap.get(
+              (p as { toolCallId: string }).toolCallId,
+            ),
+          };
+        }
+        return p;
+      },
+    );
+
+    await memory.updateMessage(threadId, lastAssistantMsg.id, {
+      parts: updatedParts,
+    });
+
+    // Check for remaining backend suspensions (data-tool-suspend parts that aren't resolved)
+    const hasRemainingSuspensions = updatedParts.some(
+      (p) =>
+        p.type === "data-tool-suspend" &&
+        !(p as any).data?.resolved,
+    );
+
+    if (hasRemainingSuspensions) {
+      return new Response(null, { status: 204 });
+    }
+
+    // Continue LLM with updated conversation
+    const allMessages = await memory.getMessages(threadId);
+    return buildStreamResponse(allMessages, {
+      memory,
+      threadId,
+      frontendTools,
     });
   }
 
@@ -316,8 +438,18 @@ export function createAgent<T extends ToolSet>({
         );
       }
 
+      const frontendTools = options.frontendTools;
+
       if ("resume" in options) {
-        return handleResume(options.threadId, options.resume);
+        return handleResume(options.threadId, options.resume, frontendTools);
+      }
+
+      if ("toolOutputs" in options) {
+        return handleToolOutputs(
+          options.threadId,
+          options.toolOutputs,
+          frontendTools,
+        );
       }
 
       const { threadId, message } = options;
@@ -333,7 +465,7 @@ export function createAgent<T extends ToolSet>({
       // Title generation runs in parallel — fire-and-forget
       generateThreadTitle(threadId, message);
 
-      return buildStreamResponse(messages, { memory, threadId });
+      return buildStreamResponse(messages, { memory, threadId, frontendTools });
     },
   };
 }

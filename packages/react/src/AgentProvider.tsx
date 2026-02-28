@@ -5,10 +5,11 @@ import React, {
   useCallback,
   useMemo,
 } from "react";
+import { useAgentChat } from "./useAgentChat.js";
 import type { UIMessage } from "ai";
-import { useAgentChat, type UseAgentChatOptions } from "./useAgentChat.js";
 import type {
   AgentContextValue,
+  FrontendToolRegistration,
   ToolRenderFn,
   ToolRenderProps,
   ToolRenderState,
@@ -16,12 +17,30 @@ import type {
 
 export const AgentContext = createContext<AgentContextValue | null>(null);
 
-type AgentProviderProps = UseAgentChatOptions & {
+type AgentProviderProps = {
+  api: string;
+  threadId: string;
+  initialMessages: UIMessage[];
+  fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
+  onFinish?: () => void;
   children: React.ReactNode;
 };
 
 export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) {
-  const chat = useAgentChat(chatOptions);
+  const frontendToolsRef = useRef(
+    new Map<string, FrontendToolRegistration>(),
+  );
+
+  const getFrontendTools = useCallback(
+    () => Array.from(frontendToolsRef.current.values()),
+    [],
+  );
+  const isFrontendTool = useCallback(
+    (name: string) => frontendToolsRef.current.has(name),
+    [],
+  );
+
+  const chat = useAgentChat({ ...chatOptions, getFrontendTools, isFrontendTool });
 
   const registryRef = useRef(new Map<string, ToolRenderFn>());
   const [, setRegistryVersion] = useState(0);
@@ -63,10 +82,10 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
         | undefined;
 
       let state: ToolRenderState;
-      if ((p.state as string) === "output-available") {
-        state = "result";
-      } else if (suspend) {
+      if (suspend) {
         state = "suspended";
+      } else if ((p.state as string) === "output-available") {
+        state = "result";
       } else {
         state = "call";
       }
@@ -79,9 +98,11 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
         suspendPayload: suspend
           ? (suspend as Record<string, unknown>).payload
           : undefined,
-        result: p.result as unknown,
+        result: (p.output ?? p.result) as unknown,
         resume: (data: unknown) => {
-          if (state !== "result") {
+          if (frontendToolsRef.current.has(toolName)) {
+            chat.addToolOutput({ tool: toolName, toolCallId, output: data });
+          } else if (state !== "result") {
             chat.resumeTool(toolCallId, data);
           }
         },
@@ -89,7 +110,17 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
 
       return renderer(props);
     },
-    [chat.resumeTool],
+    [chat.resumeTool, chat.addToolOutput],
+  );
+
+  const registerFrontendTool = useCallback(
+    (tool: FrontendToolRegistration) => {
+      frontendToolsRef.current.set(tool.name, tool);
+      return () => {
+        frontendToolsRef.current.delete(tool.name);
+      };
+    },
+    [],
   );
 
   const value: AgentContextValue = useMemo(
@@ -99,10 +130,12 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
       status: chat.status,
       sendMessage: chat.sendMessage,
       resumeTool: chat.resumeTool,
+      addToolOutput: chat.addToolOutput,
       hasSuspendedTools: chat.hasSuspendedTools,
       setMessages: chat.setMessages,
       renderToolPart,
       registerToolRenderer,
+      registerFrontendTool,
     }),
     [
       chat.messages,
@@ -110,10 +143,12 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
       chat.status,
       chat.sendMessage,
       chat.resumeTool,
+      chat.addToolOutput,
       chat.hasSuspendedTools,
       chat.setMessages,
       renderToolPart,
       registerToolRenderer,
+      registerFrontendTool,
     ],
   );
 
