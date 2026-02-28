@@ -1,20 +1,26 @@
-import { Paper, Typography } from "@mui/material";
+import { Box, Typography } from "@mui/material";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 
 export function ResolvedBanner({ children }: { children: React.ReactNode }) {
   return (
-    <Paper
-      elevation={1}
+    <Box
       sx={{
         p: 2,
         my: 1,
-        border: "1px solid",
-        borderColor: "success.light",
-        bgcolor: "success.50",
+        border: "1px solid #4CAF50",
+        borderRadius: "12px",
+        bgcolor: "#E8F5E9",
+        display: "flex",
+        alignItems: "center",
+        gap: 1,
       }}
     >
+      <CheckCircleOutlineIcon
+        sx={{ fontSize: 20, color: "#4CAF50" }}
+      />
       <Typography variant="body2" color="text.secondary">
         {children}
       </Typography>
-    </Paper>
+    </Box>
   );
 }

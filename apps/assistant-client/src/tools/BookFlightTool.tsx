@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Button, Paper, TextField, Typography } from "@mui/material";
+import { Box, Button, TextField, Typography } from "@mui/material";
 import type { ToolRenderProps } from "@lioneltay/aikit-react";
 import { ResolvedBanner } from "../components/ResolvedBanner";
 
@@ -16,14 +16,13 @@ export function BookFlightTool(props: ToolRenderProps) {
   }
 
   return (
-    <Paper
-      elevation={2}
+    <Box
       sx={{
         p: 2,
         my: 1,
-        border: "1px solid",
-        borderColor: "info.light",
-        bgcolor: "info.50",
+        border: "1px solid #2196F3",
+        borderRadius: "12px",
+        bgcolor: "#E3F2FD",
       }}
     >
       <Typography variant="body2" fontWeight={600} sx={{ mb: 1.5 }}>
@@ -31,17 +30,19 @@ export function BookFlightTool(props: ToolRenderProps) {
       </Typography>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 2 }}>
         {flights.map((f) => (
-          <Paper
+          <Box
             key={f.id}
-            variant="outlined"
             onClick={() => setSelectedId(f.id)}
             sx={{
               p: 1.5,
               cursor: "pointer",
-              borderColor: selectedId === f.id ? "primary.main" : "divider",
+              border: "1px solid",
+              borderColor: selectedId === f.id ? "primary.main" : "#ccc",
               borderWidth: selectedId === f.id ? 2 : 1,
-              bgcolor: selectedId === f.id ? "primary.50" : "background.paper",
+              borderRadius: "8px",
+              bgcolor: selectedId === f.id ? "rgba(108,99,255,0.08)" : "#fff",
               "&:hover": { borderColor: "primary.light" },
+              transition: "all 0.15s",
             }}
           >
             <Box
@@ -63,7 +64,7 @@ export function BookFlightTool(props: ToolRenderProps) {
                 ${f.price}
               </Typography>
             </Box>
-          </Paper>
+          </Box>
         ))}
       </Box>
       <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
@@ -96,6 +97,6 @@ export function BookFlightTool(props: ToolRenderProps) {
       >
         Book
       </Button>
-    </Paper>
+    </Box>
   );
 }

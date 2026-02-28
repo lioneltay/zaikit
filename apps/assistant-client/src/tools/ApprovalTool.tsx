@@ -1,4 +1,4 @@
-import { Box, Button, Paper, Typography } from "@mui/material";
+import { Box, Button, Typography } from "@mui/material";
 import type { ToolRenderProps } from "@lioneltay/aikit-react";
 import { ResolvedBanner } from "../components/ResolvedBanner";
 
@@ -12,14 +12,13 @@ export function ApprovalTool(props: ToolRenderProps) {
   }
 
   return (
-    <Paper
-      elevation={2}
+    <Box
       sx={{
         p: 2,
         my: 1,
-        border: "1px solid",
-        borderColor: "warning.light",
-        bgcolor: "warning.50",
+        border: "1px solid #FF9800",
+        borderRadius: "12px",
+        bgcolor: "#FFF3E0",
       }}
     >
       <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
@@ -46,6 +45,6 @@ export function ApprovalTool(props: ToolRenderProps) {
           Deny
         </Button>
       </Box>
-    </Paper>
+    </Box>
   );
 }

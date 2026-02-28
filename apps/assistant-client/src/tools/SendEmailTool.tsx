@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Button, Paper, TextField, Typography } from "@mui/material";
+import { Box, Button, TextField, Typography } from "@mui/material";
 import type { ToolRenderProps } from "@lioneltay/aikit-react";
 import { ResolvedBanner } from "../components/ResolvedBanner";
 
@@ -9,23 +9,25 @@ export function SendEmailTool(props: ToolRenderProps) {
       | { preview?: { to: string; subject: string; body: string } }
       | undefined
   )?.preview;
-  const [to, setTo] = useState(preview?.to ?? "");
-  const [subject, setSubject] = useState(preview?.subject ?? "");
-  const [body, setBody] = useState(preview?.body ?? "");
+  // Fall back to tool args when suspend payload isn't available (e.g. after message refetch)
+  const args = props.args as { to?: string; subject?: string; body?: string };
+  const [to, setTo] = useState(preview?.to ?? args.to ?? "");
+  const [subject, setSubject] = useState(preview?.subject ?? args.subject ?? "");
+  const [body, setBody] = useState(preview?.body ?? args.body ?? "");
 
   if (props.state === "result") {
-    return <ResolvedBanner>Email to {preview?.to} — Resolved</ResolvedBanner>;
+    const resolvedTo = preview?.to ?? args.to;
+    return <ResolvedBanner>Email to {resolvedTo} — Resolved</ResolvedBanner>;
   }
 
   return (
-    <Paper
-      elevation={2}
+    <Box
       sx={{
         p: 2,
         my: 1,
-        border: "1px solid",
-        borderColor: "info.light",
-        bgcolor: "info.50",
+        border: "1px solid #2196F3",
+        borderRadius: "12px",
+        bgcolor: "#E3F2FD",
       }}
     >
       <Typography variant="body2" fontWeight={600} sx={{ mb: 1.5 }}>
@@ -73,6 +75,6 @@ export function SendEmailTool(props: ToolRenderProps) {
           Cancel
         </Button>
       </Box>
-    </Paper>
+    </Box>
   );
 }
