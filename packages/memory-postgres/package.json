@@ -1,5 +1,5 @@
 {
-  "name": "@lioneltay/aikit-memory-postgres",
+  "name": "@zaikit/memory-postgres",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -15,12 +15,12 @@
     "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@lioneltay/aikit-core": "workspace:*",
+    "@zaikit/core": "workspace:*",
     "ai": "^6",
     "postgres": "^3"
   },
   "devDependencies": {
-    "@lioneltay/aikit-typescript-config": "workspace:*",
+    "@zaikit/typescript-config": "workspace:*",
     "tsup": "^8",
     "typescript": "^5"
   }

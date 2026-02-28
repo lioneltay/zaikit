@@ -4,7 +4,7 @@ export type { Agent, ChatOptions, FrontendToolDef } from "./agent.js";
 export { streamText, convertToModelMessages } from "ai";
 export type { Memory, Thread } from "./memory.js";
 export { createTool } from "./create-tool.js";
-export type { AikitTool } from "./create-tool.js";
+export type { ZaikitTool } from "./create-tool.js";
 export { isSuspendResult } from "./suspend.js";
 export type { SuspendResult } from "./suspend.js";
 export { hasSuspendedTool } from "./stop-conditions.js";

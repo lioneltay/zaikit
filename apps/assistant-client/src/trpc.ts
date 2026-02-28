@@ -1,5 +1,5 @@
 import { createTRPCClient, httpBatchLink } from "@trpc/client";
-import type { AppRouter } from "@lioneltay/aikit-assistant-backend/trpc";
+import type { AppRouter } from "@zaikit/assistant-backend/trpc";
 
 export const trpc = createTRPCClient<AppRouter>({
   links: [

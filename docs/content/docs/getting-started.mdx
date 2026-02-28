@@ -1,6 +1,6 @@
 ---
 title: Getting Started
-description: Install and set up AIKit in your project
+description: Install and set up ZAIKit in your project
 ---
 
 # Getting Started
@@ -10,13 +10,13 @@ description: Install and set up AIKit in your project
 Install the core package:
 
 ```bash
-pnpm add @lioneltay/aikit-core
+pnpm add @zaikit/core
 ```
 
 For React applications, also install the React bindings:
 
 ```bash
-pnpm add @lioneltay/aikit-react
+pnpm add @zaikit/react
 ```
 
 ## Quick Example
@@ -24,7 +24,7 @@ pnpm add @lioneltay/aikit-react
 Create a simple agent:
 
 ```ts
-import { createAgent, createTool, model } from "@lioneltay/aikit-core";
+import { createAgent, createTool, model } from "@zaikit/core";
 
 const agent = createAgent({
   model: model("gpt-4o"),

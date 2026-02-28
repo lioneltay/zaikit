@@ -31,7 +31,7 @@ export function extractToolTypes(options: {
   if (!toolsProp) {
     throw new Error(
       `Agent export "${exportName}" has no "tools" property. ` +
-      `Make sure createAgent is generic (see @lioneltay/aikit-core).`,
+      `Make sure createAgent is generic (see @zaikit/core).`,
     );
   }
   const toolsType = toolsProp.getTypeAtLocation(agentDecl);
@@ -44,7 +44,7 @@ export function extractToolTypes(options: {
     const brandProp = toolType.getProperty("__toolTypes");
     if (!brandProp) {
       console.warn(
-        `Tool "${toolName}" missing __toolTypes brand — skipping (not an AikitTool?)`,
+        `Tool "${toolName}" missing __toolTypes brand — skipping (not a ZaikitTool?)`,
       );
       continue;
     }

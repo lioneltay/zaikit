@@ -3,7 +3,7 @@ import type { UIMessage } from "ai";
 import { Box, Drawer, IconButton, Typography, CssBaseline } from "@mui/material";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import MenuIcon from "@mui/icons-material/Menu";
-import { AgentProvider } from "@lioneltay/aikit-react";
+import { AgentProvider } from "@zaikit/react";
 import ConversationList from "./ConversationList";
 import { trpc } from "./trpc";
 import type { Thread } from "./trpc";

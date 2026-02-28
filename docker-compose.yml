@@ -4,9 +4,9 @@ services:
     ports:
       - "7302:5432"
     environment:
-      POSTGRES_USER: aikit
-      POSTGRES_PASSWORD: aikit
-      POSTGRES_DB: aikit
+      POSTGRES_USER: zaikit
+      POSTGRES_PASSWORD: zaikit
+      POSTGRES_DB: zaikit
     volumes:
       - pgdata:/var/lib/postgresql/data
 

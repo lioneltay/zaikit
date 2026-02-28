@@ -4,7 +4,7 @@ import remarkGfm from "remark-gfm";
 import { Box, TextField, IconButton, Typography } from "@mui/material";
 import SendIcon from "@mui/icons-material/Send";
 import BugReportIcon from "@mui/icons-material/BugReport";
-import { useAgent } from "@lioneltay/aikit-react";
+import { useAgent } from "@zaikit/react";
 import { DebugSidebar } from "./DebugSidebar";
 
 const markdownStyles = {
