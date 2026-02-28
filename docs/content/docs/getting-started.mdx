@@ -1,0 +1,40 @@
+---
+title: Getting Started
+description: Install and set up AIKit in your project
+---
+
+# Getting Started
+
+## Installation
+
+Install the core package:
+
+```bash
+pnpm add @lioneltay/aikit-core
+```
+
+For React applications, also install the React bindings:
+
+```bash
+pnpm add @lioneltay/aikit-react
+```
+
+## Quick Example
+
+Create a simple agent:
+
+```ts
+import { createAgent, createTool, model } from "@lioneltay/aikit-core";
+
+const agent = createAgent({
+  model: model("gpt-4o"),
+  tools: [
+    createTool({
+      name: "greet",
+      description: "Greet the user",
+      parameters: { name: { type: "string" } },
+      execute: async ({ name }) => `Hello, ${name}!`,
+    }),
+  ],
+});
+```
