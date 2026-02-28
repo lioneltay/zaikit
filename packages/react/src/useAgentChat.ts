@@ -2,29 +2,32 @@ import { useState, useMemo, useCallback } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import type { UIMessage } from "ai";
-import { trpc } from "./trpc";
 
-type UseAgentChatOptions = {
+export type UseAgentChatOptions = {
+  api: string;
   threadId: string;
   initialMessages: UIMessage[];
+  fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
 };
 
 export function useAgentChat({
+  api,
   threadId,
   initialMessages,
+  fetchMessages,
   onFinish,
 }: UseAgentChatOptions) {
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
-        api: "http://localhost:7301/api/chat",
+        api,
         prepareSendMessagesRequest: ({ messages }) => {
           const lastMessage = messages[messages.length - 1];
           return { body: { threadId, message: lastMessage } };
         },
       }),
-    [threadId],
+    [api, threadId],
   );
 
   const chat = useChat({
@@ -127,7 +130,7 @@ export function useAgentChat({
       setIsResuming(true);
 
       try {
-        const response = await fetch("http://localhost:7301/api/chat", {
+        const response = await fetch(api, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -138,8 +141,10 @@ export function useAgentChat({
 
         if (response.status === 204) {
           // More suspensions remain — re-fetch messages from server
-          const msgs = await trpc.thread.getMessages.query({ threadId });
-          chat.setMessages(msgs as unknown as UIMessage[]);
+          if (fetchMessages) {
+            const msgs = await fetchMessages(threadId);
+            chat.setMessages(msgs);
+          }
           setResumedMessageId(null);
           return;
         }
@@ -149,14 +154,16 @@ export function useAgentChat({
         await response.text();
 
         // Re-fetch messages from server to get the final state
-        const msgs = await trpc.thread.getMessages.query({ threadId });
-        chat.setMessages(msgs as unknown as UIMessage[]);
+        if (fetchMessages) {
+          const msgs = await fetchMessages(threadId);
+          chat.setMessages(msgs);
+        }
         setResumedMessageId(null);
       } finally {
         setIsResuming(false);
       }
     },
-    [chat, threadId],
+    [chat, api, threadId, fetchMessages],
   );
 
   return {

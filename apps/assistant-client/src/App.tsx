@@ -24,7 +24,7 @@ import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import ConversationList from "./ConversationList";
 import { trpc } from "./trpc";
 import type { Thread } from "./trpc";
-import { useAgentChat } from "./useAgentChat";
+import { useAgentChat } from "@lioneltay/aikit-react";
 
 const DRAWER_WIDTH = 280;
 
@@ -563,8 +563,11 @@ function ChatView({
     resumeTool,
     hasSuspendedTools,
   } = useAgentChat({
+    api: "http://localhost:7301/api/chat",
     threadId,
     initialMessages,
+    fetchMessages: (threadId) =>
+      trpc.thread.getMessages.query({ threadId }) as unknown as Promise<UIMessage[]>,
     onFinish: () => onResponseComplete?.(),
   });
   const [input, setInput] = useState("");
