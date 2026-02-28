@@ -1,6 +1,6 @@
 import postgres from "postgres";
 import type { UIMessage } from "ai";
-import type { Memory, Thread } from "@lioneltay/aikit-core";
+import type { Memory, Thread } from "@zaikit/core";
 
 type PostgresMemoryOptions = {
   connectionString: string;
@@ -13,7 +13,7 @@ export function createPostgresMemory({
 
   async function initialize() {
     await sql`
-      CREATE TABLE IF NOT EXISTS aikit_threads (
+      CREATE TABLE IF NOT EXISTS zaikit_threads (
         id TEXT PRIMARY KEY,
         title TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -21,9 +21,9 @@ export function createPostgresMemory({
       )
     `;
     await sql`
-      CREATE TABLE IF NOT EXISTS aikit_messages (
+      CREATE TABLE IF NOT EXISTS zaikit_messages (
         id TEXT PRIMARY KEY,
-        thread_id TEXT NOT NULL REFERENCES aikit_threads(id) ON DELETE CASCADE,
+        thread_id TEXT NOT NULL REFERENCES zaikit_threads(id) ON DELETE CASCADE,
         role TEXT NOT NULL,
         parts JSONB NOT NULL DEFAULT '[]',
         metadata JSONB,
@@ -31,14 +31,14 @@ export function createPostgresMemory({
       )
     `;
     await sql`
-      CREATE INDEX IF NOT EXISTS idx_aikit_messages_thread_id ON aikit_messages(thread_id, created_at)
+      CREATE INDEX IF NOT EXISTS idx_zaikit_messages_thread_id ON zaikit_messages(thread_id, created_at)
     `;
   }
 
   const memory: Memory = {
     async createThread(id, title) {
       const [row] = await sql`
-        INSERT INTO aikit_threads (id, title)
+        INSERT INTO zaikit_threads (id, title)
         VALUES (${id}, ${title ?? null})
         RETURNING id, title, created_at, updated_at
       `;
@@ -52,7 +52,7 @@ export function createPostgresMemory({
 
     async getThread(id) {
       const [row] = await sql`
-        SELECT id, title, created_at, updated_at FROM aikit_threads WHERE id = ${id}
+        SELECT id, title, created_at, updated_at FROM zaikit_threads WHERE id = ${id}
       `;
       if (!row) return null;
       return {
@@ -65,7 +65,7 @@ export function createPostgresMemory({
 
     async listThreads() {
       const rows = await sql`
-        SELECT id, title, created_at, updated_at FROM aikit_threads ORDER BY updated_at DESC
+        SELECT id, title, created_at, updated_at FROM zaikit_threads ORDER BY updated_at DESC
       `;
       return rows.map((row) => ({
         id: row.id,
@@ -76,12 +76,12 @@ export function createPostgresMemory({
     },
 
     async deleteThread(id) {
-      await sql`DELETE FROM aikit_threads WHERE id = ${id}`;
+      await sql`DELETE FROM zaikit_threads WHERE id = ${id}`;
     },
 
     async updateThread(id, updates) {
       const [row] = await sql`
-        UPDATE aikit_threads
+        UPDATE zaikit_threads
         SET title = COALESCE(${updates.title ?? null}, title), updated_at = NOW()
         WHERE id = ${id}
         RETURNING id, title, created_at, updated_at
@@ -97,7 +97,7 @@ export function createPostgresMemory({
 
     async getMessages(threadId) {
       const rows = await sql`
-        SELECT id, role, parts, metadata FROM aikit_messages
+        SELECT id, role, parts, metadata FROM zaikit_messages
         WHERE thread_id = ${threadId}
         ORDER BY created_at
       `;
@@ -113,7 +113,7 @@ export function createPostgresMemory({
 
     async addMessage(threadId, message) {
       await sql`
-        INSERT INTO aikit_messages (id, thread_id, role, parts, metadata)
+        INSERT INTO zaikit_messages (id, thread_id, role, parts, metadata)
         VALUES (
           ${message.id},
           ${threadId},
@@ -126,18 +126,18 @@ export function createPostgresMemory({
           metadata = ${message.metadata ? sql.json(message.metadata as any) : null}
       `;
       await sql`
-        UPDATE aikit_threads SET updated_at = NOW() WHERE id = ${threadId}
+        UPDATE zaikit_threads SET updated_at = NOW() WHERE id = ${threadId}
       `;
     },
 
     async updateMessage(threadId, messageId, updates) {
       await sql`
-        UPDATE aikit_messages
+        UPDATE zaikit_messages
         SET parts = ${sql.json(updates.parts as any)}
         WHERE id = ${messageId} AND thread_id = ${threadId}
       `;
       await sql`
-        UPDATE aikit_threads SET updated_at = NOW() WHERE id = ${threadId}
+        UPDATE zaikit_threads SET updated_at = NOW() WHERE id = ${threadId}
       `;
     },
   };

@@ -7,7 +7,7 @@ import { getResumeData } from "./suspend-context.js";
 // Extends the AI SDK's Tool so it satisfies ToolSet everywhere.
 // The __toolTypes property is a phantom brand — it exists only in the
 // type system for codegen to read. No runtime cost.
-export type AikitTool<
+export type ZaikitTool<
   INPUT = any,
   OUTPUT = any,
   SUSPEND = never,
@@ -49,14 +49,14 @@ type SuspendableToolOptions<INPUT, OUTPUT, SUSPEND, RESUME> = BaseToolOptions<IN
 
 export function createTool<INPUT, OUTPUT>(
   options: RegularToolOptions<INPUT, OUTPUT>,
-): AikitTool<INPUT, OUTPUT>;
+): ZaikitTool<INPUT, OUTPUT>;
 
 export function createTool<INPUT, OUTPUT, SUSPEND, RESUME>(
   options: SuspendableToolOptions<INPUT, OUTPUT, SUSPEND, RESUME>,
-): AikitTool<INPUT, OUTPUT | SuspendResult<SUSPEND>, SUSPEND, RESUME>;
+): ZaikitTool<INPUT, OUTPUT | SuspendResult<SUSPEND>, SUSPEND, RESUME>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function createTool(options: any): AikitTool<any, any> {
+export function createTool(options: any): ZaikitTool<any, any> {
   const { description, inputSchema, outputSchema, execute } = options;
 
   const isSuspendable = options.suspendSchema && options.resumeSchema;
@@ -91,5 +91,5 @@ export function createTool(options: any): AikitTool<any, any> {
 
       return result;
     },
-  }) as AikitTool<any, any>;
+  }) as ZaikitTool<any, any>;
 }

@@ -1,10 +1,10 @@
 {
-  "name": "@lioneltay/aikit-codegen-react",
+  "name": "@zaikit/codegen-react",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "bin": {
-    "aikit-codegen-react": "./dist/cli.js"
+    "zaikit-codegen-react": "./dist/cli.js"
   },
   "exports": {
     ".": {
@@ -22,8 +22,8 @@
     "ts-morph": "^25"
   },
   "devDependencies": {
-    "@lioneltay/aikit-core": "workspace:*",
-    "@lioneltay/aikit-typescript-config": "workspace:*",
+    "@zaikit/core": "workspace:*",
+    "@zaikit/typescript-config": "workspace:*",
     "@types/node": "^22",
     "tsup": "^8",
     "typescript": "^5",

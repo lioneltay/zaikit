@@ -1,5 +1,5 @@
 {
-  "name": "@lioneltay/aikit-core",
+  "name": "@zaikit/core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -21,7 +21,7 @@
     "zod": "^4"
   },
   "devDependencies": {
-    "@lioneltay/aikit-typescript-config": "workspace:*",
+    "@zaikit/typescript-config": "workspace:*",
     "tsup": "^8",
     "typescript": "^5"
   }

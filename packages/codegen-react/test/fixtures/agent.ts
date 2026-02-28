@@ -1,4 +1,4 @@
-import { createTool, createAgent, model } from "@lioneltay/aikit-core";
+import { createTool, createAgent, model } from "@zaikit/core";
 import { z } from "zod";
 
 const greet = createTool({

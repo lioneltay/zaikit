@@ -2,7 +2,7 @@ import { z } from "zod";
 import { Box, Button, Typography, Paper } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import { useToolRenderer } from "./tools.generated";
-import { useTool } from "@lioneltay/aikit-react";
+import { useTool } from "@zaikit/react";
 import { ApprovalTool } from "./ApprovalTool";
 import { BookFlightTool } from "./BookFlightTool";
 import { SendEmailTool } from "./SendEmailTool";

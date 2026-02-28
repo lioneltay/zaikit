@@ -1,5 +1,5 @@
 {
-  "name": "@lioneltay/aikit-assistant-client",
+  "name": "@zaikit/assistant-client",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -7,13 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check-types": "tsc -b",
-    "generate-types": "aikit-codegen-react --agent ../assistant-backend/src/agent/index.ts --output ./src/tools/tools.generated.ts"
+    "generate-types": "zaikit-codegen-react --agent ../assistant-backend/src/agent/index.ts --output ./src/tools/tools.generated.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^3",
     "@emotion/react": "^11",
     "@emotion/styled": "^11",
-    "@lioneltay/aikit-react": "workspace:*",
+    "@zaikit/react": "workspace:*",
     "@mui/icons-material": "^7",
     "@mui/material": "^7",
     "@tanstack/react-query": "^5",
@@ -27,9 +27,9 @@
     "zod": "^4"
   },
   "devDependencies": {
-    "@lioneltay/aikit-assistant-backend": "workspace:*",
-    "@lioneltay/aikit-codegen-react": "workspace:*",
-    "@lioneltay/aikit-typescript-config": "workspace:*",
+    "@zaikit/assistant-backend": "workspace:*",
+    "@zaikit/codegen-react": "workspace:*",
+    "@zaikit/typescript-config": "workspace:*",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^4",

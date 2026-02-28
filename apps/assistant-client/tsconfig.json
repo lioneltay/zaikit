@@ -1,5 +1,5 @@
 {
-  "extends": "@lioneltay/aikit-typescript-config/react.json",
+  "extends": "@zaikit/typescript-config/react.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src"

@@ -1,7 +1,7 @@
 import { stepCountIs } from "ai";
 import { z } from "zod";
-import { createAgent, createTool, model } from "@lioneltay/aikit-core";
-import { createPostgresMemory } from "@lioneltay/aikit-memory-postgres";
+import { createAgent, createTool, model } from "@zaikit/core";
+import { createPostgresMemory } from "@zaikit/memory-postgres";
 
 const memory = createPostgresMemory({
   connectionString: process.env.DATABASE_URL!,

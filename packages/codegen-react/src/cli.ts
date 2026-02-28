@@ -36,7 +36,7 @@ function parseArgs(argv: string[]): {
 
   if (!args.agent) {
     console.error(
-      "Usage: aikit-codegen-react --agent <path> --output <path> [--export <name>] [--tsconfig <path>]",
+      "Usage: zaikit-codegen-react --agent <path> --output <path> [--export <name>] [--tsconfig <path>]",
     );
     process.exit(1);
   }

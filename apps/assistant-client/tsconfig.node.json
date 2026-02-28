@@ -1,5 +1,5 @@
 {
-  "extends": "@lioneltay/aikit-typescript-config/node.json",
+  "extends": "@zaikit/typescript-config/node.json",
   "compilerOptions": {
     "composite": true,
     "noEmit": false,
