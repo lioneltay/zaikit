@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import type { Thread } from "./trpc";
 
@@ -20,6 +21,7 @@ type ConversationListProps = {
   onSelect: (id: string) => void;
   onCreate: () => void;
   onDelete: (id: string) => void;
+  onCollapse: () => void;
 };
 
 export default function ConversationList({
@@ -28,10 +30,11 @@ export default function ConversationList({
   onSelect,
   onCreate,
   onDelete,
+  onCollapse,
 }: ConversationListProps) {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <Box sx={{ p: 2 }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, pt: 2, pb: 1 }}>
         <Button
           variant="outlined"
           startIcon={<AddIcon />}
@@ -49,13 +52,20 @@ export default function ConversationList({
         >
           New Chat
         </Button>
+        <IconButton
+          onClick={onCollapse}
+          size="small"
+          sx={{ color: "rgba(255,255,255,0.5)", flexShrink: 0 }}
+        >
+          <ChevronLeftIcon />
+        </IconButton>
       </Box>
 
       <List
         sx={{
           flex: 1,
           overflowY: "auto",
-          px: 1,
+          px: 1.5,
           scrollbarColor: "rgba(255,255,255,0.2) transparent",
           "&::-webkit-scrollbar-thumb": {
             background: "rgba(255,255,255,0.2)",
@@ -72,7 +82,8 @@ export default function ConversationList({
             onClick={() => onSelect(thread.id)}
             sx={{
               borderRadius: "8px",
-              mb: 0.5,
+              mb: 0.25,
+              py: 0.75,
               color: "#fff",
               "&:hover": {
                 bgcolor: "rgba(255,255,255,0.08)",

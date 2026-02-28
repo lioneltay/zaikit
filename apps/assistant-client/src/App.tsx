@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import type { UIMessage } from "ai";
-import { Box, Drawer, Typography, CssBaseline } from "@mui/material";
+import { Box, Drawer, IconButton, Typography, CssBaseline } from "@mui/material";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import MenuIcon from "@mui/icons-material/Menu";
 import { AgentProvider } from "@lioneltay/aikit-react";
 import ConversationList from "./ConversationList";
 import { trpc } from "./trpc";
@@ -10,12 +11,14 @@ import { ToolRenderers } from "./tools";
 import { AgentChat } from "./AgentChat";
 
 const DRAWER_WIDTH = 280;
+const DRAWER_COLLAPSED_WIDTH = 0;
 
 export default function App() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [showDebug, setShowDebug] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const initialThreadId = useRef(
     new URLSearchParams(window.location.search).get("threadId"),
   );
@@ -65,6 +68,8 @@ export default function App() {
     setActiveThreadId(id);
   };
 
+  const drawerWidth = sidebarOpen ? DRAWER_WIDTH : DRAWER_COLLAPSED_WIDTH;
+
   return (
     <>
       <CssBaseline />
@@ -72,13 +77,16 @@ export default function App() {
         <Drawer
           variant="permanent"
           sx={{
-            width: DRAWER_WIDTH,
+            width: drawerWidth,
             flexShrink: 0,
+            transition: "width 0.2s",
             "& .MuiDrawer-paper": {
-              width: DRAWER_WIDTH,
+              width: drawerWidth,
               boxSizing: "border-box",
               bgcolor: "#202123",
-              borderRight: "1px solid #393b40",
+              borderRight: sidebarOpen ? "1px solid #393b40" : "none",
+              overflow: "hidden",
+              transition: "width 0.2s",
             },
           }}
         >
@@ -88,6 +96,7 @@ export default function App() {
             onSelect={handleSelectThread}
             onCreate={handleCreateThread}
             onDelete={handleDeleteThread}
+            onCollapse={() => setSidebarOpen(false)}
           />
         </Drawer>
 
@@ -95,6 +104,22 @@ export default function App() {
           component="main"
           sx={{ flex: 1, display: "flex", flexDirection: "column" }}
         >
+          {!sidebarOpen && (
+            <Box sx={{ position: "absolute", top: 8, left: 8, zIndex: 1 }}>
+              <IconButton
+                onClick={() => setSidebarOpen(true)}
+                sx={{
+                  color: "text.secondary",
+                  bgcolor: "background.paper",
+                  boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
+                  "&:hover": { bgcolor: "background.paper" },
+                }}
+                size="small"
+              >
+                <MenuIcon />
+              </IconButton>
+            </Box>
+          )}
           {activeThreadId ? (
             <AgentProvider
               key={activeThreadId}
