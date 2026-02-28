@@ -83,35 +83,39 @@ const markdownStyles = {
 type SuspendData = {
   toolCallId: string;
   toolName: string;
-  payload: { message: string };
+  payload: Record<string, unknown>;
 };
 
-function SuspendUI({
-  data,
-  resolved,
-  onResume,
-}: {
+type SuspendUIProps = {
   data: SuspendData;
   resolved: boolean;
   onResume: (toolCallId: string, data: unknown) => void;
-}) {
+};
+
+function ResolvedBanner({ children }: { children: React.ReactNode }) {
+  return (
+    <Paper
+      elevation={1}
+      sx={{
+        p: 2,
+        my: 1,
+        border: "1px solid",
+        borderColor: "success.light",
+        bgcolor: "success.50",
+      }}
+    >
+      <Typography variant="body2" color="text.secondary">
+        {children}
+      </Typography>
+    </Paper>
+  );
+}
+
+function ApprovalSuspendUI({ data, resolved, onResume }: SuspendUIProps) {
+  const message = (data.payload as { message?: string }).message ?? "Confirm?";
+
   if (resolved) {
-    return (
-      <Paper
-        elevation={1}
-        sx={{
-          p: 2,
-          my: 1,
-          border: "1px solid",
-          borderColor: "success.light",
-          bgcolor: "success.50",
-        }}
-      >
-        <Typography variant="body2" color="text.secondary">
-          {data.payload.message} — Resolved
-        </Typography>
-      </Paper>
-    );
+    return <ResolvedBanner>{message} — Resolved</ResolvedBanner>;
   }
 
   return (
@@ -129,7 +133,7 @@ function SuspendUI({
         Action Required
       </Typography>
       <Typography variant="body2" sx={{ mb: 2 }}>
-        {data.payload.message}
+        {message}
       </Typography>
       <Box sx={{ display: "flex", gap: 1 }}>
         <Button
@@ -151,6 +155,187 @@ function SuspendUI({
       </Box>
     </Paper>
   );
+}
+
+type Flight = { id: string; airline: string; price: number; departure: string };
+
+function FlightPickerSuspendUI({ data, resolved, onResume }: SuspendUIProps) {
+  const flights = (data.payload as { flights?: Flight[] }).flights ?? [];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [seat, setSeat] = useState<"window" | "aisle" | "middle">("window");
+
+  if (resolved) {
+    return <ResolvedBanner>Flight selection — Resolved</ResolvedBanner>;
+  }
+
+  return (
+    <Paper
+      elevation={2}
+      sx={{
+        p: 2,
+        my: 1,
+        border: "1px solid",
+        borderColor: "info.light",
+        bgcolor: "info.50",
+      }}
+    >
+      <Typography variant="body2" fontWeight={600} sx={{ mb: 1.5 }}>
+        Select a Flight
+      </Typography>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1, mb: 2 }}>
+        {flights.map((f) => (
+          <Paper
+            key={f.id}
+            variant="outlined"
+            onClick={() => setSelectedId(f.id)}
+            sx={{
+              p: 1.5,
+              cursor: "pointer",
+              borderColor: selectedId === f.id ? "primary.main" : "divider",
+              borderWidth: selectedId === f.id ? 2 : 1,
+              bgcolor: selectedId === f.id ? "primary.50" : "background.paper",
+              "&:hover": { borderColor: "primary.light" },
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <Box>
+                <Typography variant="body2" fontWeight={600}>
+                  {f.airline} — {f.id}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Departs: {f.departure}
+                </Typography>
+              </Box>
+              <Typography variant="body2" fontWeight={600} color="primary">
+                ${f.price}
+              </Typography>
+            </Box>
+          </Paper>
+        ))}
+      </Box>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 2, mb: 2 }}>
+        <Typography variant="body2">Seat preference:</Typography>
+        <TextField
+          select
+          size="small"
+          value={seat}
+          onChange={(e) =>
+            setSeat(e.target.value as "window" | "aisle" | "middle")
+          }
+          SelectProps={{ native: true }}
+          sx={{ minWidth: 120 }}
+        >
+          <option value="window">Window</option>
+          <option value="aisle">Aisle</option>
+          <option value="middle">Middle</option>
+        </TextField>
+      </Box>
+      <Button
+        variant="contained"
+        size="small"
+        disabled={!selectedId}
+        onClick={() =>
+          onResume(data.toolCallId, {
+            selectedFlightId: selectedId,
+            seatPreference: seat,
+          })
+        }
+      >
+        Book
+      </Button>
+    </Paper>
+  );
+}
+
+function EmailPreviewSuspendUI({ data, resolved, onResume }: SuspendUIProps) {
+  const preview = (data.payload as { preview?: { to: string; subject: string; body: string } }).preview;
+  const [to, setTo] = useState(preview?.to ?? "");
+  const [subject, setSubject] = useState(preview?.subject ?? "");
+  const [body, setBody] = useState(preview?.body ?? "");
+
+  if (resolved) {
+    return <ResolvedBanner>Email to {preview?.to} — Resolved</ResolvedBanner>;
+  }
+
+  return (
+    <Paper
+      elevation={2}
+      sx={{
+        p: 2,
+        my: 1,
+        border: "1px solid",
+        borderColor: "info.light",
+        bgcolor: "info.50",
+      }}
+    >
+      <Typography variant="body2" fontWeight={600} sx={{ mb: 1.5 }}>
+        Email Preview
+      </Typography>
+      <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5, mb: 2 }}>
+        <TextField
+          label="To"
+          size="small"
+          fullWidth
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+        />
+        <TextField
+          label="Subject"
+          size="small"
+          fullWidth
+          value={subject}
+          onChange={(e) => setSubject(e.target.value)}
+        />
+        <TextField
+          label="Body"
+          size="small"
+          fullWidth
+          multiline
+          minRows={3}
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+        />
+      </Box>
+      <Box sx={{ display: "flex", gap: 1 }}>
+        <Button
+          variant="contained"
+          size="small"
+          onClick={() =>
+            onResume(data.toolCallId, { approved: true, to, subject, body })
+          }
+        >
+          Send
+        </Button>
+        <Button
+          variant="outlined"
+          color="error"
+          size="small"
+          onClick={() => onResume(data.toolCallId, { approved: false })}
+        >
+          Cancel
+        </Button>
+      </Box>
+    </Paper>
+  );
+}
+
+function SuspendUI(props: SuspendUIProps) {
+  switch (props.data.toolName) {
+    case "delete_records":
+      return <ApprovalSuspendUI {...props} />;
+    case "book_flight":
+      return <FlightPickerSuspendUI {...props} />;
+    case "send_email":
+      return <EmailPreviewSuspendUI {...props} />;
+    default:
+      return <ApprovalSuspendUI {...props} />;
+  }
 }
 
 const DEBUG_WIDTH = 480;
