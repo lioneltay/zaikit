@@ -11,6 +11,14 @@
     },
     "check-types": {
       "dependsOn": ["^build"]
+    },
+    "generate-types": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "cache": false
     }
   }
 }

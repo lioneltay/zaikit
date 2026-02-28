@@ -3,14 +3,18 @@ import type { UIMessage } from "ai";
 
 export type ToolRenderState = "call" | "suspended" | "result";
 
-export type ToolRenderProps = {
+export type ToolRenderProps<
+  TArgs = Record<string, unknown>,
+  TSuspend = unknown,
+  TResume = unknown,
+> = {
   toolCallId: string;
   toolName: string;
   state: ToolRenderState;
-  args: Record<string, unknown>;
-  suspendPayload: unknown | undefined;
-  result: unknown | undefined;
-  resume: (data: unknown) => void;
+  args: TArgs;
+  suspendPayload: TSuspend | undefined;
+  result: unknown;
+  resume: (data: TResume) => void;
 };
 
 export type ToolRenderFn = (props: ToolRenderProps) => React.ReactNode;

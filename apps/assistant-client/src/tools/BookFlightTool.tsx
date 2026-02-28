@@ -1,13 +1,10 @@
 import { useState } from "react";
 import { Box, Button, TextField, Typography } from "@mui/material";
-import type { ToolRenderProps } from "@lioneltay/aikit-react";
+import type { BookFlightToolProps } from "./tools.generated";
 import { ResolvedBanner } from "../components/ResolvedBanner";
 
-type Flight = { id: string; airline: string; price: number; departure: string };
-
-export function BookFlightTool(props: ToolRenderProps) {
-  const flights =
-    (props.suspendPayload as { flights?: Flight[] } | undefined)?.flights ?? [];
+export function BookFlightTool(props: BookFlightToolProps) {
+  const flights = props.suspendPayload?.flights ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [seat, setSeat] = useState<"window" | "aisle" | "middle">("window");
 
@@ -88,12 +85,13 @@ export function BookFlightTool(props: ToolRenderProps) {
         variant="contained"
         size="small"
         disabled={!selectedId}
-        onClick={() =>
+        onClick={() => {
+          if (!selectedId) return;
           props.resume({
             selectedFlightId: selectedId,
             seatPreference: seat,
-          })
-        }
+          });
+        }}
       >
         Book
       </Button>

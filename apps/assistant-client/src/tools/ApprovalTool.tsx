@@ -1,11 +1,9 @@
 import { Box, Button, Typography } from "@mui/material";
-import type { ToolRenderProps } from "@lioneltay/aikit-react";
+import type { DeleteRecordsToolProps } from "./tools.generated";
 import { ResolvedBanner } from "../components/ResolvedBanner";
 
-export function ApprovalTool(props: ToolRenderProps) {
-  const message =
-    (props.suspendPayload as { message?: string } | undefined)?.message ??
-    "Confirm?";
+export function ApprovalTool(props: DeleteRecordsToolProps) {
+  const message = props.suspendPayload?.message ?? "Confirm?";
 
   if (props.state === "result") {
     return <ResolvedBanner>{message} — Resolved</ResolvedBanner>;

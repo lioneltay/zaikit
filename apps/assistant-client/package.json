@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "check-types": "tsc -b"
+    "check-types": "tsc -b",
+    "generate-types": "aikit-codegen-react --agent ../assistant-backend/src/agent/index.ts --output ./src/tools/tools.generated.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^3",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "@lioneltay/aikit-assistant-backend": "workspace:*",
+    "@lioneltay/aikit-codegen-react": "workspace:*",
     "@lioneltay/aikit-typescript-config": "workspace:*",
     "@types/react": "^19",
     "@types/react-dom": "^19",

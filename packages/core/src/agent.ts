@@ -14,10 +14,10 @@ import { isSuspendResult } from "./suspend.js";
 import { hasSuspendedTool } from "./stop-conditions.js";
 import { runWithSuspendContext } from "./suspend-context.js";
 
-type CreateAgentOptions = {
+type CreateAgentOptions<T extends ToolSet = ToolSet> = {
   model: LanguageModel;
   system?: string;
-  tools?: ToolSet;
+  tools?: T;
   memory?: Memory;
   stopWhen?: StopCondition<ToolSet>;
 };
@@ -26,19 +26,27 @@ export type ChatOptions =
   | { threadId: string; message: UIMessage }
   | { threadId: string; resume: { toolCallId: string; data: unknown } };
 
-export type Agent = ReturnType<typeof createAgent>;
+export type Agent<T extends ToolSet = ToolSet> = {
+  tools: T;
+  memory: Memory | undefined;
+  chat(options: ChatOptions): Promise<Response>;
+};
 
-export function createAgent({
+export function createAgent<T extends ToolSet>({
   model,
   system,
   tools,
   memory,
   stopWhen,
-}: CreateAgentOptions) {
+}: CreateAgentOptions<T>): Agent<T> {
   // Always stop when a tool suspends so the client can prompt the user.
   // User-provided stopWhen conditions are composed alongside this.
-  const composedStopWhen: StopCondition<ToolSet>[] = [hasSuspendedTool];
-  if (stopWhen) composedStopWhen.push(stopWhen);
+  // Cast: StopCondition<ToolSet> → StopCondition<T>. Safe because T extends
+  // ToolSet and stop conditions only read tool results (contravariant).
+  const composedStopWhen: StopCondition<T>[] = [
+    hasSuspendedTool as unknown as StopCondition<T>,
+  ];
+  if (stopWhen) composedStopWhen.push(stopWhen as unknown as StopCondition<T>);
 
   const streamOptions = { model, system, tools, stopWhen: composedStopWhen };
 
@@ -299,6 +307,7 @@ export function createAgent({
   }
 
   return {
+    tools: tools ?? ({} as T),
     memory,
     async chat(options: ChatOptions): Promise<Response> {
       if (!memory) {
