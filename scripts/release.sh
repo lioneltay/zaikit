@@ -39,18 +39,18 @@ echo "Running build, lint, and type-check..."
 pnpm build && pnpm lint && pnpm check-types
 
 echo ""
-echo "Publishing packages..."
-for pkg in "${PACKAGES[@]}"; do
-  DIR=$(dirname "$pkg")
-  echo "Publishing $(node -p "require('./$pkg').name")@$NEXT"
-  pnpm -C "$DIR" publish --access public --no-git-checks
-done
-
-echo ""
 echo "Committing and tagging..."
 git add .
 git commit -m "release: v$NEXT"
 git tag "v$NEXT"
+
+echo ""
+echo "Publishing packages..."
+for pkg in "${PACKAGES[@]}"; do
+  DIR=$(dirname "$pkg")
+  echo "Publishing $(node -p "require('./$pkg').name")@$NEXT"
+  pnpm -C "$DIR" publish --access public
+done
 
 echo ""
 echo "Pushing..."
