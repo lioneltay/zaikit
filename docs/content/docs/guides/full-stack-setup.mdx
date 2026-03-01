@@ -3,8 +3,6 @@ title: Full-Stack Setup
 description: Wire up a ZAIKit backend and React frontend with thread management, CORS, and persistent memory.
 ---
 
-# Full-Stack Setup
-
 This guide walks through wiring a ZAIKit agent on the backend to a React frontend with thread management, message persistence, and streaming.
 
 ## Project Structure
@@ -163,6 +161,7 @@ import { Chat } from "./Chat";
 type Thread = {
   id: string;
   title: string | null;
+  ownerId: string | null;
   createdAt: string;
   updatedAt: string;
 };

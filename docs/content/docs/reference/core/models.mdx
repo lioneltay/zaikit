@@ -3,8 +3,6 @@ title: Models & Re-exports
 description: Pre-configured model exports and re-exports from the AI SDK.
 ---
 
-# Models & Re-exports
-
 `@zaikit/core` provides a few pre-configured model instances and re-exports commonly used utilities from the AI SDK and internal modules.
 
 ```ts
@@ -92,26 +90,26 @@ These are re-exported from the `ai` package for convenience:
 For reference, here is the complete export list from `@zaikit/core`:
 
 ```ts
-// Models
-export { model, fastModel, proModel } from "./model.js";
+// AI SDK re-exports
+export { convertToModelMessages, streamText } from "ai";
 
 // Agent
-export { createAgent } from "./agent.js";
-export type { Agent, ChatOptions, FrontendToolDef } from "./agent.js";
-
-// AI SDK re-exports
-export { streamText, convertToModelMessages } from "ai";
-
-// Memory
-export type { Memory, Thread } from "./memory.js";
+export type { Agent, ChatOptions, FrontendToolDef } from "./agent";
+export { createAgent } from "./agent";
 
 // Tools
-export { createTool } from "./create-tool.js";
-export type { ZaikitTool } from "./create-tool.js";
+export type { ZaikitTool } from "./create-tool";
+export { createTool } from "./create-tool";
+
+// Memory
+export type { Memory, Thread } from "./memory";
+
+// Models
+export { fastModel, model, proModel } from "./model";
 
 // Suspend
-export { isSuspendResult } from "./suspend.js";
-export type { SuspendResult } from "./suspend.js";
-export { hasSuspendedTool } from "./stop-conditions.js";
-export { runWithSuspendContext, getResumeData } from "./suspend-context.js";
+export { hasSuspendedTool } from "./stop-conditions";
+export type { SuspendResult } from "./suspend";
+export { isSuspendResult } from "./suspend";
+export { getResumeData, runWithSuspendContext } from "./suspend-context";
 ```

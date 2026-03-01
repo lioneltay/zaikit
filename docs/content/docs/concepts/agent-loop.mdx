@@ -3,8 +3,6 @@ title: The Agent Loop
 description: How streamText loops through model calls, tool execution, and stop conditions.
 ---
 
-# The Agent Loop
-
 At the core of every agent is a loop: the model generates a response, optionally calls tools, the tool results are fed back, and the model generates again. This continues until a stop condition is met. ZAIKit delegates the entire loop to the AI SDK's `streamText`.
 
 ## The Loop

@@ -3,8 +3,6 @@ title: Memory
 description: How ZAIKit persists threads and messages, and how to implement a custom adapter.
 ---
 
-# Memory
-
 Memory is ZAIKit's persistence layer. It stores conversation threads and their messages so the agent can load history, save new responses, and update messages during suspend/resume. Memory is required for `agent.chat()` to function.
 
 ## What Memory Does
@@ -89,6 +87,7 @@ const titleResult = await generateText({
     "Generate a concise 3-6 word title for this conversation based on the user's message. Return only the title, no quotes or punctuation.",
   prompt: userText,
 });
+const title = titleResult.text.trim();
 
 if (title) {
   await memory.updateThread(threadId, { title });

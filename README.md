@@ -1,4 +1,4 @@
-# ZAIKit
+# <img src="logo.svg" width="28" height="28" alt="" /> ZAIKit
 
 A toolkit for building AI-powered applications with TypeScript.
 
