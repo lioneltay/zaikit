@@ -3,12 +3,6 @@
 ## Tasks
 
 - make sure renderers have correct state? we can add a suspend state?
-- publish the packages
-- create readme
-
-## Marketing
-
-- get logo
 
 ## Ideas
 

@@ -6,7 +6,7 @@ import "./global.css";
 
 export const metadata: Metadata = {
   title: {
-    template: "%s | ZAIKit",
+    template: "%s",
     default: "ZAIKit",
   },
 };
