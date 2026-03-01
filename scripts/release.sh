@@ -40,7 +40,7 @@ pnpm build && pnpm lint && pnpm check-types
 
 echo ""
 echo "Committing and tagging..."
-git add .
+git add "${PACKAGES[@]}"
 git commit -m "release: v$NEXT"
 git tag "v$NEXT"
 
@@ -49,7 +49,7 @@ echo "Publishing packages..."
 for pkg in "${PACKAGES[@]}"; do
   DIR=$(dirname "$pkg")
   echo "Publishing $(node -p "require('./$pkg').name")@$NEXT"
-  pnpm -C "$DIR" publish --access public
+  (cd "$DIR" && pnpm publish --access public)
 done
 
 echo ""
