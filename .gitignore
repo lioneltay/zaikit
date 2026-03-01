@@ -7,6 +7,20 @@ dist
 *.tsbuildinfo
 *.d.ts.map
 
+# Credentials & keys
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+service-account*.json
+
+# Planning docs
+planfiles/
+
+# Test coverage
+coverage/
+
 # tsc project reference output
 apps/assistant-client/vite.config.js
 apps/assistant-client/vite.config.js.map
