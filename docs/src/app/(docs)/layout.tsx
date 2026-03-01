@@ -15,6 +15,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             ZAIKit
           </>
         ),
+        githubUrl: "https://github.com/lioneltay/zaikit",
       }}
     >
       {children}
