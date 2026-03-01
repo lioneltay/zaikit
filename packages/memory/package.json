@@ -1,11 +1,11 @@
 {
-  "name": "@zaikit/core",
+  "name": "@zaikit/memory",
   "version": "0.1.1",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/lioneltay/zaikit.git",
-    "directory": "packages/core"
+    "directory": "packages/memory"
   },
   "homepage": "https://zaikit.dev",
   "bugs": "https://github.com/lioneltay/zaikit/issues",
@@ -26,18 +26,12 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "check-types": "tsc --noEmit",
-    "test": "vitest run"
+    "check-types": "tsc --noEmit"
   },
   "dependencies": {
-    "@zaikit/memory": "workspace:*",
-    "ai": "^6",
-    "@ai-sdk/google-vertex": "^4",
-    "@ai-sdk/provider": "^3",
-    "zod": "^4"
+    "ai": "^6"
   },
   "devDependencies": {
-    "@zaikit/memory-inmemory": "workspace:*",
     "@zaikit/typescript-config": "workspace:*",
     "tsup": "^8",
     "typescript": "^5",

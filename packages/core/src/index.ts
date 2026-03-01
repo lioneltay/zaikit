@@ -1,9 +1,9 @@
+export type { Memory, Thread } from "@zaikit/memory";
 export { convertToModelMessages, streamText } from "ai";
 export type { Agent, ChatOptions, FrontendToolDef } from "./agent";
 export { createAgent } from "./agent";
 export type { ZaikitTool } from "./create-tool";
 export { createTool } from "./create-tool";
-export type { Memory, Thread } from "./memory";
 export { fastModel, model, proModel } from "./model";
 export { hasSuspendedTool } from "./stop-conditions";
 export type { SuspendResult } from "./suspend";

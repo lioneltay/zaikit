@@ -8,6 +8,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   return (
     <DocsLayout
       tree={source.pageTree}
+      githubUrl="https://github.com/lioneltay/zaikit"
       nav={{
         title: (
           <>
@@ -15,7 +16,6 @@ export default function Layout({ children }: { children: ReactNode }) {
             ZAIKit
           </>
         ),
-        githubUrl: "https://github.com/lioneltay/zaikit",
       }}
     >
       {children}

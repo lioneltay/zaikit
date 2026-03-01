@@ -1,4 +1,4 @@
-import type { Memory } from "@zaikit/core";
+import type { Memory } from "@zaikit/memory";
 import type { UIMessage } from "ai";
 import postgres from "postgres";
 

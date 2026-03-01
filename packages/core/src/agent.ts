@@ -1,3 +1,4 @@
+import type { Memory } from "@zaikit/memory";
 import {
   convertToModelMessages,
   createUIMessageStream,
@@ -11,7 +12,6 @@ import {
   tool,
   type UIMessage,
 } from "ai";
-import type { Memory } from "./memory";
 import { hasSuspendedTool } from "./stop-conditions";
 import { isSuspendResult } from "./suspend";
 import { runWithSuspendContext } from "./suspend-context";

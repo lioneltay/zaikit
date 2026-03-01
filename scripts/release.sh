@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PACKAGES=(
+  packages/memory/package.json
   packages/core/package.json
   packages/react/package.json
   packages/memory-postgres/package.json
