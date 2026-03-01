@@ -1,7 +1,7 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
-import type { ReactNode } from "react";
 import type { Metadata } from "next";
-import { Outfit, JetBrains_Mono } from "next/font/google";
+import { JetBrains_Mono, Outfit } from "next/font/google";
+import type { ReactNode } from "react";
 import "./global.css";
 
 export const metadata: Metadata = {

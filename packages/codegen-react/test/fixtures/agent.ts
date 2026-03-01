@@ -1,4 +1,4 @@
-import { createTool, createAgent, model } from "@zaikit/core";
+import { createAgent, createTool, model } from "@zaikit/core";
 import { z } from "zod";
 
 const greet = createTool({
@@ -30,7 +30,7 @@ const bookFlight = createTool({
     selectedIndex: z.number(),
     notes: z.string().optional(),
   }),
-  execute: async ({ input, suspend, resumeData }) => {
+  execute: async ({ suspend, resumeData }) => {
     if (resumeData) {
       return { confirmation: `Booked flight ${resumeData.selectedIndex}` };
     }

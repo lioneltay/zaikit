@@ -1,11 +1,11 @@
-import { z } from "zod";
-import { Box, Button, Typography, Paper } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
-import { useToolRenderer } from "./tools.generated";
+import { Box, Button, Paper, Typography } from "@mui/material";
 import { useTool } from "@zaikit/react";
+import { z } from "zod";
 import { ApprovalTool } from "./ApprovalTool";
 import { BookFlightTool } from "./BookFlightTool";
 import { SendEmailTool } from "./SendEmailTool";
+import { useToolRenderer } from "./tools.generated";
 
 function FrontendTools() {
   // Handler-only: runs automatically, no UI

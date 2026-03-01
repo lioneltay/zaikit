@@ -1,18 +1,18 @@
+import AddIcon from "@mui/icons-material/Add";
+import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
+import DeleteIcon from "@mui/icons-material/Delete";
 import {
+  Box,
+  Button,
+  IconButton,
   List,
   ListItemButton,
-  ListItemText,
   ListItemIcon,
-  IconButton,
   ListItemSecondaryAction,
+  ListItemText,
   Typography,
-  Button,
-  Box,
 } from "@mui/material";
-import DeleteIcon from "@mui/icons-material/Delete";
-import AddIcon from "@mui/icons-material/Add";
-import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import type { Thread } from "./trpc";
 
 type ConversationListProps = {
@@ -34,7 +34,16 @@ export default function ConversationList({
 }: ConversationListProps) {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, px: 1.5, pt: 2, pb: 1 }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1,
+          px: 1.5,
+          pt: 2,
+          pb: 1,
+        }}
+      >
         <Button
           variant="outlined"
           startIcon={<AddIcon />}

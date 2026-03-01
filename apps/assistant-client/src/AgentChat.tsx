@@ -1,10 +1,10 @@
-import { useState, Fragment } from "react";
+import BugReportIcon from "@mui/icons-material/BugReport";
+import SendIcon from "@mui/icons-material/Send";
+import { Box, IconButton, TextField, Typography } from "@mui/material";
+import { useAgent } from "@zaikit/react";
+import { Fragment, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Box, TextField, IconButton, Typography } from "@mui/material";
-import SendIcon from "@mui/icons-material/Send";
-import BugReportIcon from "@mui/icons-material/BugReport";
-import { useAgent } from "@zaikit/react";
 import { DebugSidebar } from "./DebugSidebar";
 
 const markdownStyles = {
@@ -162,7 +162,9 @@ export function AgentChat({
                         if (!isUser) {
                           return (
                             <Box key={i} sx={markdownStyles}>
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>{part.text}</ReactMarkdown>
+                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                {part.text}
+                              </ReactMarkdown>
                             </Box>
                           );
                         }
@@ -173,7 +175,8 @@ export function AgentChat({
                         part.type.startsWith("tool-")
                       ) {
                         const rendered = renderToolPart(part);
-                        if (rendered) return <Fragment key={i}>{rendered}</Fragment>;
+                        if (rendered)
+                          return <Fragment key={i}>{rendered}</Fragment>;
                         return (
                           <Typography
                             key={i}

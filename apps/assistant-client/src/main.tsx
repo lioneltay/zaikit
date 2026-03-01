@@ -1,6 +1,6 @@
+import { createTheme, ThemeProvider } from "@mui/material/styles";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { createTheme, ThemeProvider } from "@mui/material/styles";
 import App from "./App";
 
 const theme = createTheme({
@@ -52,10 +52,10 @@ const theme = createTheme({
   },
 });
 
-createRoot(document.getElementById("root")!).render(
+createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
     <ThemeProvider theme={theme}>
       <App />
     </ThemeProvider>
-  </StrictMode>
+  </StrictMode>,
 );

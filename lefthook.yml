@@ -1,0 +1,8 @@
+pre-commit:
+  commands:
+    lint:
+      glob: "*.{js,ts,jsx,tsx,json,jsonc}"
+      run: pnpm biome check --staged --write --no-errors-on-unmatched
+      stage_fixed: true
+    check-types:
+      run: pnpm check-types

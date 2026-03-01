@@ -1,6 +1,6 @@
 import { initTRPC } from "@trpc/server";
-import { z } from "zod";
 import type { Agent } from "@zaikit/core";
+import { z } from "zod";
 
 export function createAppRouter(agent: Agent) {
   if (!agent.memory) {

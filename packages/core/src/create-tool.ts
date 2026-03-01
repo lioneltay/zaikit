@@ -1,6 +1,10 @@
-import { tool, type Tool } from "ai";
+import { type Tool, tool } from "ai";
 import type { z } from "zod";
-import { type SuspendResult, isSuspendResult, suspend as suspendFn } from "./suspend.js";
+import {
+  isSuspendResult,
+  type SuspendResult,
+  suspend as suspendFn,
+} from "./suspend.js";
 import { getResumeData } from "./suspend-context.js";
 
 // Enriched tool type that preserves all type parameters for codegen.
@@ -36,16 +40,17 @@ type RegularToolOptions<INPUT, OUTPUT> = BaseToolOptions<INPUT> & {
 };
 
 // Suspendable tool options (with suspend/resume schemas)
-type SuspendableToolOptions<INPUT, OUTPUT, SUSPEND, RESUME> = BaseToolOptions<INPUT> & {
-  outputSchema?: z.ZodType<OUTPUT>;
-  suspendSchema: z.ZodType<SUSPEND>;
-  resumeSchema: z.ZodType<RESUME>;
-  execute: (ctx: {
-    input: INPUT;
-    suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
-    resumeData: RESUME | undefined;
-  }) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
-};
+type SuspendableToolOptions<INPUT, OUTPUT, SUSPEND, RESUME> =
+  BaseToolOptions<INPUT> & {
+    outputSchema?: z.ZodType<OUTPUT>;
+    suspendSchema: z.ZodType<SUSPEND>;
+    resumeSchema: z.ZodType<RESUME>;
+    execute: (ctx: {
+      input: INPUT;
+      suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
+      resumeData: RESUME | undefined;
+    }) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
+  };
 
 export function createTool<INPUT, OUTPUT>(
   options: RegularToolOptions<INPUT, OUTPUT>,

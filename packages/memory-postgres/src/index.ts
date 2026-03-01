@@ -1,6 +1,6 @@
-import postgres from "postgres";
+import type { Memory } from "@zaikit/core";
 import type { UIMessage } from "ai";
-import type { Memory, Thread } from "@zaikit/core";
+import postgres from "postgres";
 
 type PostgresMemoryOptions = {
   connectionString: string;

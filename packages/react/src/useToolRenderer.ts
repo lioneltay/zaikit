@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { useAgent } from "./useAgent.js";
 import type { ToolRenderFn } from "./types.js";
+import { useAgent } from "./useAgent.js";
 
 export function useToolRenderer(toolName: string, render: ToolRenderFn): void {
   const { registerToolRenderer } = useAgent();

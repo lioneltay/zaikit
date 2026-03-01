@@ -1,7 +1,7 @@
-import { useState } from "react";
 import { Box, Button, TextField, Typography } from "@mui/material";
-import type { BookFlightToolProps } from "./tools.generated";
+import { useState } from "react";
 import { ResolvedBanner } from "../components/ResolvedBanner";
+import type { BookFlightToolProps } from "./tools.generated";
 
 export function BookFlightTool(props: BookFlightToolProps) {
   const flights = props.suspendPayload?.flights ?? [];

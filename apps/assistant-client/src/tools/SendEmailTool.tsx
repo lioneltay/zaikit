@@ -1,14 +1,16 @@
-import { useState } from "react";
 import { Box, Button, TextField, Typography } from "@mui/material";
-import type { SendEmailToolProps } from "./tools.generated";
+import { useState } from "react";
 import { ResolvedBanner } from "../components/ResolvedBanner";
+import type { SendEmailToolProps } from "./tools.generated";
 
 export function SendEmailTool(props: SendEmailToolProps) {
   const preview = props.suspendPayload?.preview;
   // Fall back to tool args when suspend payload isn't available (e.g. after message refetch)
   const args = props.args;
   const [to, setTo] = useState(preview?.to ?? args.to ?? "");
-  const [subject, setSubject] = useState(preview?.subject ?? args.subject ?? "");
+  const [subject, setSubject] = useState(
+    preview?.subject ?? args.subject ?? "",
+  );
   const [body, setBody] = useState(preview?.body ?? args.body ?? "");
 
   if (props.state === "result") {

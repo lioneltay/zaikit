@@ -1,17 +1,17 @@
-import { useState, useMemo, memo } from "react";
-import type { UIMessage } from "ai";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
+  Chip,
   Paper,
   Tab,
   Tabs,
-  Chip,
   Typography,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
 } from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import type { UIMessage } from "ai";
+import { memo, useMemo, useState } from "react";
 
 const DEBUG_WIDTH = 480;
 
@@ -36,8 +36,8 @@ const partTypeColors: Record<string, { bg: string; fg: string }> = {
 
 function getPartColor(type: string): { bg: string; fg: string } {
   if (partTypeColors[type]) return partTypeColors[type];
-  if (type.startsWith("tool-")) return partTypeColors["tool"];
-  if (type.startsWith("data-")) return partTypeColors["data"];
+  if (type.startsWith("tool-")) return partTypeColors.tool;
+  if (type.startsWith("data-")) return partTypeColors.data;
   return { bg: "#616161", fg: "#fff" };
 }
 
@@ -54,7 +54,15 @@ function JsonLine({
     <Box component="div" sx={{ pl: `${indent * 14}px`, lineHeight: 1.6 }}>
       {keyName !== undefined && (
         <>
-          <Box component="span" sx={{ color: typeof keyName === "number" ? jsonColors.number : jsonColors.key }}>
+          <Box
+            component="span"
+            sx={{
+              color:
+                typeof keyName === "number"
+                  ? jsonColors.number
+                  : jsonColors.key,
+            }}
+          >
             {typeof keyName === "string" ? `"${keyName}"` : keyName}
           </Box>
           <Box component="span" sx={{ color: jsonColors.punctuation }}>
@@ -83,7 +91,9 @@ const JsonValue = memo(function JsonValue({
   if (data === null) {
     return (
       <JsonLine indent={indentLevel} keyName={keyName}>
-        <Box component="span" sx={{ color: jsonColors.null }}>null</Box>
+        <Box component="span" sx={{ color: jsonColors.null }}>
+          null
+        </Box>
       </JsonLine>
     );
   }
@@ -91,7 +101,9 @@ const JsonValue = memo(function JsonValue({
   if (typeof data === "boolean") {
     return (
       <JsonLine indent={indentLevel} keyName={keyName}>
-        <Box component="span" sx={{ color: jsonColors.boolean }}>{String(data)}</Box>
+        <Box component="span" sx={{ color: jsonColors.boolean }}>
+          {String(data)}
+        </Box>
       </JsonLine>
     );
   }
@@ -99,16 +111,20 @@ const JsonValue = memo(function JsonValue({
   if (typeof data === "number") {
     return (
       <JsonLine indent={indentLevel} keyName={keyName}>
-        <Box component="span" sx={{ color: jsonColors.number }}>{data}</Box>
+        <Box component="span" sx={{ color: jsonColors.number }}>
+          {data}
+        </Box>
       </JsonLine>
     );
   }
 
   if (typeof data === "string") {
-    const display = data.length > 120 ? data.slice(0, 117) + "..." : data;
+    const display = data.length > 120 ? `${data.slice(0, 117)}...` : data;
     return (
       <JsonLine indent={indentLevel} keyName={keyName}>
-        <Box component="span" sx={{ color: jsonColors.string }}>"{display}"</Box>
+        <Box component="span" sx={{ color: jsonColors.string }}>
+          "{display}"
+        </Box>
       </JsonLine>
     );
   }
@@ -117,7 +133,9 @@ const JsonValue = memo(function JsonValue({
     if (data.length === 0) {
       return (
         <JsonLine indent={indentLevel} keyName={keyName}>
-          <Box component="span" sx={{ color: jsonColors.bracket }}>[]</Box>
+          <Box component="span" sx={{ color: jsonColors.bracket }}>
+            []
+          </Box>
         </JsonLine>
       );
     }
@@ -131,7 +149,11 @@ const JsonValue = memo(function JsonValue({
           <Box
             component="span"
             onClick={() => setExpanded(true)}
-            sx={{ color: jsonColors.bracket, cursor: "pointer", "&:hover": { textDecoration: "underline" } }}
+            sx={{
+              color: jsonColors.bracket,
+              cursor: "pointer",
+              "&:hover": { textDecoration: "underline" },
+            }}
           >
             [{`...${data.length} items`}]
           </Box>
@@ -145,16 +167,26 @@ const JsonValue = memo(function JsonValue({
           <Box
             component="span"
             onClick={autoExpand ? undefined : () => setExpanded(false)}
-            sx={{ color: jsonColors.bracket, cursor: autoExpand ? "default" : "pointer" }}
+            sx={{
+              color: jsonColors.bracket,
+              cursor: autoExpand ? "default" : "pointer",
+            }}
           >
             [
           </Box>
         </JsonLine>
         {data.map((item, i) => (
-          <JsonValue key={i} data={item} indentLevel={indentLevel + 1} keyName={i} />
+          <JsonValue
+            key={i}
+            data={item}
+            indentLevel={indentLevel + 1}
+            keyName={i}
+          />
         ))}
         <JsonLine indent={indentLevel}>
-          <Box component="span" sx={{ color: jsonColors.bracket }}>]</Box>
+          <Box component="span" sx={{ color: jsonColors.bracket }}>
+            ]
+          </Box>
         </JsonLine>
       </>
     );
@@ -166,7 +198,9 @@ const JsonValue = memo(function JsonValue({
     if (entries.length === 0) {
       return (
         <JsonLine indent={indentLevel} keyName={keyName}>
-          <Box component="span" sx={{ color: jsonColors.bracket }}>{"{}"}</Box>
+          <Box component="span" sx={{ color: jsonColors.bracket }}>
+            {"{}"}
+          </Box>
         </JsonLine>
       );
     }
@@ -180,7 +214,11 @@ const JsonValue = memo(function JsonValue({
           <Box
             component="span"
             onClick={() => setExpanded(true)}
-            sx={{ color: jsonColors.bracket, cursor: "pointer", "&:hover": { textDecoration: "underline" } }}
+            sx={{
+              color: jsonColors.bracket,
+              cursor: "pointer",
+              "&:hover": { textDecoration: "underline" },
+            }}
           >
             {`{...${entries.length} entries}`}
           </Box>
@@ -194,16 +232,26 @@ const JsonValue = memo(function JsonValue({
           <Box
             component="span"
             onClick={autoExpand ? undefined : () => setExpanded(false)}
-            sx={{ color: jsonColors.bracket, cursor: autoExpand ? "default" : "pointer" }}
+            sx={{
+              color: jsonColors.bracket,
+              cursor: autoExpand ? "default" : "pointer",
+            }}
           >
             {"{"}
           </Box>
         </JsonLine>
         {entries.map(([k, v]) => (
-          <JsonValue key={k} data={v} indentLevel={indentLevel + 1} keyName={k} />
+          <JsonValue
+            key={k}
+            data={v}
+            indentLevel={indentLevel + 1}
+            keyName={k}
+          />
         ))}
         <JsonLine indent={indentLevel}>
-          <Box component="span" sx={{ color: jsonColors.bracket }}>{"}"}</Box>
+          <Box component="span" sx={{ color: jsonColors.bracket }}>
+            {"}"}
+          </Box>
         </JsonLine>
       </>
     );
@@ -211,7 +259,9 @@ const JsonValue = memo(function JsonValue({
 
   return (
     <JsonLine indent={indentLevel} keyName={keyName}>
-      <Box component="span" sx={{ color: jsonColors.string }}>{String(data)}</Box>
+      <Box component="span" sx={{ color: jsonColors.string }}>
+        {String(data)}
+      </Box>
     </JsonLine>
   );
 });
@@ -222,7 +272,8 @@ function PartItem({ part }: { part: Record<string, unknown> }) {
 
   let preview = "";
   if (type === "text" && typeof part.text === "string") {
-    preview = part.text.length > 60 ? part.text.slice(0, 57) + "..." : part.text;
+    preview =
+      part.text.length > 60 ? `${part.text.slice(0, 57)}...` : part.text;
   } else if (typeof part.toolName === "string") {
     preview = part.toolName;
   }
@@ -245,7 +296,12 @@ function PartItem({ part }: { part: Record<string, unknown> }) {
         sx={{
           minHeight: 32,
           px: 1,
-          "& .MuiAccordionSummary-content": { my: 0.5, alignItems: "center", gap: 1, minWidth: 0 },
+          "& .MuiAccordionSummary-content": {
+            my: 0.5,
+            alignItems: "center",
+            gap: 1,
+            minWidth: 0,
+          },
         }}
       >
         <Chip
@@ -275,7 +331,14 @@ function PartItem({ part }: { part: Record<string, unknown> }) {
         )}
       </AccordionSummary>
       <AccordionDetails sx={{ p: 1, pt: 0 }}>
-        <Box sx={{ fontFamily: "monospace", fontSize: "0.7rem", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        <Box
+          sx={{
+            fontFamily: "monospace",
+            fontSize: "0.7rem",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
           <JsonValue data={rest} defaultExpanded />
         </Box>
       </AccordionDetails>
@@ -291,7 +354,8 @@ const MessageCard = memo(function MessageCard({
   index: number;
 }) {
   const roleColor = message.role === "user" ? "primary" : "secondary";
-  const truncatedId = message.id.length > 8 ? message.id.slice(0, 8) + "..." : message.id;
+  const truncatedId =
+    message.id.length > 8 ? `${message.id.slice(0, 8)}...` : message.id;
 
   return (
     <Paper
@@ -303,15 +367,38 @@ const MessageCard = memo(function MessageCard({
         overflow: "hidden",
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, px: 1, py: 0.5, borderBottom: "1px solid #3e3e42" }}>
-        <Chip label={message.role} color={roleColor} size="small" sx={{ fontSize: "0.65rem", height: 20 }} />
-        <Typography variant="caption" sx={{ color: "#808080", fontSize: "0.65rem" }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 0.75,
+          px: 1,
+          py: 0.5,
+          borderBottom: "1px solid #3e3e42",
+        }}
+      >
+        <Chip
+          label={message.role}
+          color={roleColor}
+          size="small"
+          sx={{ fontSize: "0.65rem", height: 20 }}
+        />
+        <Typography
+          variant="caption"
+          sx={{ color: "#808080", fontSize: "0.65rem" }}
+        >
           #{index}
         </Typography>
-        <Typography variant="caption" sx={{ color: "#606060", fontSize: "0.6rem", fontFamily: "monospace" }}>
+        <Typography
+          variant="caption"
+          sx={{ color: "#606060", fontSize: "0.6rem", fontFamily: "monospace" }}
+        >
           {truncatedId}
         </Typography>
-        <Typography variant="caption" sx={{ color: "#606060", fontSize: "0.6rem", ml: "auto" }}>
+        <Typography
+          variant="caption"
+          sx={{ color: "#606060", fontSize: "0.6rem", ml: "auto" }}
+        >
           {message.parts.length} part{message.parts.length !== 1 ? "s" : ""}
         </Typography>
       </Box>
@@ -369,7 +456,12 @@ export function DebugSidebar({
           borderBottom: "1px solid #3e3e42",
           minHeight: 36,
           bgcolor: "#252526",
-          "& .MuiTab-root": { color: "#808080", minHeight: 36, py: 0, fontSize: "0.75rem" },
+          "& .MuiTab-root": {
+            color: "#808080",
+            minHeight: 36,
+            py: 0,
+            fontSize: "0.75rem",
+          },
           "& .Mui-selected": { color: "#d4d4d4 !important" },
           "& .MuiTabs-indicator": { bgcolor: "#007acc" },
         }}

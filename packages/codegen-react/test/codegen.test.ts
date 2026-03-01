@@ -1,7 +1,7 @@
-import { describe, it, expect } from "vitest";
-import path from "path";
-import { toPascalCase, generateOutput } from "../src/generate.js";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
 import { extractToolTypes, type ToolTypeInfo } from "../src/extract.js";
+import { generateOutput, toPascalCase } from "../src/generate.js";
 
 // ─── toPascalCase ───
 
@@ -97,15 +97,15 @@ describe("extractToolTypes", () => {
   it("extracts a regular tool with null suspend/resume", () => {
     const greet = tools.find((t) => t.name === "greet");
     expect(greet).toBeDefined();
-    expect(greet!.suspend).toBeNull();
-    expect(greet!.resume).toBeNull();
+    expect(greet?.suspend).toBeNull();
+    expect(greet?.resume).toBeNull();
   });
 
   it("extracts a suspendable tool with non-null suspend/resume", () => {
     const bookFlight = tools.find((t) => t.name === "book_flight");
     expect(bookFlight).toBeDefined();
-    expect(bookFlight!.suspend).not.toBeNull();
-    expect(bookFlight!.resume).not.toBeNull();
+    expect(bookFlight?.suspend).not.toBeNull();
+    expect(bookFlight?.resume).not.toBeNull();
   });
 
   it("output types do not contain import(...) expressions", () => {

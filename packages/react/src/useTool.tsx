@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState, useMemo } from "react";
+import type React from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { toJSONSchema, type ZodType } from "zod";
+import type { ToolRenderProps, ToolRenderState } from "./types.js";
 import { useAgent } from "./useAgent.js";
 import { useToolRenderer } from "./useToolRenderer.js";
-import type { ToolRenderProps, ToolRenderState } from "./types.js";
-import { toJSONSchema, type ZodType } from "zod";
 
 export type UseToolRenderProps<INPUT> = {
   args: INPUT;
@@ -59,7 +60,7 @@ function FrontendToolExecutor({
         console.error(`useTool execute "${toolProps.toolName}" failed:`, err);
         setExecuteResult({ value: { error: String(err) } });
       });
-  }, [toolProps.state]);
+  }, [toolProps.state, execute, toolProps.args, toolProps.toolName]);
 
   // Call resume (→ addToolOutput) only after the stream finishes,
   // so sendAutomaticallyWhen can trigger the follow-up request.
@@ -69,7 +70,7 @@ function FrontendToolExecutor({
     if (status !== "ready") return;
     resumedRef.current = true;
     toolProps.resume(executeResult.value);
-  }, [executeResult, status]);
+  }, [executeResult, status, toolProps.resume]);
 
   if (toolProps.state === "result") {
     if (render) {

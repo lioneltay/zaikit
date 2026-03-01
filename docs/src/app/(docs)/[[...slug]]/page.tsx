@@ -1,13 +1,13 @@
-import { source } from "@/lib/source";
 import {
   DocsBody,
   DocsDescription,
   DocsPage,
   DocsTitle,
 } from "fumadocs-ui/page";
-import { notFound } from "next/navigation";
-import { getMDXComponents } from "@/mdx-components";
 import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { source } from "@/lib/source";
+import { getMDXComponents } from "@/mdx-components";
 
 type Props = { params: Promise<{ slug?: string[] }> };
 

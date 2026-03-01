@@ -1,10 +1,10 @@
-import { stepCountIs } from "ai";
-import { z } from "zod";
 import { createAgent, createTool, model } from "@zaikit/core";
 import { createPostgresMemory } from "@zaikit/memory-postgres";
+import { stepCountIs } from "ai";
+import { z } from "zod";
 
 const memory = createPostgresMemory({
-  connectionString: process.env.DATABASE_URL!,
+  connectionString: process.env.DATABASE_URL ?? "",
 });
 
 await memory.initialize();
@@ -78,7 +78,7 @@ const delete_records = createTool({
   },
 });
 
-const generateFlights = (destination: string, date: string) => [
+const generateFlights = (_destination: string, date: string) => [
   {
     id: "QF42",
     airline: "Qantas",

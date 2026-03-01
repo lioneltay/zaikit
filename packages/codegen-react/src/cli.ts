@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import fs from "fs";
-import path from "path";
+import fs from "node:fs";
+import path from "node:path";
 import { extractToolTypes } from "./extract.js";
 import { generateOutput } from "./generate.js";
 
@@ -65,10 +65,9 @@ function main() {
     process.exit(1);
   }
 
-  const tsConfigPath =
-    args.tsconfig
-      ? path.resolve(cwd, args.tsconfig)
-      : findTsConfig(path.dirname(agentPath));
+  const tsConfigPath = args.tsconfig
+    ? path.resolve(cwd, args.tsconfig)
+    : findTsConfig(path.dirname(agentPath));
 
   if (!tsConfigPath) {
     console.error(

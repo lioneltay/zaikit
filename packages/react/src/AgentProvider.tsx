@@ -1,12 +1,6 @@
-import React, {
-  createContext,
-  useRef,
-  useState,
-  useCallback,
-  useMemo,
-} from "react";
-import { useAgentChat } from "./useAgentChat.js";
 import type { UIMessage } from "ai";
+import type React from "react";
+import { createContext, useCallback, useMemo, useRef, useState } from "react";
 import type {
   AgentContextValue,
   FrontendToolRegistration,
@@ -14,6 +8,7 @@ import type {
   ToolRenderProps,
   ToolRenderState,
 } from "./types.js";
+import { useAgentChat } from "./useAgentChat.js";
 
 export const AgentContext = createContext<AgentContextValue | null>(null);
 
@@ -26,10 +21,11 @@ type AgentProviderProps = {
   children: React.ReactNode;
 };
 
-export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) {
-  const frontendToolsRef = useRef(
-    new Map<string, FrontendToolRegistration>(),
-  );
+export function AgentProvider({
+  children,
+  ...chatOptions
+}: AgentProviderProps) {
+  const frontendToolsRef = useRef(new Map<string, FrontendToolRegistration>());
 
   const getFrontendTools = useCallback(
     () => Array.from(frontendToolsRef.current.values()),
@@ -40,7 +36,11 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
     [],
   );
 
-  const chat = useAgentChat({ ...chatOptions, getFrontendTools, isFrontendTool });
+  const chat = useAgentChat({
+    ...chatOptions,
+    getFrontendTools,
+    isFrontendTool,
+  });
 
   const registryRef = useRef(new Map<string, ToolRenderFn>());
   const [, setRegistryVersion] = useState(0);
@@ -113,15 +113,12 @@ export function AgentProvider({ children, ...chatOptions }: AgentProviderProps) 
     [chat.resumeTool, chat.addToolOutput],
   );
 
-  const registerFrontendTool = useCallback(
-    (tool: FrontendToolRegistration) => {
-      frontendToolsRef.current.set(tool.name, tool);
-      return () => {
-        frontendToolsRef.current.delete(tool.name);
-      };
-    },
-    [],
-  );
+  const registerFrontendTool = useCallback((tool: FrontendToolRegistration) => {
+    frontendToolsRef.current.set(tool.name, tool);
+    return () => {
+      frontendToolsRef.current.delete(tool.name);
+    };
+  }, []);
 
   const value: AgentContextValue = useMemo(
     () => ({

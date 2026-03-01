@@ -1,5 +1,5 @@
-import { type LanguageModel } from "ai";
 import { createVertex } from "@ai-sdk/google-vertex";
+import type { LanguageModel } from "ai";
 
 export const vertex = createVertex({
   project: process.env.GOOGLE_CLOUD_PROJECT,

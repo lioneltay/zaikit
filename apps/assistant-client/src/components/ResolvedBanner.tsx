@@ -1,5 +1,5 @@
-import { Box, Typography } from "@mui/material";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import { Box, Typography } from "@mui/material";
 
 export function ResolvedBanner({ children }: { children: React.ReactNode }) {
   return (
@@ -15,9 +15,7 @@ export function ResolvedBanner({ children }: { children: React.ReactNode }) {
         gap: 1,
       }}
     >
-      <CheckCircleOutlineIcon
-        sx={{ fontSize: 20, color: "#4CAF50" }}
-      />
+      <CheckCircleOutlineIcon sx={{ fontSize: 20, color: "#4CAF50" }} />
       <Typography variant="body2" color="text.secondary">
         {children}
       </Typography>

@@ -1,10 +1,10 @@
-import { useState, useMemo, useCallback } from "react";
 import { useChat } from "@ai-sdk/react";
+import type { UIMessage } from "ai";
 import {
   DefaultChatTransport,
   lastAssistantMessageIsCompleteWithToolCalls,
 } from "ai";
-import type { UIMessage } from "ai";
+import { useCallback, useMemo, useState } from "react";
 import type { FrontendToolRegistration } from "./types.js";
 
 export type UseAgentChatOptions = {

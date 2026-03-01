@@ -20,9 +20,7 @@ export function extractToolTypes(options: {
 
   const declarations = sourceFile.getExportedDeclarations().get(exportName);
   if (!declarations || declarations.length === 0) {
-    throw new Error(
-      `Export "${exportName}" not found in ${agentPath}`,
-    );
+    throw new Error(`Export "${exportName}" not found in ${agentPath}`);
   }
   const agentDecl = declarations[0];
   const agentType = agentDecl.getType();
@@ -31,7 +29,7 @@ export function extractToolTypes(options: {
   if (!toolsProp) {
     throw new Error(
       `Agent export "${exportName}" has no "tools" property. ` +
-      `Make sure createAgent is generic (see @zaikit/core).`,
+        `Make sure createAgent is generic (see @zaikit/core).`,
     );
   }
   const toolsType = toolsProp.getTypeAtLocation(agentDecl);

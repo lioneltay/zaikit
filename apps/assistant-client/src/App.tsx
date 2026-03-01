@@ -1,14 +1,20 @@
-import { useState, useEffect, useRef } from "react";
-import type { UIMessage } from "ai";
-import { Box, Drawer, IconButton, Typography, CssBaseline } from "@mui/material";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import MenuIcon from "@mui/icons-material/Menu";
+import {
+  Box,
+  CssBaseline,
+  Drawer,
+  IconButton,
+  Typography,
+} from "@mui/material";
 import { AgentProvider } from "@zaikit/react";
-import ConversationList from "./ConversationList";
-import { trpc } from "./trpc";
-import type { Thread } from "./trpc";
-import { ToolRenderers } from "./tools";
+import type { UIMessage } from "ai";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentChat } from "./AgentChat";
+import ConversationList from "./ConversationList";
+import { ToolRenderers } from "./tools";
+import type { Thread } from "./trpc";
+import { trpc } from "./trpc";
 
 const DRAWER_WIDTH = 280;
 const DRAWER_COLLAPSED_WIDTH = 0;
@@ -22,6 +28,14 @@ export default function App() {
   const initialThreadId = useRef(
     new URLSearchParams(window.location.search).get("threadId"),
   );
+
+  const handleSelectThread = useCallback(async (id: string) => {
+    const msgs = await trpc.thread.getMessages.query({ threadId: id });
+    // tRPC serialization makes some required UIMessage properties optional,
+    // creating a structural mismatch with the AI SDK's UIMessage type.
+    setInitialMessages(msgs as unknown as UIMessage[]);
+    setActiveThreadId(id);
+  }, []);
 
   // Persist activeThreadId in URL
   useEffect(() => {
@@ -43,7 +57,7 @@ export default function App() {
         handleSelectThread(urlThreadId);
       }
     });
-  }, []);
+  }, [handleSelectThread]);
 
   const handleCreateThread = () => {
     const id = crypto.randomUUID();
@@ -58,14 +72,6 @@ export default function App() {
       setActiveThreadId(null);
       setInitialMessages([]);
     }
-  };
-
-  const handleSelectThread = async (id: string) => {
-    const msgs = await trpc.thread.getMessages.query({ threadId: id });
-    // tRPC serialization makes some required UIMessage properties optional,
-    // creating a structural mismatch with the AI SDK's UIMessage type.
-    setInitialMessages(msgs as unknown as UIMessage[]);
-    setActiveThreadId(id);
   };
 
   const drawerWidth = sidebarOpen ? DRAWER_WIDTH : DRAWER_COLLAPSED_WIDTH;
@@ -127,7 +133,9 @@ export default function App() {
               threadId={activeThreadId}
               initialMessages={initialMessages}
               fetchMessages={(threadId) =>
-                trpc.thread.getMessages.query({ threadId }) as unknown as Promise<UIMessage[]>
+                trpc.thread.getMessages.query({
+                  threadId,
+                }) as unknown as Promise<UIMessage[]>
               }
               onFinish={async () => {
                 setThreads(await trpc.thread.list.query());

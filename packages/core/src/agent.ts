@@ -1,19 +1,19 @@
 import {
-  streamText,
-  generateText,
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
-  tool,
+  generateText,
   jsonSchema,
   type LanguageModel,
-  type UIMessage,
-  type ToolSet,
   type StopCondition,
+  streamText,
+  type ToolSet,
+  tool,
+  type UIMessage,
 } from "ai";
 import type { Memory } from "./memory.js";
-import { isSuspendResult } from "./suspend.js";
 import { hasSuspendedTool } from "./stop-conditions.js";
+import { isSuspendResult } from "./suspend.js";
 import { runWithSuspendContext } from "./suspend-context.js";
 
 type CreateAgentOptions<T extends ToolSet = ToolSet> = {
@@ -69,7 +69,8 @@ export function createAgent<T extends ToolSet>({
     const result: ToolSet = {};
     for (const def of defs) {
       // Strip JSON Schema meta-fields that providers like Gemini reject
-      const { $schema, additionalProperties, ...params } = def.parameters as Record<string, unknown>;
+      const { $schema, additionalProperties, ...params } =
+        def.parameters as Record<string, unknown>;
       // No execute — frontend tools stay at input-available so the client
       // can provide output via addToolOutput / toolOutputs.
       result[def.name] = tool({
@@ -174,10 +175,7 @@ export function createAgent<T extends ToolSet>({
   }
 
   // Fire-and-forget title generation
-  async function generateThreadTitle(
-    threadId: string,
-    userMessage: UIMessage,
-  ) {
+  async function generateThreadTitle(threadId: string, userMessage: UIMessage) {
     try {
       if (!memory) return;
       const thread = await memory.getThread(threadId);
@@ -284,7 +282,8 @@ export function createAgent<T extends ToolSet>({
     }
 
     const toolDef = allTools[toolName];
-    if (!toolDef || !toolDef.execute) {
+    const execute = toolDef?.execute;
+    if (!execute) {
       throw new Error(`Tool not found or has no execute: ${toolName}`);
     }
 
@@ -293,7 +292,7 @@ export function createAgent<T extends ToolSet>({
     const output = await runWithSuspendContext(
       { resumeData: resume.data },
       () =>
-        toolDef.execute!(toolInput, {
+        execute(toolInput, {
           toolCallId: resume.toolCallId,
           messages: modelMessages,
         }),
@@ -330,9 +329,7 @@ export function createAgent<T extends ToolSet>({
     // 5. Check for remaining unresolved suspensions (supports multiple
     //    suspendable tools called in a single LLM step)
     const hasRemainingSuspensions = updatedParts.some(
-      (p) =>
-        p.type === "data-tool-suspend" &&
-        !(p as any).data?.resolved,
+      (p) => p.type === "data-tool-suspend" && !(p as any).data?.resolved,
     );
 
     if (hasRemainingSuspensions) {
@@ -374,16 +371,16 @@ export function createAgent<T extends ToolSet>({
 
     const messages = await memory.getMessages(threadId);
     // Find the last assistant message (where tool calls live)
-    const lastAssistantMsg = [...messages].reverse().find((m) => m.role === "assistant");
+    const lastAssistantMsg = [...messages]
+      .reverse()
+      .find((m) => m.role === "assistant");
 
     if (!lastAssistantMsg) {
       throw new Error("No assistant message found to apply tool outputs to");
     }
 
     // Build a map of toolCallId → output for quick lookup
-    const outputMap = new Map(
-      toolOutputs.map((o) => [o.toolCallId, o.output]),
-    );
+    const outputMap = new Map(toolOutputs.map((o) => [o.toolCallId, o.output]));
 
     // Update matching tool parts: input-available → output-available
     const updatedParts = lastAssistantMsg.parts.map(
@@ -395,9 +392,7 @@ export function createAgent<T extends ToolSet>({
           return {
             ...(p as any),
             state: "output-available",
-            output: outputMap.get(
-              (p as { toolCallId: string }).toolCallId,
-            ),
+            output: outputMap.get((p as { toolCallId: string }).toolCallId),
           };
         }
         return p;
@@ -410,9 +405,7 @@ export function createAgent<T extends ToolSet>({
 
     // Check for remaining backend suspensions (data-tool-suspend parts that aren't resolved)
     const hasRemainingSuspensions = updatedParts.some(
-      (p) =>
-        p.type === "data-tool-suspend" &&
-        !(p as any).data?.resolved,
+      (p) => p.type === "data-tool-suspend" && !(p as any).data?.resolved,
     );
 
     if (hasRemainingSuspensions) {
@@ -433,9 +426,7 @@ export function createAgent<T extends ToolSet>({
     memory,
     async chat(options: ChatOptions): Promise<Response> {
       if (!memory) {
-        throw new Error(
-          "chat() requires memory to be configured on the agent",
-        );
+        throw new Error("chat() requires memory to be configured on the agent");
       }
 
       const frontendTools = options.frontendTools;
