@@ -1,40 +1,169 @@
 ---
 title: Getting Started
-description: Install and set up ZAIKit in your project
+description: Install ZAIKit and build a working agent in four steps.
 ---
 
 # Getting Started
 
-## Installation
+This guide walks you through building a working AI agent — from installing packages to rendering tool results in the browser.
 
-Install the core package:
+## Prerequisites
+
+- Node.js 18+
+- An AI SDK model provider (e.g. `@ai-sdk/openai`, `@ai-sdk/google-vertex`, `@ai-sdk/anthropic`)
+
+## Install
 
 ```bash
-pnpm add @zaikit/core
+# Core (required)
+pnpm add @zaikit/core ai zod
+
+# React bindings (for frontend)
+pnpm add @zaikit/react @ai-sdk/react
+
+# PostgreSQL memory (for persistence)
+pnpm add @zaikit/memory-postgres
 ```
 
-For React applications, also install the React bindings:
+## Step 1: Create a Tool
 
-```bash
-pnpm add @zaikit/react
-```
+Tools give your agent abilities. Each tool has a description (so the LLM knows when to use it), a Zod input schema, and an execute function.
 
-## Quick Example
+```ts title="tools.ts"
+import { createTool } from "@zaikit/core";
+import { z } from "zod";
 
-Create a simple agent:
-
-```ts
-import { createAgent, createTool, model } from "@zaikit/core";
-
-const agent = createAgent({
-  model: model("gpt-4o"),
-  tools: [
-    createTool({
-      name: "greet",
-      description: "Greet the user",
-      parameters: { name: { type: "string" } },
-      execute: async ({ name }) => `Hello, ${name}!`,
-    }),
-  ],
+export const get_weather = createTool({
+  description: "Get the current weather for a location",
+  inputSchema: z.object({
+    location: z.string().describe("City name, e.g. 'Sydney'"),
+  }),
+  execute: async ({ input }) => ({
+    location: input.location,
+    temperature: 22,
+    condition: "Sunny",
+  }),
 });
 ```
+
+The execute function receives `{ input }` where `input` is the parsed and validated Zod output. Return any serializable value — it will be fed back to the LLM as the tool result.
+
+## Step 2: Create an Agent
+
+An agent combines a model, tools, and optionally a memory adapter and system prompt.
+
+```ts title="agent.ts"
+import { createAgent } from "@zaikit/core";
+import { openai } from "@ai-sdk/openai";
+import { get_weather } from "./tools";
+
+export const agent = createAgent({
+  model: openai("gpt-4o"),
+  system: "You are a helpful weather assistant.",
+  tools: { get_weather },
+});
+```
+
+The `tools` object uses the key as the tool name. The LLM sees `get_weather` as an available function it can call.
+
+## Step 3: Expose via an HTTP Endpoint
+
+`agent.chat()` accepts a request body and returns a streaming `Response`. Wire it up with any HTTP framework.
+
+```ts title="server.ts"
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+import { createAgent } from "@zaikit/core";
+import { openai } from "@ai-sdk/openai";
+import { get_weather } from "./tools";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+await memory.initialize();
+
+const agent = createAgent({
+  model: openai("gpt-4o"),
+  system: "You are a helpful weather assistant.",
+  tools: { get_weather },
+  memory,
+});
+
+const app = new Hono();
+app.use("/api/*", cors());
+
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json();
+  return agent.chat(body);
+});
+
+export default app;
+```
+
+`agent.chat()` requires memory to be configured. It handles both normal messages and resume requests automatically based on the request body shape.
+
+The body is either:
+- `{ threadId, message }` — a new user message
+- `{ threadId, resume: { toolCallId, data } }` — resuming a suspended tool
+
+## Step 4: Connect from React
+
+On the frontend, wrap your app in `AgentProvider` and use `useAgent()` to access messages and send input.
+
+```tsx title="App.tsx"
+import { AgentProvider, useAgent } from "@zaikit/react";
+
+function Chat() {
+  const { messages, sendMessage, status } = useAgent();
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>
+          {m.parts.map((part, i) =>
+            part.type === "text" ? <p key={i}>{part.text}</p> : null,
+          )}
+        </div>
+      ))}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const input = e.currentTarget.elements.namedItem("msg") as HTMLInputElement;
+          sendMessage?.({ text: input.value });
+          input.value = "";
+        }}
+      >
+        <input name="msg" placeholder="Ask about the weather..." />
+        <button type="submit" disabled={status === "streaming"}>
+          Send
+        </button>
+      </form>
+    </div>
+  );
+}
+
+export default function App() {
+  const threadId = "my-first-thread";
+
+  return (
+    <AgentProvider
+      api="http://localhost:3000/api/chat"
+      threadId={threadId}
+      initialMessages={[]}
+    >
+      <Chat />
+    </AgentProvider>
+  );
+}
+```
+
+`sendMessage` is `undefined` when tools are suspended (waiting for user input). Check for this to disable the input.
+
+## What's Next
+
+- **[Concepts: How It Works](/concepts/how-it-works)** — Understand the architecture and data flow
+- **[Guide: Creating Tools](/guides/creating-tools)** — Build tools with structured output and error handling
+- **[Guide: Human-in-the-Loop](/guides/human-in-the-loop)** — Add suspend/resume for user approval flows
+- **[Guide: Full-Stack Setup](/guides/full-stack-setup)** — Thread management, CORS, and production wiring
+- **[Reference](/reference/core/create-agent)** — Complete API reference for all packages

@@ -1,0 +1,5 @@
+{
+  "title": "@zaikit/memory-postgres",
+  "defaultOpen": true,
+  "pages": ["create-postgres-memory"]
+}

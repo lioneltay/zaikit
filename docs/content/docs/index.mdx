@@ -1,18 +1,106 @@
 ---
 title: ZAIKit
-description: A toolkit for building AI-powered applications with TypeScript
+description: Build full-stack AI agents with streaming, tool rendering, and suspend/resume — powered by the Vercel AI SDK.
 ---
 
 # ZAIKit
 
-ZAIKit is a TypeScript toolkit for building AI-powered applications. It provides composable primitives for creating agents, tools, and conversational interfaces.
+Build full-stack AI agents with streaming, tool rendering, and suspend/resume — powered by the [Vercel AI SDK](https://sdk.vercel.ai).
+
+## Why ZAIKit
+
+- **Built on the AI SDK** — Uses `streamText`, `UIMessage`, and the AI SDK's tool system directly. No wrapper abstractions to learn.
+- **Streaming out of the box** — Server-sent events from backend to browser with zero configuration.
+- **Suspend and resume** — Tools can pause execution, send data to the client for human input, and resume with the user's response.
+- **Type-safe tool rendering** — Map tool calls to React components with full type inference via codegen.
 
 ## Packages
 
-- **@zaikit/core** — Core agent and tool primitives (`createAgent`, `createTool`, `model`)
-- **@zaikit/react** — React bindings (`AgentProvider`, `useAgent`, `useAgentChat`, `useToolRenderer`)
-- **@zaikit/memory-postgres** — PostgreSQL-backed conversation memory
+| Package | Description |
+|---|---|
+| `@zaikit/core` | Agent and tool primitives — `createAgent`, `createTool`, memory interface |
+| `@zaikit/react` | React bindings — `AgentProvider`, `useAgent`, `useToolRenderer` |
+| `@zaikit/memory-postgres` | PostgreSQL-backed conversation persistence |
+| `@zaikit/codegen-react` | CLI to generate typed tool render props from your agent definition |
 
-## Getting Started
+## Quick Example
 
-Head to the [Getting Started](/getting-started) guide to set up ZAIKit in your project.
+**Backend** — define an agent with tools and expose it via an HTTP endpoint:
+
+```ts title="server.ts"
+import { createAgent, createTool } from "@zaikit/core";
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+import { z } from "zod";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+await memory.initialize();
+
+const agent = createAgent({
+  model: yourModel, // any AI SDK LanguageModel
+  tools: {
+    get_weather: createTool({
+      description: "Get weather for a city",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => ({
+        city: input.city,
+        temp: 22,
+        condition: "Sunny",
+      }),
+    }),
+  },
+  memory,
+});
+
+// Hono / Express / any framework
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json();
+  return agent.chat(body);
+});
+```
+
+**Frontend** — connect to the agent and render messages:
+
+```tsx title="App.tsx"
+import { AgentProvider, useAgent } from "@zaikit/react";
+
+function Chat() {
+  const { messages, sendMessage, renderToolPart } = useAgent();
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>
+          {m.parts.map((part, i) =>
+            part.type === "text" ? (
+              <p key={i}>{part.text}</p>
+            ) : (
+              renderToolPart(part)
+            ),
+          )}
+        </div>
+      ))}
+      <button onClick={() => sendMessage?.({ text: "What's the weather?" })}>
+        Send
+      </button>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AgentProvider
+      api="/api/chat"
+      threadId="thread-1"
+      initialMessages={[]}
+    >
+      <Chat />
+    </AgentProvider>
+  );
+}
+```
+
+## Next Steps
+
+Head to the [Getting Started](/getting-started) guide to build your first agent.

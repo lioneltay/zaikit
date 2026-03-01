@@ -1,0 +1,141 @@
+---
+title: AgentProvider
+description: React context provider that connects your UI to a ZAIKit agent backend.
+---
+
+# AgentProvider
+
+`AgentProvider` is a React context provider that wraps `useAgentChat` and exposes agent state to all child components via `useAgent()`.
+
+```ts
+import { AgentProvider } from "@zaikit/react";
+```
+
+## Usage
+
+```tsx
+import { AgentProvider, useAgent } from "@zaikit/react";
+
+function App() {
+  const threadId = "thread-123";
+
+  return (
+    <AgentProvider
+      key={threadId}
+      api="http://localhost:3000/api/chat"
+      threadId={threadId}
+      initialMessages={[]}
+      onFinish={() => console.log("Stream complete")}
+    >
+      <Chat />
+      <ToolRenderers />
+    </AgentProvider>
+  );
+}
+```
+
+## Props
+
+```ts
+type AgentProviderProps = {
+  api: string;
+  threadId: string;
+  initialMessages: UIMessage[];
+  fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
+  onFinish?: () => void;
+  children: React.ReactNode;
+};
+```
+
+| Prop | Type | Required | Description |
+| --- | --- | --- | --- |
+| `api` | `string` | Yes | URL of your `/api/chat` endpoint. |
+| `threadId` | `string` | Yes | The current thread ID. Used in all requests to the backend. |
+| `initialMessages` | `UIMessage[]` | Yes | Messages to hydrate on mount. Pass `[]` for a new thread, or pre-fetched messages for an existing thread. |
+| `fetchMessages` | `(threadId: string) => Promise<UIMessage[]>` | No | Called after resume to re-fetch the latest messages from the server. Required if you use suspend/resume. |
+| `onFinish` | `() => void` | No | Called when a streaming response completes. Useful for refreshing thread lists or triggering side effects. |
+| `children` | `React.ReactNode` | Yes | Child components that can access agent state via `useAgent()`. |
+
+## Key Prop Pattern
+
+When switching between threads, use React's `key` prop to force a full remount. This resets internal state (messages, status, tool renderers) cleanly:
+
+```tsx
+<AgentProvider
+  key={threadId}  // Forces remount on thread switch
+  api="/api/chat"
+  threadId={threadId}
+  initialMessages={messages}
+>
+  <Chat />
+</AgentProvider>
+```
+
+Without `key`, React will reuse the existing component instance and internal state from the previous thread may leak through.
+
+## Context Value
+
+`AgentProvider` exposes an `AgentContextValue` via React context. Access it with [`useAgent()`](/reference/react/use-agent).
+
+The provider also manages:
+
+- **Tool renderer registry**: Components can register render functions for specific tool names via [`useToolRenderer`](/reference/react/use-tool-renderer).
+- **Frontend tool registry**: Components can register frontend tools via `useTool`.
+- **`renderToolPart`**: A function that looks up the registered renderer for a tool part and returns the rendered `ReactNode`.
+
+## Tool Renderer Pattern
+
+Register tool renderers as child components inside the provider:
+
+```tsx
+import { AgentProvider, useToolRenderer } from "@zaikit/react";
+
+function ToolRenderers() {
+  useToolRenderer("get_weather", (props) => {
+    if (props.state === "call") return <div>Loading weather...</div>;
+    if (props.state === "result") return <WeatherCard data={props.result} />;
+    return null;
+  });
+
+  // Wildcard renderer for unregistered tools
+  useToolRenderer("*", (props) => (
+    <pre>{JSON.stringify(props.args, null, 2)}</pre>
+  ));
+
+  return null; // This component renders nothing itself
+}
+
+function App() {
+  return (
+    <AgentProvider api="/api/chat" threadId="t1" initialMessages={[]}>
+      <Chat />
+      <ToolRenderers />
+    </AgentProvider>
+  );
+}
+```
+
+## Frontend Tool Pattern
+
+Register frontend tools (tools that execute on the client) using `useTool`:
+
+```tsx
+import { useTool } from "@zaikit/react";
+import { z } from "zod";
+
+function FrontendTools() {
+  useTool({
+    name: "get_location",
+    description: "Get the user's current location",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject)
+      );
+      return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    },
+  });
+
+  return null;
+}
+```

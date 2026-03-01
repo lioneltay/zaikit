@@ -1,0 +1,264 @@
+---
+title: PostgreSQL Memory
+description: Persist threads and messages to PostgreSQL with @zaikit/memory-postgres.
+---
+
+# PostgreSQL Memory
+
+`@zaikit/memory-postgres` provides a `Memory` implementation backed by PostgreSQL. It handles thread creation, message persistence, and the upsert semantics needed for the streaming chat lifecycle.
+
+## Install
+
+```bash
+pnpm add @zaikit/memory-postgres
+```
+
+## Create and Initialize
+
+```ts
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+
+// Creates tables if they don't exist
+await memory.initialize();
+```
+
+You must call `initialize()` before using the memory. This runs `CREATE TABLE IF NOT EXISTS` statements, so it is safe to call on every server start.
+
+## Table Schema
+
+`initialize()` creates two tables:
+
+### `zaikit_threads`
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `TEXT PRIMARY KEY` | Thread ID (typically a UUID from `crypto.randomUUID()`) |
+| `title` | `TEXT` | Thread title (nullable, auto-generated from the first message) |
+| `created_at` | `TIMESTAMPTZ` | Creation timestamp |
+| `updated_at` | `TIMESTAMPTZ` | Last update timestamp (updated on every message) |
+
+### `zaikit_messages`
+
+| Column | Type | Description |
+|---|---|---|
+| `id` | `TEXT PRIMARY KEY` | Message ID (from the AI SDK's `UIMessage.id`) |
+| `thread_id` | `TEXT` | Foreign key to `zaikit_threads(id)` with `ON DELETE CASCADE` |
+| `role` | `TEXT` | Message role (`"user"` or `"assistant"`) |
+| `parts` | `JSONB` | The message parts array (text, tool calls, tool results, etc.) |
+| `metadata` | `JSONB` | Optional metadata |
+| `created_at` | `TIMESTAMPTZ` | Creation timestamp |
+
+An index on `(thread_id, created_at)` ensures efficient message retrieval in chronological order.
+
+Deleting a thread cascade-deletes all its messages.
+
+## Using with createAgent
+
+Pass the memory to `createAgent`. This is required for `agent.chat()` to work:
+
+```ts
+import { createAgent, createTool } from "@zaikit/core";
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+import { openai } from "@ai-sdk/openai";
+import { z } from "zod";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+await memory.initialize();
+
+const agent = createAgent({
+  model: openai("gpt-4o"),
+  system: "You are a helpful assistant.",
+  tools: {
+    get_weather: createTool({
+      description: "Get weather for a city",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => ({
+        city: input.city,
+        temp: 22,
+        condition: "Sunny",
+      }),
+    }),
+  },
+  memory,
+});
+```
+
+When `memory` is configured, `agent.chat()` automatically:
+
+1. Creates the thread if it does not exist
+2. Persists the user message
+3. Streams the assistant response
+4. Persists the assistant message on completion
+5. Generates a thread title from the first user message (in the background)
+
+## Thread Management API
+
+The memory object implements the full `Memory` interface. Use it in your server endpoints to manage threads:
+
+### List Threads
+
+Returns all threads sorted by most recently updated:
+
+```ts
+const threads = await memory.listThreads();
+// [{ id, title, createdAt, updatedAt }, ...]
+```
+
+### Get a Single Thread
+
+```ts
+const thread = await memory.getThread("thread-abc-123");
+// { id, title, createdAt, updatedAt } or null
+```
+
+### Delete a Thread
+
+Cascade-deletes all messages belonging to the thread:
+
+```ts
+await memory.deleteThread("thread-abc-123");
+```
+
+### Update Thread Title
+
+```ts
+const updated = await memory.updateThread("thread-abc-123", {
+  title: "Weather discussion",
+});
+```
+
+### Get Messages
+
+Returns messages for a thread in chronological order:
+
+```ts
+const messages = await memory.getMessages("thread-abc-123");
+// UIMessage[] — compatible with the AI SDK
+```
+
+### Add a Message
+
+Uses upsert semantics (`ON CONFLICT ... DO UPDATE`), so calling `addMessage` with the same message ID is safe and idempotent. This is important because the streaming lifecycle may persist a message multiple times as parts are updated:
+
+```ts
+await memory.addMessage("thread-abc-123", {
+  id: "msg-1",
+  role: "user",
+  parts: [{ type: "text", text: "What's the weather?" }],
+});
+```
+
+### Update a Message
+
+Used internally to update assistant messages in-place during tool resume flows:
+
+```ts
+await memory.updateMessage("thread-abc-123", "msg-2", {
+  parts: updatedParts,
+});
+```
+
+## Thread Type
+
+The `Thread` type returned by memory methods:
+
+```ts
+type Thread = {
+  id: string;
+  title: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+```
+
+## Example Server Endpoints
+
+```ts title="server.ts"
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { serve } from "@hono/node-server";
+import { agent } from "./agent/index.js";
+
+const app = new Hono();
+app.use("*", cors({ origin: "http://localhost:5173" }));
+
+// Chat endpoint
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json();
+  return agent.chat(body);
+});
+
+// Thread management
+app.get("/api/threads", async (c) => {
+  const threads = await agent.memory!.listThreads();
+  return c.json(threads);
+});
+
+app.delete("/api/threads/:id", async (c) => {
+  await agent.memory!.deleteThread(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+app.get("/api/threads/:id/messages", async (c) => {
+  const messages = await agent.memory!.getMessages(c.req.param("id"));
+  return c.json(messages);
+});
+
+serve({ fetch: app.fetch, port: 3001 });
+```
+
+## Local Development with Docker Compose
+
+A quick way to run PostgreSQL locally:
+
+```yaml title="docker-compose.yml"
+services:
+  postgres:
+    image: postgres:16
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: myapp
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
+```
+
+Start it with:
+
+```bash
+docker compose up -d
+```
+
+Then set your connection string:
+
+```bash title=".env"
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/myapp
+```
+
+## Automatic Title Generation
+
+When `memory` is configured, `agent.chat()` automatically generates a concise thread title from the user's first message. This happens as a fire-and-forget background task -- it does not block the streaming response.
+
+The title is generated by prompting the model with the user's message text and storing the result via `memory.updateThread()`. Threads that already have a title are not re-titled.
+
+On the frontend, use the `onFinish` callback on `AgentProvider` to refresh your thread list after each response, picking up newly generated titles:
+
+```tsx
+<AgentProvider
+  onFinish={async () => {
+    const threads = await fetchThreads();
+    setThreads(threads);
+  }}
+>
+```

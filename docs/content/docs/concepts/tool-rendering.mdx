@@ -1,0 +1,189 @@
+---
+title: Tool Rendering
+description: How tool calls are mapped to React components via the renderer registry.
+---
+
+# Tool Rendering
+
+When the LLM calls a tool, ZAIKit makes it easy to render custom UI for that tool call on the client. The tool rendering system is a registry of render functions, keyed by tool name, that receive typed props describing the tool call's current state.
+
+## Registration Model
+
+Tool renderers are registered with `useToolRenderer(name, fn)` inside a component that is a descendant of `AgentProvider`:
+
+```tsx
+import { useToolRenderer } from "@zaikit/react";
+
+function WeatherRenderer() {
+  useToolRenderer("get_weather", (props) => (
+    <div>
+      {props.state === "call" && <p>Fetching weather for {props.args.location}...</p>}
+      {props.state === "result" && (
+        <p>
+          {props.result.location}: {props.result.temperature}C, {props.result.condition}
+        </p>
+      )}
+    </div>
+  ));
+
+  return null;
+}
+```
+
+The component itself renders nothing (`return null`). Its only purpose is to register the render function with the `AgentProvider` context. This is the recommended pattern — a "headless" component that exists solely to register a renderer.
+
+Cleanup is automatic: when the component unmounts, the registration is removed.
+
+## `ToolRenderProps`
+
+Every render function receives a `ToolRenderProps` object:
+
+```ts
+type ToolRenderProps<
+  TArgs = Record<string, unknown>,
+  TSuspend = unknown,
+  TResume = unknown,
+> = {
+  toolCallId: string;
+  toolName: string;
+  state: ToolRenderState;
+  args: TArgs;
+  suspendPayload: TSuspend | undefined;
+  result: unknown;
+  resume: (data: TResume) => void;
+};
+```
+
+| Property | Description |
+|---|---|
+| `toolCallId` | Unique identifier for this specific tool invocation. |
+| `toolName` | The name of the tool (matches the key in your `tools` object). |
+| `state` | Current lifecycle state: `"call"`, `"suspended"`, or `"result"`. |
+| `args` | The input arguments the LLM provided to the tool. |
+| `suspendPayload` | The data passed to `suspend()` by the tool. Only present when `state` is `"suspended"`. |
+| `result` | The tool's return value. Only present when `state` is `"result"`. |
+| `resume` | Call this to resume a suspended tool with data from the user. |
+
+## `ToolRenderState`
+
+```ts
+type ToolRenderState = "call" | "suspended" | "result";
+```
+
+A tool part transitions through these states:
+
+### `"call"`
+
+The tool has been invoked by the LLM. Its arguments are available but it has not completed yet. Use this state to show a loading indicator or a preview of what the tool is about to do.
+
+### `"suspended"`
+
+The tool called `suspend(payload)` and is waiting for user input. The `suspendPayload` contains whatever data the tool author passed to `suspend()`. Render a UI that lets the user respond, then call `resume(data)`.
+
+### `"result"`
+
+The tool has completed. The `result` field contains the return value. Display the final output.
+
+### State Transitions
+
+```
+call  --->  result       (normal tool)
+call  --->  suspended  --->  result   (suspendable tool)
+```
+
+A tool part always starts at `"call"`. For normal tools, it transitions directly to `"result"` when the tool finishes executing. For suspendable tools, it moves to `"suspended"` when the tool calls `suspend()`, and then to `"result"` after the user resumes and the tool returns a value.
+
+## Wildcard Renderer
+
+Register a renderer with the name `"*"` to provide a fallback for any tool that does not have a specific renderer:
+
+```tsx
+useToolRenderer("*", (props) => (
+  <div>
+    <p>Tool: {props.toolName}</p>
+    <p>State: {props.state}</p>
+    <pre>{JSON.stringify(props.args, null, 2)}</pre>
+    {props.state === "result" && (
+      <pre>{JSON.stringify(props.result, null, 2)}</pre>
+    )}
+  </div>
+));
+```
+
+When `renderToolPart()` looks up a renderer, it first checks for an exact name match. If none is found, it falls back to the `"*"` renderer. If neither exists, `renderToolPart()` returns `null`.
+
+## Using `renderToolPart()`
+
+`renderToolPart` is available from `useAgent()`. It takes a message part and returns the rendered React node (or `null` if no renderer is registered):
+
+```tsx
+import { useAgent } from "@zaikit/react";
+
+function MessageList() {
+  const { messages, renderToolPart } = useAgent();
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>
+          {m.parts.map((part, i) => {
+            if (part.type === "text") {
+              return <p key={i}>{part.text}</p>;
+            }
+            return <div key={i}>{renderToolPart(part)}</div>;
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+Internally, `renderToolPart` extracts the tool name from the part (from `toolName`, `suspend.toolName`, or the `tool-` prefix in the part type), determines the `state`, and calls the registered render function with the full `ToolRenderProps`.
+
+## The ToolRenderers Component Pattern
+
+A common pattern is to create a single component that registers all tool renderers in one place. This keeps rendering logic organized and out of your main chat component:
+
+```tsx
+import { useToolRenderer } from "@zaikit/react";
+
+export function ToolRenderers() {
+  useToolRenderer("get_weather", (props) => (
+    <WeatherCard {...props} />
+  ));
+
+  useToolRenderer("confirm_order", (props) => {
+    if (props.state === "suspended") {
+      return (
+        <OrderConfirmation
+          order={props.suspendPayload}
+          onApprove={() => props.resume({ approved: true })}
+          onReject={() => props.resume({ approved: false })}
+        />
+      );
+    }
+    if (props.state === "result") {
+      return <OrderResult result={props.result} />;
+    }
+    return <p>Processing order...</p>;
+  });
+
+  useToolRenderer("*", (props) => (
+    <GenericToolView {...props} />
+  ));
+
+  return null;
+}
+```
+
+Then mount it inside your `AgentProvider`:
+
+```tsx
+<AgentProvider api="/api/chat" threadId={threadId} initialMessages={[]}>
+  <ToolRenderers />
+  <Chat />
+</AgentProvider>
+```
+
+The `ToolRenderers` component renders no DOM — it only registers render functions. All registrations are available to any component in the `AgentProvider` subtree that calls `renderToolPart()`.

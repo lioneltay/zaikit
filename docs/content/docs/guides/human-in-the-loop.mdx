@@ -1,0 +1,503 @@
+---
+title: Human-in-the-Loop Tools
+description: Build tools that pause for user input using suspend/resume, with React components for interactive approval flows.
+---
+
+# Human-in-the-Loop Tools
+
+Some actions should not happen automatically. Deleting data, booking flights, sending emails -- these require the user to review, confirm, or choose before the tool proceeds. ZAIKit's suspend/resume mechanism lets a tool pause execution, send data to the client for display, and resume when the user responds.
+
+## When to Use
+
+- **Destructive operations** -- "Delete 500 records from the users table?"
+- **Selection flows** -- Show a list of flights for the user to pick from
+- **Review before send** -- Preview an email before delivering it
+- **User input required** -- Any case where the LLM cannot decide on its own
+
+## How It Works
+
+1. The LLM calls the tool with input arguments
+2. The tool's `execute` function calls `suspend(payload)` to pause and send data to the client
+3. The client renders a UI component showing the payload (e.g., a flight list)
+4. The user interacts (selects a flight, clicks approve, edits a draft)
+5. The client calls `resume(data)` to send the user's response back
+6. The tool's `execute` function runs again, this time with `resumeData` populated
+7. The tool returns a final result, and the LLM continues
+
+## Step by Step
+
+### 1. Define Schemas
+
+Add `suspendSchema` and `resumeSchema` to your tool. The suspend schema defines the shape of data sent to the client. The resume schema defines what the client sends back.
+
+```ts title="Backend"
+import { createTool } from "@zaikit/core";
+import { z } from "zod";
+
+const book_flight = createTool({
+  description: "Search for flights and let the user pick one to book.",
+  inputSchema: z.object({
+    destination: z.string().describe("Destination city"),
+    date: z.string().describe("Travel date, e.g. '2025-03-15'"),
+  }),
+  suspendSchema: z.object({
+    flights: z.array(
+      z.object({
+        id: z.string(),
+        airline: z.string(),
+        price: z.number(),
+        departure: z.string(),
+      }),
+    ),
+  }),
+  resumeSchema: z.object({
+    selectedFlightId: z.string(),
+    seatPreference: z.enum(["window", "aisle", "middle"]),
+  }),
+  // execute defined in next step...
+});
+```
+
+### 2. Implement Two-Phase Execute
+
+When `suspendSchema` and `resumeSchema` are present, the execute context includes two additional fields: `suspend` (a function) and `resumeData` (the user's response, or `undefined` on the first call).
+
+```ts title="Backend"
+const book_flight = createTool({
+  description: "Search for flights and let the user pick one to book.",
+  inputSchema: z.object({
+    destination: z.string().describe("Destination city"),
+    date: z.string().describe("Travel date, e.g. '2025-03-15'"),
+  }),
+  suspendSchema: z.object({
+    flights: z.array(
+      z.object({
+        id: z.string(),
+        airline: z.string(),
+        price: z.number(),
+        departure: z.string(),
+      }),
+    ),
+  }),
+  resumeSchema: z.object({
+    selectedFlightId: z.string(),
+    seatPreference: z.enum(["window", "aisle", "middle"]),
+  }),
+  execute: async ({ input, suspend, resumeData }) => {
+    // Phase 1: No resumeData yet -- search and suspend
+    const flights = searchFlights(input.destination, input.date);
+
+    if (!resumeData) {
+      return suspend({ flights });
+    }
+
+    // Phase 2: User has responded -- process their selection
+    const flight = flights.find((f) => f.id === resumeData.selectedFlightId);
+    if (!flight) {
+      return { error: `Flight ${resumeData.selectedFlightId} not found` };
+    }
+
+    return {
+      confirmation: `Booked ${flight.airline} flight ${flight.id}`,
+      status: "booked",
+      flight,
+      seat: resumeData.seatPreference,
+    };
+  },
+});
+```
+
+The pattern is always the same:
+
+```ts
+execute: async ({ input, suspend, resumeData }) => {
+  if (!resumeData) {
+    // First call: do initial work, then suspend with a payload
+    return suspend({ /* data for the client */ });
+  }
+  // Second call: resumeData contains the user's response
+  return { /* final result */ };
+}
+```
+
+Both `suspend()` and the return value are validated against their respective schemas at runtime.
+
+### 3. Register the Tool on Your Agent
+
+```ts title="Backend"
+export const agent = createAgent({
+  model: openai("gpt-4o"),
+  system: "You are a travel assistant. Use book_flight when the user wants to fly somewhere.",
+  tools: { book_flight },
+  memory,
+});
+```
+
+### 4. Create a React Component
+
+On the frontend, create a component that handles three states: `"call"` (tool is being invoked), `"suspended"` (waiting for user input), and `"result"` (tool has completed).
+
+```tsx title="src/tools/BookFlightTool.tsx"
+import { useState } from "react";
+import type { ToolRenderProps } from "@zaikit/react";
+
+type Flight = {
+  id: string;
+  airline: string;
+  price: number;
+  departure: string;
+};
+
+type BookFlightProps = ToolRenderProps<
+  { destination: string; date: string },
+  { flights: Flight[] },
+  { selectedFlightId: string; seatPreference: "window" | "aisle" | "middle" }
+>;
+
+export function BookFlightTool(props: BookFlightProps) {
+  const flights = props.suspendPayload?.flights ?? [];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [seat, setSeat] = useState<"window" | "aisle" | "middle">("window");
+
+  if (props.state === "call") {
+    return <p>Searching flights...</p>;
+  }
+
+  if (props.state === "result") {
+    return <p>Flight booked successfully.</p>;
+  }
+
+  // state === "suspended"
+  return (
+    <div>
+      <h4>Select a Flight</h4>
+      {flights.map((f) => (
+        <div
+          key={f.id}
+          onClick={() => setSelectedId(f.id)}
+          style={{
+            padding: 8,
+            border: selectedId === f.id ? "2px solid blue" : "1px solid #ccc",
+            borderRadius: 8,
+            cursor: "pointer",
+            marginBottom: 4,
+          }}
+        >
+          <strong>{f.airline} -- {f.id}</strong>
+          <span> Departs: {f.departure}</span>
+          <span> ${f.price}</span>
+        </div>
+      ))}
+
+      <label>
+        Seat preference:
+        <select value={seat} onChange={(e) => setSeat(e.target.value as any)}>
+          <option value="window">Window</option>
+          <option value="aisle">Aisle</option>
+          <option value="middle">Middle</option>
+        </select>
+      </label>
+
+      <button
+        disabled={!selectedId}
+        onClick={() => {
+          if (!selectedId) return;
+          props.resume({
+            selectedFlightId: selectedId,
+            seatPreference: seat,
+          });
+        }}
+      >
+        Book
+      </button>
+    </div>
+  );
+}
+```
+
+### 5. Register the Renderer
+
+Use `useToolRenderer` to connect the component to the tool name. This must be called inside an `AgentProvider`.
+
+```tsx title="src/tools/index.tsx"
+import { useToolRenderer } from "@zaikit/react";
+import { BookFlightTool } from "./BookFlightTool";
+
+export function ToolRenderers() {
+  useToolRenderer("book_flight", (props) => <BookFlightTool {...props} />);
+  return null;
+}
+```
+
+Then include `<ToolRenderers />` inside your `AgentProvider`:
+
+```tsx
+<AgentProvider api="/api/chat" threadId={threadId} initialMessages={[]}>
+  <ToolRenderers />
+  <Chat />
+</AgentProvider>
+```
+
+### 6. Render Tool Parts in Messages
+
+In your chat component, use `renderToolPart` from `useAgent()` to display tool UIs inline:
+
+```tsx
+import { useAgent } from "@zaikit/react";
+
+function Chat() {
+  const { messages, renderToolPart } = useAgent();
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>
+          {m.parts.map((part, i) =>
+            part.type === "text" ? (
+              <p key={i}>{part.text}</p>
+            ) : (
+              <div key={i}>{renderToolPart(part)}</div>
+            ),
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## ToolRenderProps Reference
+
+The props object passed to your render function:
+
+| Prop | Type | Description |
+|---|---|---|
+| `toolCallId` | `string` | Unique identifier for this tool invocation |
+| `toolName` | `string` | Name of the tool (e.g. `"book_flight"`) |
+| `state` | `"call" \| "suspended" \| "result"` | Current lifecycle state |
+| `args` | `TArgs` | The input arguments the LLM passed to the tool |
+| `suspendPayload` | `TSuspend \| undefined` | Data from `suspend()` -- only set when `state === "suspended"` |
+| `result` | `unknown` | The tool's return value -- only set when `state === "result"` |
+| `resume` | `(data: TResume) => void` | Call this to resume the tool with user data |
+
+## Complete Working Example
+
+### Backend: book_flight tool
+
+```ts title="src/agent/index.ts"
+import { z } from "zod";
+import { createAgent, createTool } from "@zaikit/core";
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+import { openai } from "@ai-sdk/openai";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+await memory.initialize();
+
+const book_flight = createTool({
+  description:
+    "Search for flights to a destination and let the user pick one to book.",
+  inputSchema: z.object({
+    destination: z.string().describe("Destination city"),
+    date: z.string().describe("Travel date, e.g. '2025-03-15'"),
+  }),
+  suspendSchema: z.object({
+    flights: z.array(
+      z.object({
+        id: z.string(),
+        airline: z.string(),
+        price: z.number(),
+        departure: z.string(),
+      }),
+    ),
+  }),
+  resumeSchema: z.object({
+    selectedFlightId: z.string(),
+    seatPreference: z.enum(["window", "aisle", "middle"]),
+  }),
+  execute: async ({ input, suspend, resumeData }) => {
+    const flights = [
+      { id: "QF42", airline: "Qantas", price: 1249, departure: `${input.date} 08:30` },
+      { id: "SQ21", airline: "Singapore Airlines", price: 1089, departure: `${input.date} 11:15` },
+      { id: "EK404", airline: "Emirates", price: 1375, departure: `${input.date} 14:50` },
+      { id: "CX100", airline: "Cathay Pacific", price: 998, departure: `${input.date} 19:20` },
+    ];
+
+    if (!resumeData) {
+      return suspend({ flights });
+    }
+
+    const flight = flights.find((f) => f.id === resumeData.selectedFlightId);
+    if (!flight) {
+      return { error: `Flight ${resumeData.selectedFlightId} not found` };
+    }
+
+    return {
+      confirmation: `Booked ${flight.airline} flight ${flight.id} to ${input.destination}`,
+      status: "booked",
+      flight,
+      seat: resumeData.seatPreference,
+    };
+  },
+});
+
+export const agent = createAgent({
+  model: openai("gpt-4o"),
+  system: "You are a travel assistant. Use book_flight when the user wants to travel.",
+  tools: { book_flight },
+  memory,
+});
+```
+
+### Frontend: BookFlightTool component
+
+```tsx title="src/tools/BookFlightTool.tsx"
+import { useState } from "react";
+import type { ToolRenderProps } from "@zaikit/react";
+
+type Flight = {
+  id: string;
+  airline: string;
+  price: number;
+  departure: string;
+};
+
+type BookFlightProps = ToolRenderProps<
+  { destination: string; date: string },
+  { flights: Flight[] },
+  { selectedFlightId: string; seatPreference: "window" | "aisle" | "middle" }
+>;
+
+export function BookFlightTool(props: BookFlightProps) {
+  const flights = props.suspendPayload?.flights ?? [];
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [seat, setSeat] = useState<"window" | "aisle" | "middle">("window");
+
+  if (props.state === "result") {
+    return <p>Flight booked successfully.</p>;
+  }
+
+  return (
+    <div style={{ border: "1px solid #2196F3", borderRadius: 12, padding: 16 }}>
+      <h4>Select a Flight</h4>
+      {flights.map((f) => (
+        <div
+          key={f.id}
+          onClick={() => setSelectedId(f.id)}
+          style={{
+            padding: 12,
+            border: selectedId === f.id ? "2px solid #1976d2" : "1px solid #ccc",
+            borderRadius: 8,
+            cursor: "pointer",
+            marginBottom: 8,
+            display: "flex",
+            justifyContent: "space-between",
+          }}
+        >
+          <div>
+            <strong>{f.airline} -- {f.id}</strong>
+            <div style={{ fontSize: 12, color: "#666" }}>Departs: {f.departure}</div>
+          </div>
+          <strong>${f.price}</strong>
+        </div>
+      ))}
+      <div style={{ marginTop: 12 }}>
+        <label>
+          Seat:{" "}
+          <select value={seat} onChange={(e) => setSeat(e.target.value as any)}>
+            <option value="window">Window</option>
+            <option value="aisle">Aisle</option>
+            <option value="middle">Middle</option>
+          </select>
+        </label>
+        <button
+          disabled={!selectedId}
+          onClick={() => {
+            if (!selectedId) return;
+            props.resume({ selectedFlightId: selectedId, seatPreference: seat });
+          }}
+          style={{ marginLeft: 8 }}
+        >
+          Book
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+### Testing the Flow
+
+1. User says: "Book me a flight to Tokyo on March 15th"
+2. LLM calls `book_flight` with `{ destination: "Tokyo", date: "2025-03-15" }`
+3. Tool executes, calls `suspend({ flights: [...] })`, and the agent stops
+4. Client receives the suspend payload and renders `BookFlightTool` in `"suspended"` state
+5. User selects Cathay Pacific CX100, picks a window seat, clicks "Book"
+6. Client calls `props.resume({ selectedFlightId: "CX100", seatPreference: "window" })`
+7. `resume` sends `{ threadId, resume: { toolCallId, data } }` to the server
+8. Tool executes again with `resumeData = { selectedFlightId: "CX100", seatPreference: "window" }`
+9. Tool returns the booking confirmation
+10. LLM continues with the result and responds: "I've booked your Cathay Pacific flight CX100 to Tokyo..."
+
+## Another Example: Approval Tool
+
+A simpler pattern for yes/no confirmations:
+
+```ts title="Backend"
+const delete_records = createTool({
+  description: "Delete records from a database table. Requires user approval.",
+  inputSchema: z.object({
+    table: z.string(),
+    count: z.number(),
+  }),
+  suspendSchema: z.object({
+    message: z.string(),
+  }),
+  resumeSchema: z.object({
+    approved: z.boolean(),
+  }),
+  execute: async ({ input, suspend, resumeData }) => {
+    if (!resumeData) {
+      return suspend({
+        message: `Delete ${input.count} records from "${input.table}"?`,
+      });
+    }
+
+    if (!resumeData.approved) {
+      return { deleted: 0, reason: "User declined" };
+    }
+
+    await db.deleteRecords(input.table, input.count);
+    return { deleted: input.count };
+  },
+});
+```
+
+```tsx title="Frontend"
+function ApprovalTool(props: ToolRenderProps) {
+  if (props.state === "result") {
+    return <p>Action completed.</p>;
+  }
+
+  const message = (props.suspendPayload as { message: string })?.message;
+
+  return (
+    <div>
+      <p>{message}</p>
+      <button onClick={() => props.resume({ approved: true })}>Approve</button>
+      <button onClick={() => props.resume({ approved: false })}>Decline</button>
+    </div>
+  );
+}
+```
+
+## Wildcard Renderer
+
+Register a fallback renderer with `"*"` to handle any tool that does not have a specific renderer:
+
+```tsx
+useToolRenderer("*", (props) => <ApprovalTool {...props} />);
+```
+
+This is useful as a catch-all for tools that share a common approval pattern.

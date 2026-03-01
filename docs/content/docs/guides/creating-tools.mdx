@@ -1,0 +1,253 @@
+---
+title: Creating Tools
+description: Define tools with Zod schemas, execute functions, and structured output for your ZAIKit agent.
+---
+
+# Creating Tools
+
+Tools give your agent abilities beyond text generation. When the LLM decides to use a tool, ZAIKit validates the input against your Zod schema, runs your execute function, and feeds the result back to the model.
+
+## Tool Anatomy
+
+Every tool has four parts:
+
+```ts
+import { createTool } from "@zaikit/core";
+import { z } from "zod";
+
+const get_weather = createTool({
+  description: "Get the current weather for a location",
+  inputSchema: z.object({
+    location: z.string().describe("City name, e.g. 'Sydney'"),
+  }),
+  execute: async ({ input }) => ({
+    location: input.location,
+    temperature: 22,
+    condition: "Sunny",
+  }),
+});
+```
+
+| Field | Required | Description |
+|---|---|---|
+| `description` | Yes | Tells the LLM when and how to use this tool |
+| `inputSchema` | Yes | A Zod schema that defines and validates tool inputs |
+| `execute` | Yes | Async function that runs when the tool is called |
+| `outputSchema` | No | A Zod schema to validate the return value |
+
+## The Execute Function
+
+The `execute` function receives a context object with `{ input }`, where `input` is the parsed and validated result of your Zod schema. The return value can be any serializable value -- it gets sent back to the LLM as the tool result.
+
+```ts
+const search_database = createTool({
+  description: "Search for records in the database",
+  inputSchema: z.object({
+    query: z.string(),
+    limit: z.number().default(10),
+  }),
+  execute: async ({ input }) => {
+    const results = await db.search(input.query, input.limit);
+    return {
+      count: results.length,
+      records: results,
+    };
+  },
+});
+```
+
+The full type signature is:
+
+```ts
+execute: (ctx: { input: INPUT }) => Promise<OUTPUT>
+```
+
+`INPUT` is inferred from your `inputSchema`, so you get full type safety on `input` without manual annotations.
+
+## Naming Tools
+
+Tool names come from the object keys you pass to `createAgent`. The LLM sees these names directly, so use descriptive `snake_case` names:
+
+```ts
+export const agent = createAgent({
+  model: openai("gpt-4o"),
+  tools: {
+    get_weather,        // LLM sees "get_weather"
+    search_database,    // LLM sees "search_database"
+    send_email,         // LLM sees "send_email"
+  },
+  memory,
+});
+```
+
+Good naming helps the model choose the right tool. Pair it with a clear `description` that explains when to use it and what it does.
+
+## Returning Structured Data
+
+Return any serializable value from `execute`. The LLM receives it as the tool result and can reference the data in its response.
+
+```ts
+const get_weather = createTool({
+  description: "Get the current weather for a location",
+  inputSchema: z.object({
+    location: z.string().describe("City name, e.g. 'Sydney'"),
+  }),
+  execute: async ({ input }) => {
+    const conditions = ["Sunny", "Cloudy", "Rainy", "Stormy", "Windy"];
+    return {
+      location: input.location,
+      temperature: Math.round(Math.random() * 35 + 5),
+      condition: conditions[Math.floor(Math.random() * conditions.length)],
+      humidity: Math.round(Math.random() * 60 + 30),
+      windSpeed: Math.round(Math.random() * 30 + 5),
+    };
+  },
+});
+```
+
+## Output Validation with outputSchema
+
+Use `outputSchema` to validate the return value of your tool at runtime. This catches bugs in your execute function before the result reaches the LLM:
+
+```ts
+const get_stock_price = createTool({
+  description: "Get the current stock price for a ticker symbol",
+  inputSchema: z.object({
+    ticker: z.string().describe("Stock ticker, e.g. 'AAPL'"),
+  }),
+  outputSchema: z.object({
+    ticker: z.string(),
+    price: z.number(),
+    currency: z.string(),
+  }),
+  execute: async ({ input }) => {
+    const data = await fetchStockPrice(input.ticker);
+    return {
+      ticker: input.ticker,
+      price: data.price,
+      currency: data.currency,
+    };
+  },
+});
+```
+
+If the returned value does not match `outputSchema`, the tool throws a Zod validation error at runtime rather than silently passing malformed data to the model.
+
+## Error Handling
+
+There are two approaches to handling errors in tools:
+
+### Throw an exception
+
+If you throw, the tool call fails and the error message is sent to the LLM as the tool result. The model can then explain the issue to the user.
+
+```ts
+const get_user = createTool({
+  description: "Look up a user by ID",
+  inputSchema: z.object({ userId: z.string() }),
+  execute: async ({ input }) => {
+    const user = await db.users.findById(input.userId);
+    if (!user) {
+      throw new Error(`User not found: ${input.userId}`);
+    }
+    return user;
+  },
+});
+```
+
+### Return an error object
+
+You can also return structured error data. This gives the LLM more context to work with:
+
+```ts
+const delete_records = createTool({
+  description: "Delete records from a database table",
+  inputSchema: z.object({
+    table: z.string(),
+    count: z.number(),
+  }),
+  execute: async ({ input }) => {
+    const tableExists = mockDatabase.has(input.table);
+    if (!tableExists) {
+      return {
+        error: `Table "${input.table}" not found. Available tables: ${[...mockDatabase.keys()].join(", ")}`,
+      };
+    }
+    // proceed with deletion...
+    return { deleted: input.count };
+  },
+});
+```
+
+## Multiple Tools on One Agent
+
+Pass all tools as properties of the `tools` object. The agent makes all of them available to the LLM simultaneously:
+
+```ts
+import { createAgent, createTool } from "@zaikit/core";
+import { z } from "zod";
+
+const get_weather = createTool({
+  description: "Get the current weather for a location",
+  inputSchema: z.object({
+    location: z.string().describe("City name"),
+  }),
+  execute: async ({ input }) => ({
+    location: input.location,
+    temperature: 22,
+    condition: "Sunny",
+  }),
+});
+
+const search_flights = createTool({
+  description: "Search for available flights",
+  inputSchema: z.object({
+    destination: z.string(),
+    date: z.string(),
+  }),
+  execute: async ({ input }) => ({
+    flights: [
+      { id: "QF42", airline: "Qantas", price: 1249 },
+      { id: "SQ21", airline: "Singapore Airlines", price: 1089 },
+    ],
+  }),
+});
+
+const send_email = createTool({
+  description: "Send an email to a recipient",
+  inputSchema: z.object({
+    to: z.string(),
+    subject: z.string(),
+    body: z.string(),
+  }),
+  execute: async ({ input }) => ({
+    sent: true,
+    to: input.to,
+    subject: input.subject,
+  }),
+});
+
+export const agent = createAgent({
+  model: openai("gpt-4o"),
+  system: `You are a helpful travel assistant with weather, flight search, and email tools.`,
+  tools: {
+    get_weather,
+    search_flights,
+    send_email,
+  },
+  memory,
+});
+```
+
+A good `system` prompt that lists the available tools helps the model choose correctly. The LLM can also call multiple tools in a single step if the model supports parallel tool calls.
+
+## Type Safety
+
+`createTool` returns a `ZaikitTool` type that preserves all type parameters (input, output, suspend, resume) via a phantom `__toolTypes` brand. This has no runtime cost but enables `@zaikit/codegen-react` to extract types and generate fully typed tool render props for your frontend components.
+
+See the [Type-Safe Tools](/guides/type-safe-tools) guide for details.
+
+## What's Next
+
+- **[Human-in-the-Loop](/guides/human-in-the-loop)** -- Add `suspendSchema` and `resumeSchema` to pause tools for user approval
+- **[Type-Safe Tools](/guides/type-safe-tools)** -- Generate typed props for your tool renderer components

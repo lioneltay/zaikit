@@ -1,0 +1,168 @@
+---
+title: Memory
+description: How ZAIKit persists threads and messages, and how to implement a custom adapter.
+---
+
+# Memory
+
+Memory is ZAIKit's persistence layer. It stores conversation threads and their messages so the agent can load history, save new responses, and update messages during suspend/resume. Memory is required for `agent.chat()` to function.
+
+## What Memory Does
+
+Every time the agent processes a request, it interacts with memory:
+
+- **New message** — Creates the thread if it does not exist, saves the user message, loads the full thread for the `streamText` call, and persists the assistant response when the stream finishes.
+- **Resume** — Loads messages to find the suspended tool call, updates the message in place after re-executing the tool, and continues the LLM with the updated thread.
+- **Title generation** — After the first user message, the agent generates a short title and saves it to the thread via `updateThread`.
+
+## The Memory Interface
+
+```ts
+import type { UIMessage } from "ai";
+
+type Thread = {
+  id: string;
+  title: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type Memory = {
+  // Thread operations
+  createThread(id: string, title?: string): Promise<Thread>;
+  getThread(id: string): Promise<Thread | null>;
+  listThreads(): Promise<Thread[]>;
+  deleteThread(id: string): Promise<void>;
+  updateThread(id: string, updates: { title?: string }): Promise<Thread>;
+
+  // Message operations
+  getMessages(threadId: string): Promise<UIMessage[]>;
+  addMessage(threadId: string, message: UIMessage): Promise<void>;
+  updateMessage(
+    threadId: string,
+    messageId: string,
+    updates: { parts: UIMessage["parts"] },
+  ): Promise<void>;
+};
+```
+
+### Thread Operations
+
+| Method | Description |
+|---|---|
+| `createThread(id, title?)` | Create a new thread. The `id` is provided by the client. `title` defaults to `null`. |
+| `getThread(id)` | Return a thread by ID, or `null` if not found. |
+| `listThreads()` | Return all threads, typically ordered by `updatedAt` descending. |
+| `deleteThread(id)` | Delete a thread and its messages. |
+| `updateThread(id, updates)` | Update thread fields (currently only `title`). |
+
+### Message Operations
+
+| Method | Description |
+|---|---|
+| `getMessages(threadId)` | Return all messages in a thread, ordered by creation time. |
+| `addMessage(threadId, message)` | Append a message to a thread. |
+| `updateMessage(threadId, messageId, updates)` | Update a message's `parts` array. Used during suspend/resume to fill in tool outputs. |
+
+## Thread Auto-Creation
+
+When `agent.chat()` receives a `{ threadId, message }` request, it checks whether the thread exists. If not, it creates one automatically:
+
+```ts
+const thread = await memory.getThread(threadId);
+if (!thread) {
+  await memory.createThread(threadId);
+}
+```
+
+The client is responsible for generating the `threadId` (typically a UUID). There is no separate "create thread" API call needed before sending the first message.
+
+## Auto-Title Generation
+
+After saving the first user message, the agent fires off a background `generateText` call to produce a concise 3-6 word title:
+
+```ts
+const titleResult = await generateText({
+  model,
+  system:
+    "Generate a concise 3-6 word title for this conversation based on the user's message. Return only the title, no quotes or punctuation.",
+  prompt: userText,
+});
+
+if (title) {
+  await memory.updateThread(threadId, { title });
+}
+```
+
+This runs as fire-and-forget — it does not block the chat response. Title generation only runs when `thread.title` is `null` (i.e., the thread was just created).
+
+## Built-in Adapter: `@zaikit/memory-postgres`
+
+The `@zaikit/memory-postgres` package provides a PostgreSQL-backed implementation:
+
+```ts
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+
+// Create tables if they don't exist
+await memory.initialize();
+
+const agent = createAgent({
+  model,
+  tools,
+  memory,
+});
+```
+
+`initialize()` creates two tables if they do not exist:
+
+- `zaikit_threads` — stores thread metadata (`id`, `title`, `created_at`, `updated_at`)
+- `zaikit_messages` — stores messages (`id`, `thread_id`, `role`, `parts` as JSONB, `metadata` as JSONB, `created_at`)
+
+Messages cascade-delete when a thread is deleted.
+
+## Custom Adapter
+
+To use a different database, implement the `Memory` type and pass it to `createAgent`:
+
+```ts
+import type { Memory } from "@zaikit/core";
+
+const memory: Memory = {
+  async createThread(id, title) {
+    // Insert into your database
+    // Return { id, title, createdAt, updatedAt }
+  },
+  async getThread(id) {
+    // Query your database
+    // Return thread or null
+  },
+  async listThreads() {
+    // Return all threads
+  },
+  async deleteThread(id) {
+    // Delete thread and its messages
+  },
+  async updateThread(id, updates) {
+    // Update and return the thread
+  },
+  async getMessages(threadId) {
+    // Return UIMessage[] ordered by creation time
+  },
+  async addMessage(threadId, message) {
+    // Insert the message
+    // message.id, message.role, message.parts are the key fields
+  },
+  async updateMessage(threadId, messageId, updates) {
+    // Replace the message's parts array
+    // This is called during suspend/resume to fill in tool outputs
+  },
+};
+
+const agent = createAgent({ model, tools, memory });
+```
+
+The most important detail is that `addMessage` and `updateMessage` must correctly serialize `UIMessage.parts` (an array of typed objects) and that `getMessages` must deserialize them back to the same structure. The Postgres adapter uses JSONB for this.

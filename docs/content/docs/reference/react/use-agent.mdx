@@ -1,0 +1,127 @@
+---
+title: useAgent
+description: Access agent state, messages, and actions from within an AgentProvider.
+---
+
+# useAgent
+
+A React hook that reads the `AgentContextValue` from the nearest `AgentProvider`. Must be called within an `AgentProvider` subtree.
+
+```ts
+import { useAgent } from "@zaikit/react";
+```
+
+## Usage
+
+```tsx
+import { useAgent } from "@zaikit/react";
+
+function Chat() {
+  const { messages, sendMessage, status } = useAgent();
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>
+          {m.parts.map((part, i) =>
+            part.type === "text" ? <p key={i}>{part.text}</p> : null,
+          )}
+        </div>
+      ))}
+
+      {sendMessage && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const input = e.currentTarget.elements.namedItem("msg") as HTMLInputElement;
+            sendMessage({ text: input.value });
+            input.value = "";
+          }}
+        >
+          <input name="msg" />
+          <button type="submit" disabled={status === "streaming"}>Send</button>
+        </form>
+      )}
+    </div>
+  );
+}
+```
+
+## Return Type
+
+`useAgent()` returns an `AgentContextValue`:
+
+```ts
+type AgentContextValue = {
+  messages: UIMessage[];
+  rawMessages: UIMessage[];
+  status: string;
+  sendMessage: ((opts: { text: string }) => void) | undefined;
+  resumeTool: (toolCallId: string, data: unknown) => void;
+  addToolOutput: (opts: {
+    tool: string;
+    toolCallId: string;
+    output: unknown;
+  }) => Promise<void>;
+  hasSuspendedTools: boolean;
+  setMessages: (msgs: UIMessage[]) => void;
+  renderToolPart: (part: unknown) => React.ReactNode | null;
+  registerToolRenderer: (entry: {
+    toolName: string;
+    render: ToolRenderFn;
+  }) => () => void;
+  registerFrontendTool: (tool: FrontendToolRegistration) => () => void;
+};
+```
+
+## Properties
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `messages` | `UIMessage[]` | Processed messages with suspend data merged onto tool parts and consecutive assistant messages merged. |
+| `rawMessages` | `UIMessage[]` | Unprocessed messages directly from `useChat`. |
+| `status` | `string` | Current status: `"ready"`, `"streaming"`, or `"submitted"`. Shows `"streaming"` during resume operations. |
+| `sendMessage` | `((opts: { text: string }) => void) \| undefined` | Send a user message. **`undefined` when tools are suspended or frontend tools are pending**, preventing the user from sending new messages until resolved. |
+| `resumeTool` | `(toolCallId: string, data: unknown) => void` | Resume a suspended tool with the user's response data. |
+| `addToolOutput` | `(opts: { tool: string; toolCallId: string; output: unknown }) => Promise<void>` | Submit the output for a frontend tool call. Used internally by `useTool`. |
+| `hasSuspendedTools` | `boolean` | `true` if any message has unresolved `suspend` data on a tool part. |
+| `setMessages` | `(msgs: UIMessage[]) => void` | Directly set the messages array. Used internally after resume to replace messages with server state. |
+| `renderToolPart` | `(part: unknown) => React.ReactNode \| null` | Look up the registered tool renderer for a message part and return the rendered output. Returns `null` if no renderer is registered. |
+| `registerToolRenderer` | `(entry: { toolName: string; render: ToolRenderFn }) => () => void` | Register a render function for a tool name. Returns a cleanup function. Prefer [`useToolRenderer`](/reference/react/use-tool-renderer) over calling this directly. |
+| `registerFrontendTool` | `(tool: FrontendToolRegistration) => () => void` | Register a frontend tool definition. The tool becomes available for the LLM to call, with execution handled client-side. Used internally by `useTool`. Returns a cleanup function. |
+
+## Rendering Tool Parts
+
+Use `renderToolPart` to render tool call parts in your message list:
+
+```tsx
+function MessageList() {
+  const { messages, renderToolPart } = useAgent();
+
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>
+          {m.parts.map((part, i) => {
+            if (part.type === "text") {
+              return <p key={i}>{part.text}</p>;
+            }
+            // Render tool parts using registered renderers
+            const rendered = renderToolPart(part);
+            if (rendered) return <div key={i}>{rendered}</div>;
+            return null;
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+```
+
+## Error Handling
+
+`useAgent()` throws if called outside an `AgentProvider`:
+
+```
+Error: useAgent must be used within an <AgentProvider>
+```

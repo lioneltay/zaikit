@@ -1,0 +1,156 @@
+---
+title: useToolRenderer
+description: Register a React render function for a specific tool name within an AgentProvider.
+---
+
+# useToolRenderer
+
+Registers a render function for a tool name. When `renderToolPart` encounters a tool part matching that name, it delegates to your render function.
+
+```ts
+import { useToolRenderer } from "@zaikit/react";
+```
+
+## Signature
+
+```ts
+function useToolRenderer(toolName: string, render: ToolRenderFn): void;
+```
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `toolName` | `string` | The tool name to register for. Use `"*"` as a wildcard to match any tool without a specific renderer. |
+| `render` | `ToolRenderFn` | A function that receives `ToolRenderProps` and returns a `ReactNode`. |
+
+## Usage
+
+Must be called within an `AgentProvider` subtree. Typically used inside a component that renders `null`:
+
+```tsx
+import { useToolRenderer } from "@zaikit/react";
+
+function ToolRenderers() {
+  useToolRenderer("get_weather", (props) => {
+    switch (props.state) {
+      case "call":
+        return <div>Fetching weather for {props.args.location}...</div>;
+      case "result":
+        return <WeatherCard data={props.result} />;
+      default:
+        return null;
+    }
+  });
+
+  useToolRenderer("confirm_purchase", (props) => {
+    if (props.state === "suspended") {
+      return (
+        <div>
+          <p>{props.suspendPayload.message}</p>
+          <button onClick={() => props.resume({ confirmed: true })}>
+            Confirm
+          </button>
+          <button onClick={() => props.resume({ confirmed: false })}>
+            Cancel
+          </button>
+        </div>
+      );
+    }
+    if (props.state === "result") {
+      return <div>Purchase {props.result.status}</div>;
+    }
+    return <div>Processing purchase...</div>;
+  });
+
+  return null;
+}
+```
+
+## Wildcard Renderer
+
+Use `"*"` to register a fallback renderer that matches any tool without a specific renderer:
+
+```tsx
+useToolRenderer("*", (props) => (
+  <details>
+    <summary>Tool: {props.toolName}</summary>
+    <pre>{JSON.stringify(props.args, null, 2)}</pre>
+    {props.state === "result" && (
+      <pre>{JSON.stringify(props.result, null, 2)}</pre>
+    )}
+  </details>
+));
+```
+
+Specific registrations take priority over the wildcard.
+
+## ToolRenderFn
+
+```ts
+type ToolRenderFn = (props: ToolRenderProps) => React.ReactNode;
+```
+
+## ToolRenderProps
+
+```ts
+type ToolRenderProps<
+  TArgs = Record<string, unknown>,
+  TSuspend = unknown,
+  TResume = unknown,
+> = {
+  toolCallId: string;
+  toolName: string;
+  state: ToolRenderState;
+  args: TArgs;
+  suspendPayload: TSuspend | undefined;
+  result: unknown;
+  resume: (data: TResume) => void;
+};
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `toolCallId` | `string` | Unique identifier for this tool call instance. |
+| `toolName` | `string` | The name of the tool that was called. |
+| `state` | `ToolRenderState` | Current state of the tool call. |
+| `args` | `TArgs` | The input arguments the LLM provided to the tool. Defaults to `Record<string, unknown>`. |
+| `suspendPayload` | `TSuspend \| undefined` | The payload from `suspend()`. Only present when `state === "suspended"`. |
+| `result` | `unknown` | The tool's return value. Only meaningful when `state === "result"`. |
+| `resume` | `(data: TResume) => void` | Call this to resume a suspended tool with the user's response. Routes to `resumeTool` internally. |
+
+## ToolRenderState
+
+```ts
+type ToolRenderState = "call" | "suspended" | "result";
+```
+
+| State | Description |
+| --- | --- |
+| `"call"` | The tool has been called by the LLM but has not yet produced output. The tool is executing or waiting. |
+| `"suspended"` | The tool has suspended and is waiting for user input. `suspendPayload` is available. |
+| `"result"` | The tool has completed. `result` is available. |
+
+## Lifecycle
+
+1. The hook calls `registerToolRenderer` from `useAgent()` on mount.
+2. It returns the cleanup function on unmount, removing the registration.
+3. The render function reference is stored in a ref, so it is safe to use inline functions without causing re-registrations.
+
+## Typed Variant via Codegen
+
+When you use [`@zaikit/codegen-react`](/reference/codegen-react/cli), the generated file provides a typed `useToolRenderer` that narrows `args`, `suspendPayload`, and `resume` based on the tool name:
+
+```tsx
+import { useToolRenderer } from "./tools.generated";
+
+// props is fully typed: args is GetWeatherInput, etc.
+useToolRenderer("get_weather", (props) => {
+  // props.args.location is typed as string
+  return <div>{props.args.location}</div>;
+});
+
+// Suspendable tools get typed suspend/resume
+useToolRenderer("confirm_purchase", (props) => {
+  // props.suspendPayload is ConfirmPurchaseSuspend | undefined
+  // props.resume accepts ConfirmPurchaseResume
+});
+```

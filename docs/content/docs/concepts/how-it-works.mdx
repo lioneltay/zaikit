@@ -1,0 +1,119 @@
+---
+title: How It Works
+description: Architecture overview — how the browser, server, agent loop, and memory layer fit together.
+---
+
+# How It Works
+
+ZAIKit is a thin orchestration layer on top of the [Vercel AI SDK](https://sdk.vercel.ai). It uses `streamText`, `UIMessage`, `ToolSet`, and `StopCondition` directly — there are no wrapper abstractions to learn. If you already know the AI SDK, you already know most of ZAIKit.
+
+## Stack Overview
+
+```
+Browser (React)
+  AgentProvider / useAgent / useToolRenderer
+       |
+       | POST /api/chat  { threadId, message }
+       |                  { threadId, resume }
+       v
+HTTP Endpoint (Hono, Express, etc.)
+       |
+       v
+  agent.chat(body)
+       |
+       v
+  streamText loop  (AI SDK)
+       |
+       v
+  SSE stream back to browser
+```
+
+The client sends a JSON body to your HTTP endpoint. `agent.chat()` inspects the body shape and dispatches to the right handler:
+
+- **`{ threadId, message }`** — a new user message. The agent saves it to memory, loads the full thread, and starts the `streamText` loop.
+- **`{ threadId, resume: { toolCallId, data } }`** — resuming a suspended tool. The agent re-executes the tool with the user's response, then continues the LLM if all suspensions are resolved.
+
+## Two Entry Points
+
+Every call to `agent.chat()` hits one of two paths:
+
+### Normal Chat
+
+```ts
+agent.chat({
+  threadId: "thread-123",
+  message: userMessage, // UIMessage
+});
+```
+
+1. If the thread does not exist in memory, it is auto-created.
+2. The user message is saved via `memory.addMessage()`.
+3. All messages for the thread are loaded.
+4. Title generation fires in the background (first message only).
+5. The `streamText` loop runs and an SSE `Response` is returned.
+
+### Resume
+
+```ts
+agent.chat({
+  threadId: "thread-123",
+  resume: { toolCallId: "call_abc", data: { approved: true } },
+});
+```
+
+1. The agent finds the suspended message containing the tool call.
+2. The tool is re-executed with `resumeData` available.
+3. If other tools in the same message are still suspended, a `204 No Content` response is returned.
+4. Otherwise, the LLM continues and an SSE stream is returned.
+
+## UIMessage Structure
+
+ZAIKit uses the AI SDK's `UIMessage` type throughout. A message has a `role` (`"user"` or `"assistant"`) and an array of `parts`:
+
+```ts
+type UIMessage = {
+  id: string;
+  role: "user" | "assistant";
+  parts: Part[];
+};
+```
+
+Parts are typed unions. The most common ones:
+
+| Part type | Description |
+|---|---|
+| `text` | Plain text content |
+| `tool-{name}` | A tool invocation (static tools) |
+| `dynamic-tool` | A tool invocation (dynamic/frontend tools) |
+| `data-tool-suspend` | A suspension marker (server-only, merged onto tool parts on the client) |
+
+## Memory as the Persistence Seam
+
+Memory is the only integration point between ZAIKit and your database. The `Memory` type defines how threads and messages are stored and retrieved. You can use the built-in `@zaikit/memory-postgres` adapter or write your own.
+
+```ts
+const agent = createAgent({
+  model,
+  tools,
+  memory, // <-- your Memory implementation
+});
+```
+
+The agent reads and writes through memory at every step: creating threads, saving user messages, persisting assistant responses on stream finish, and updating messages when tools are resumed. See [Memory](/concepts/memory) for the full interface.
+
+## Relationship to the Vercel AI SDK
+
+ZAIKit does not wrap or abstract over the AI SDK. It uses these AI SDK primitives directly:
+
+| AI SDK primitive | How ZAIKit uses it |
+|---|---|
+| `streamText` | Runs the agent loop (model call + tool execution) |
+| `UIMessage` | Message format for both client and server |
+| `ToolSet` | Tools passed to `streamText` |
+| `StopCondition` | Controls when the agent loop ends |
+| `createUIMessageStream` | Creates the SSE response stream |
+| `convertToModelMessages` | Converts `UIMessage[]` to model-level messages |
+| `useChat` | Underlying hook in `useAgentChat` on the client |
+| `DefaultChatTransport` | Customized to send threadId and handle resume |
+
+ZAIKit adds three things on top: the suspend/resume protocol, the memory persistence layer, and the tool rendering registry.

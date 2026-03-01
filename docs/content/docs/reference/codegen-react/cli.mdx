@@ -1,0 +1,215 @@
+---
+title: CLI & Codegen
+description: Generate typed React hooks and props from your agent's tool definitions.
+---
+
+# @zaikit/codegen-react
+
+Generates TypeScript types, typed props, and a typed `useToolRenderer` hook from your agent's tool definitions. Uses `ts-morph` to inspect the `__toolTypes` phantom brand on `ZaikitTool` at the type level -- no runtime execution required.
+
+```bash
+pnpm add -D @zaikit/codegen-react
+```
+
+## CLI Usage
+
+```bash
+zaikit-codegen-react --agent <path> --output <path> [--export <name>] [--tsconfig <path>]
+```
+
+### Flags
+
+| Flag | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `--agent` | `string` | Yes | -- | Path to the file that exports your agent (e.g. `./src/agent.ts`). |
+| `--output` | `string` | Yes | -- | Path for the generated output file (e.g. `./src/tools.generated.ts`). |
+| `--export` | `string` | No | `"agent"` | The export name to inspect on the agent file. |
+| `--tsconfig` | `string` | No | Auto-detected | Path to `tsconfig.json`. If not provided, walks up from the agent file to find one. |
+
+### Example
+
+```bash
+zaikit-codegen-react \
+  --agent ./src/agent.ts \
+  --output ./src/tools.generated.ts \
+  --export agent
+```
+
+## What Gets Generated
+
+For an agent with tools `get_weather` (regular) and `confirm_purchase` (suspendable), the generated file contains:
+
+### Per-tool Types
+
+```ts
+// Regular tool
+export type GetWeatherInput = { location: string };
+export type GetWeatherOutput = { temperature: number; condition: string };
+
+// Suspendable tool
+export type ConfirmPurchaseInput = { item: string; price: number };
+export type ConfirmPurchaseOutput = { status: string; item: string };
+export type ConfirmPurchaseSuspend = { item: string; price: number; message: string };
+export type ConfirmPurchaseResume = { confirmed: boolean };
+```
+
+Tool names are converted to PascalCase. For each tool:
+
+- `{PascalCase}Input` -- the tool's input type
+- `{PascalCase}Output` -- the tool's output type (excludes `SuspendResult`)
+- `{PascalCase}Suspend` -- the suspend payload type (only if suspendable)
+- `{PascalCase}Resume` -- the resume data type (only if suspendable)
+
+### Typed Props
+
+```ts
+export type GetWeatherToolProps = ToolRenderProps<GetWeatherInput>;
+export type ConfirmPurchaseToolProps = ToolRenderProps<
+  ConfirmPurchaseInput,
+  ConfirmPurchaseSuspend,
+  ConfirmPurchaseResume
+>;
+```
+
+### Typed useToolRenderer
+
+```ts
+type ToolPropsMap = {
+  get_weather: GetWeatherToolProps;
+  confirm_purchase: ConfirmPurchaseToolProps;
+};
+
+export function useToolRenderer<T extends keyof ToolPropsMap>(
+  name: T,
+  render: (props: ToolPropsMap[T]) => ReactNode,
+): void;
+export function useToolRenderer(name: string, render: ToolRenderFn): void;
+```
+
+This gives you full type inference when using a known tool name, while still accepting arbitrary strings for wildcard or dynamic tools.
+
+### ToolName Union
+
+```ts
+export type ToolName = "get_weather" | "confirm_purchase";
+```
+
+## Using the Generated Types
+
+Import from the generated file instead of `@zaikit/react` to get typed tool renderers:
+
+```tsx
+import { useToolRenderer } from "./tools.generated";
+
+function ToolRenderers() {
+  useToolRenderer("get_weather", (props) => {
+    // props.args is GetWeatherInput
+    // props.args.location is string
+    if (props.state === "result") {
+      return <div>{props.result}</div>;
+    }
+    return <div>Loading weather for {props.args.location}...</div>;
+  });
+
+  useToolRenderer("confirm_purchase", (props) => {
+    // props.suspendPayload is ConfirmPurchaseSuspend | undefined
+    // props.resume accepts ConfirmPurchaseResume
+    if (props.state === "suspended") {
+      return (
+        <div>
+          <p>{props.suspendPayload?.message}</p>
+          <button onClick={() => props.resume({ confirmed: true })}>
+            Yes
+          </button>
+        </div>
+      );
+    }
+    return null;
+  });
+
+  return null;
+}
+```
+
+## Programmatic API
+
+The codegen package also exports functions for programmatic use:
+
+```ts
+import { extractToolTypes, generateOutput } from "@zaikit/codegen-react";
+```
+
+### extractToolTypes
+
+```ts
+function extractToolTypes(options: {
+  tsConfigPath: string;
+  agentPath: string;
+  exportName: string;
+}): ToolTypeInfo[];
+```
+
+Inspects the agent export using `ts-morph` and returns type information for each tool.
+
+| Option | Type | Description |
+| --- | --- | --- |
+| `tsConfigPath` | `string` | Absolute path to `tsconfig.json`. |
+| `agentPath` | `string` | Absolute path to the file exporting the agent. |
+| `exportName` | `string` | The name of the export to inspect (e.g. `"agent"`). |
+
+### generateOutput
+
+```ts
+function generateOutput(tools: ToolTypeInfo[]): string;
+```
+
+Takes an array of `ToolTypeInfo` and returns the generated TypeScript source as a string.
+
+### ToolTypeInfo
+
+```ts
+type ToolTypeInfo = {
+  name: string;
+  input: string;
+  output: string;
+  suspend: string | null;
+  resume: string | null;
+};
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `name` | `string` | The tool name as it appears in the `tools` object (e.g. `"get_weather"`). |
+| `input` | `string` | TypeScript source text for the input type. |
+| `output` | `string` | TypeScript source text for the output type (excludes `SuspendResult`). |
+| `suspend` | `string \| null` | TypeScript source text for the suspend payload type. `null` if not suspendable. |
+| `resume` | `string \| null` | TypeScript source text for the resume data type. `null` if not suspendable. |
+
+## How It Works
+
+1. Creates a `ts-morph` `Project` from your `tsconfig.json`.
+2. Finds the named export on the agent file.
+3. Reads the `tools` property from the `Agent<T>` type.
+4. For each tool, reads the `__toolTypes` phantom brand (a readonly property that exists only in the type system).
+5. Extracts `input`, `output`, `suspend`, and `resume` type text using `ts-morph`'s type formatter.
+6. Generates TypeScript source with per-tool types, typed props, a `ToolPropsMap`, overloaded `useToolRenderer`, and a `ToolName` union.
+
+The `__toolTypes` brand has no runtime cost. It is never emitted in JavaScript -- it exists purely for the codegen to read type information.
+
+## Adding to Your Build
+
+Add a script to your `package.json`:
+
+```json
+{
+  "scripts": {
+    "codegen": "zaikit-codegen-react --agent ./src/agent.ts --output ./src/tools.generated.ts"
+  }
+}
+```
+
+Run it after modifying your tools:
+
+```bash
+pnpm codegen
+```
