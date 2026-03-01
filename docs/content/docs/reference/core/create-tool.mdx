@@ -1,0 +1,165 @@
+---
+title: createTool
+description: Define typed tools with input validation, optional suspend/resume, and codegen support.
+---
+
+# createTool
+
+Creates a typed tool definition compatible with the AI SDK's `ToolSet`. Tools created with `createTool` carry a phantom `__toolTypes` brand that enables type-safe codegen for React renderers.
+
+```ts
+import { createTool } from "@zaikit/core";
+```
+
+## Regular Tool
+
+A regular tool has a description, a Zod input schema, and an execute function.
+
+```ts
+import { createTool } from "@zaikit/core";
+import { z } from "zod";
+
+const get_weather = createTool({
+  description: "Get the current weather for a location",
+  inputSchema: z.object({
+    location: z.string(),
+  }),
+  execute: async ({ input }) => ({
+    temperature: 22,
+    condition: "Sunny",
+    location: input.location,
+  }),
+});
+```
+
+### Signature
+
+```ts
+function createTool<INPUT, OUTPUT>(
+  options: RegularToolOptions<INPUT, OUTPUT>
+): ZaikitTool<INPUT, OUTPUT>;
+```
+
+### Options
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `description` | `string` | Yes | Description shown to the LLM so it knows when to use this tool. |
+| `inputSchema` | `z.ZodType<INPUT>` | Yes | Zod schema that validates and types the tool input. |
+| `outputSchema` | `z.ZodType<OUTPUT>` | No | Zod schema that validates the tool output at runtime. |
+| `execute` | `(ctx: { input: INPUT }) => Promise<OUTPUT>` | Yes | The function that runs when the LLM calls this tool. |
+
+## Suspendable Tool
+
+A suspendable tool can pause execution and wait for user input before continuing. It requires `suspendSchema` and `resumeSchema` in addition to the regular options.
+
+```ts
+import { createTool } from "@zaikit/core";
+import { z } from "zod";
+
+const confirm_purchase = createTool({
+  description: "Confirm a purchase with the user before processing",
+  inputSchema: z.object({
+    item: z.string(),
+    price: z.number(),
+  }),
+  suspendSchema: z.object({
+    item: z.string(),
+    price: z.number(),
+    message: z.string(),
+  }),
+  resumeSchema: z.object({
+    confirmed: z.boolean(),
+  }),
+  execute: async ({ input, suspend, resumeData }) => {
+    // First call: resumeData is undefined, so we suspend
+    if (!resumeData) {
+      return suspend({
+        item: input.item,
+        price: input.price,
+        message: `Purchase ${input.item} for $${input.price}?`,
+      });
+    }
+
+    // Second call: user has responded
+    if (resumeData.confirmed) {
+      return { status: "purchased", item: input.item };
+    }
+    return { status: "cancelled", item: input.item };
+  },
+});
+```
+
+### Signature
+
+```ts
+function createTool<INPUT, OUTPUT, SUSPEND, RESUME>(
+  options: SuspendableToolOptions<INPUT, OUTPUT, SUSPEND, RESUME>
+): ZaikitTool<INPUT, OUTPUT | SuspendResult<SUSPEND>, SUSPEND, RESUME>;
+```
+
+### Options
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `description` | `string` | Yes | Description shown to the LLM. |
+| `inputSchema` | `z.ZodType<INPUT>` | Yes | Zod schema for the tool input. |
+| `outputSchema` | `z.ZodType<OUTPUT>` | No | Zod schema for the tool output (excludes `SuspendResult`). |
+| `suspendSchema` | `z.ZodType<SUSPEND>` | Yes | Zod schema for the payload passed to `suspend()`. Validated at runtime. |
+| `resumeSchema` | `z.ZodType<RESUME>` | Yes | Zod schema for the data the user sends back. Validated at runtime. |
+| `execute` | `(ctx: { input: INPUT; suspend: (data: SUSPEND) => SuspendResult<SUSPEND>; resumeData: RESUME \| undefined }) => Promise<OUTPUT \| SuspendResult<SUSPEND>>` | Yes | The function that runs on both the initial call and the resume call. |
+
+### Execute Context
+
+The execute function for a suspendable tool receives:
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `input` | `INPUT` | The validated tool input from the LLM. Same on both calls. |
+| `suspend` | `(data: SUSPEND) => SuspendResult<SUSPEND>` | Call this to pause and send data to the client. Return the result from your execute function. |
+| `resumeData` | `RESUME \| undefined` | `undefined` on the first call. Populated with the user's response on resume. |
+
+## ZaikitTool Type
+
+```ts
+type ZaikitTool<
+  INPUT = any,
+  OUTPUT = any,
+  SUSPEND = never,
+  RESUME = never,
+> = Tool<INPUT, OUTPUT> & {
+  readonly __toolTypes: {
+    readonly input: INPUT;
+    readonly output: Exclude<OUTPUT, SuspendResult<any>>;
+    readonly suspend: SUSPEND;
+    readonly resume: RESUME;
+  };
+};
+```
+
+`ZaikitTool` extends the AI SDK's `Tool` type so it satisfies `ToolSet` everywhere. The `__toolTypes` property is a **phantom brand** -- it exists only in the type system and has no runtime cost. The codegen package (`@zaikit/codegen-react`) reads these types via `ts-morph` to generate typed React props and hooks.
+
+## SuspendResult
+
+```ts
+type SuspendResult<T> = {
+  readonly __suspended: true;
+  readonly payload: T;
+};
+```
+
+When a tool's execute function returns a `SuspendResult`, the agent:
+
+1. Strips the tool output from the stream (tool stays at `input-available`).
+2. Emits a `data-tool-suspend` part with the payload.
+3. Halts the LLM loop via the `hasSuspendedTool` stop condition.
+
+You do not construct `SuspendResult` directly. Use the `suspend()` function provided in the execute context.
+
+## Runtime Validation
+
+Both `suspendSchema` and `resumeSchema` are validated at runtime:
+
+- `suspend(data)` calls `suspendSchema.parse(data)` before creating the `SuspendResult`.
+- On resume, `resumeSchema.parse(resumeData)` is called before the execute function receives it.
+- If `outputSchema` is provided, non-suspend results are validated with `outputSchema.parse(result)`.

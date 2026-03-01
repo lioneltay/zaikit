@@ -1,0 +1,11 @@
+{
+  "title": "Guides",
+  "defaultOpen": true,
+  "pages": [
+    "full-stack-setup",
+    "creating-tools",
+    "human-in-the-loop",
+    "postgres-memory",
+    "type-safe-tools"
+  ]
+}

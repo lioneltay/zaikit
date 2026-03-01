@@ -1,0 +1,148 @@
+---
+title: The Agent Loop
+description: How streamText loops through model calls, tool execution, and stop conditions.
+---
+
+# The Agent Loop
+
+At the core of every agent is a loop: the model generates a response, optionally calls tools, the tool results are fed back, and the model generates again. This continues until a stop condition is met. ZAIKit delegates the entire loop to the AI SDK's `streamText`.
+
+## The Loop
+
+```
+       +------------------+
+       |   streamText()   |
+       +--------+---------+
+                |
+                v
+       +------------------+
+       |  Model generates |
+       +--------+---------+
+                |
+          text only?  ----yes----> Done (stream to client)
+                |
+               no (tool calls)
+                |
+                v
+       +------------------+
+       |  Execute tools   |
+       +--------+---------+
+                |
+                v
+       +------------------+
+       | Stop condition?  |
+       +--------+---------+
+                |
+          yes --+-----> Done (stream to client)
+                |
+               no
+                |
+                +-------> Feed results back to model (loop)
+```
+
+ZAIKit calls `streamText` like this:
+
+```ts
+const result = streamText({
+  model,
+  system,
+  tools: mergedTools,
+  stopWhen: composedStopWhen,
+  messages: await convertToModelMessages(messages),
+});
+```
+
+The model decides whether to call tools based on the conversation context and tool descriptions. When tools are called, `streamText` executes them automatically and feeds the results back for the next model turn. This repeats until the model produces only text or a stop condition fires.
+
+## Stop Conditions
+
+A `StopCondition` is an AI SDK function that inspects the conversation steps and decides whether to halt the loop. ZAIKit always composes one built-in stop condition alongside any user-provided ones.
+
+### `hasSuspendedTool` (always active)
+
+This stop condition halts the loop whenever any tool in the last step returned a `SuspendResult`. It is automatically composed into every agent:
+
+```ts
+// From @zaikit/core — stop-conditions.ts
+export const hasSuspendedTool: StopCondition<any> = ({ steps }) => {
+  const lastStep = steps.at(-1);
+  return (
+    lastStep?.toolResults?.some((r) => isSuspendResult(r.output)) ?? false
+  );
+};
+```
+
+When `hasSuspendedTool` fires, the stream ends and the client receives the suspension data so it can prompt the user.
+
+### Custom `stopWhen`
+
+You can provide your own stop condition:
+
+```ts
+const agent = createAgent({
+  model,
+  tools,
+  memory,
+  stopWhen: ({ steps }) => steps.length >= 5, // max 5 loop iterations
+});
+```
+
+Custom conditions are composed alongside `hasSuspendedTool` — both are checked after each step. If either returns `true`, the loop stops.
+
+## The Stream Transform
+
+After `streamText` produces a UI message stream, ZAIKit pipes it through a `TransformStream` that intercepts tool outputs containing `SuspendResult` values. This is the bridge between the AI SDK's tool system and ZAIKit's suspend protocol.
+
+The transform does two things:
+
+1. **Tracks tool names** — `tool-input-start` and `tool-input-available` chunks carry the `toolName`, which is not available on `tool-output-available` chunks. The transform builds a `toolCallId -> toolName` map.
+
+2. **Replaces suspended outputs** — When a `tool-output-available` chunk contains a `SuspendResult`, the transform drops it and emits a `data-tool-suspend` chunk instead. This keeps the tool in the `input-available` state on the client while delivering the suspension payload.
+
+```ts
+// Simplified from agent.ts
+const filtered = uiStream.pipeThrough(
+  new TransformStream({
+    transform(chunk, controller) {
+      // Track toolCallId → toolName mapping
+      if (
+        (chunk.type === "tool-input-start" ||
+          chunk.type === "tool-input-available") &&
+        "toolName" in chunk
+      ) {
+        toolNameMap.set(chunk.toolCallId, chunk.toolName);
+      }
+
+      // Replace SuspendResult outputs with data-tool-suspend
+      if (
+        chunk.type === "tool-output-available" &&
+        isSuspendResult(chunk.output)
+      ) {
+        controller.enqueue({
+          type: "data-tool-suspend",
+          id: chunk.toolCallId,
+          data: {
+            toolCallId: chunk.toolCallId,
+            toolName: toolNameMap.get(chunk.toolCallId) ?? "unknown",
+            payload: chunk.output.payload,
+          },
+        });
+        return; // drop the original tool-output-available
+      }
+
+      controller.enqueue(chunk);
+    },
+  }),
+);
+```
+
+This transform is the reason suspended tools appear as interactive UI components on the client rather than completed tool calls with opaque results. The `data-tool-suspend` part carries the `payload` (arbitrary data chosen by the tool author) so the client renderer knows what to display.
+
+## On Finish: Persistence
+
+When the stream completes, the `onFinish` callback persists the assistant message to memory:
+
+- **New messages** are saved with `memory.addMessage()`.
+- **Resumed messages** are updated in-place with `memory.updateMessage()`, preserving the original message ID.
+
+This means the persisted message reflects the final state of the stream, including any `data-tool-suspend` parts. When a tool is later resumed, the agent can find the suspension by scanning the stored message parts.

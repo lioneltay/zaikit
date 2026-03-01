@@ -1,0 +1,93 @@
+---
+title: useAgentChat
+description: Lower-level hook that powers AgentProvider with custom transport, suspend enrichment, and resume handling.
+---
+
+# useAgentChat
+
+A lower-level React hook that wraps the AI SDK's `useChat` with ZAIKit-specific transport, message transforms, and resume logic. This is the hook used internally by `AgentProvider`.
+
+> **Note:** `useAgentChat` is not part of the public API of `@zaikit/react`. It is an internal hook used by `AgentProvider`. This reference documents its behavior for contributors and advanced users who need to understand what `AgentProvider` does under the hood.
+
+## When to Use
+
+In most cases, use [`AgentProvider`](/reference/react/agent-provider) and [`useAgent`](/reference/react/use-agent) instead.
+
+## Options
+
+```ts
+type UseAgentChatOptions = {
+  api: string;
+  threadId: string;
+  initialMessages: UIMessage[];
+  fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
+  onFinish?: () => void;
+};
+```
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `api` | `string` | Yes | URL of your `/api/chat` endpoint. |
+| `threadId` | `string` | Yes | Current thread ID. Sent with every request. |
+| `initialMessages` | `UIMessage[]` | Yes | Messages to hydrate on mount. |
+| `fetchMessages` | `(threadId: string) => Promise<UIMessage[]>` | No | Called after resume to re-fetch messages from the server. |
+| `onFinish` | `() => void` | No | Called when a streaming response completes. |
+
+## Return Value
+
+```ts
+{
+  rawMessages: UIMessage[];
+  messages: UIMessage[];
+  sendMessage: ((opts: { text: string }) => void) | undefined;
+  status: string;
+  resumeTool: (toolCallId: string, data: unknown) => void;
+  addToolOutput: (opts: { tool: string; toolCallId: string; output: unknown }) => Promise<void>;
+  hasSuspendedTools: boolean;
+  setMessages: (msgs: UIMessage[]) => void;
+}
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `rawMessages` | `UIMessage[]` | Unprocessed messages directly from `useChat`. |
+| `messages` | `UIMessage[]` | Processed messages with suspend enrichment and message merging applied. |
+| `sendMessage` | `((opts: { text: string }) => void) \| undefined` | Send a user message. `undefined` when `hasSuspendedTools` is `true` or frontend tools are pending. |
+| `addToolOutput` | `(opts: { tool: string; toolCallId: string; output: unknown }) => Promise<void>` | Submit output for a frontend tool call. |
+| `status` | `string` | `"ready"`, `"streaming"`, or `"submitted"`. Shows `"streaming"` during resume. |
+| `resumeTool` | `(toolCallId: string, data: unknown) => void` | Resume a suspended tool call. |
+| `hasSuspendedTools` | `boolean` | `true` if any processed message has a `suspend` field on a tool part. |
+| `setMessages` | `(msgs: UIMessage[]) => void` | Directly replace the messages array. |
+
+## What It Does Beyond useChat
+
+### Custom Transport
+
+`useAgentChat` creates a `DefaultChatTransport` with a custom `prepareSendMessagesRequest` that transforms the AI SDK's default request format. Instead of sending the full messages array, it sends only `{ threadId, message: lastMessage }`. The server loads the full conversation from memory.
+
+### Suspend Enrichment
+
+Raw messages from the stream contain separate `data-tool-suspend` parts. `useAgentChat` transforms these:
+
+1. Builds a map of `toolCallId` to suspend data from unresolved `data-tool-suspend` parts.
+2. Merges suspend data onto corresponding tool parts as a `suspend` field.
+3. Strips all `data-tool-suspend` parts from the output.
+
+This means consumers see tool parts with an optional `suspend` field rather than separate suspend parts.
+
+### Message Merging
+
+Consecutive assistant messages are merged by concatenating their parts. This keeps the message list clean for rendering after tool resumes or multi-step agent loops.
+
+### Resume Logic
+
+`resumeTool(toolCallId, data)`:
+
+1. POSTs `{ threadId, resume: { toolCallId, data } }` to the API.
+2. If the response is `204 No Content` (more suspensions remain), calls `fetchMessages` and updates local state.
+3. If the response is a stream (all suspensions resolved), consumes it and calls `fetchMessages` to get the final state.
+4. Sets `status` to `"streaming"` during the entire operation.
+
+### sendMessage Gating
+
+`sendMessage` is set to `undefined` when `hasSuspendedTools` is `true` or when frontend tools are pending resolution. This prevents the user from sending new messages while tools are awaiting input.

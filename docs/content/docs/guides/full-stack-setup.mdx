@@ -1,0 +1,282 @@
+---
+title: Full-Stack Setup
+description: Wire up a ZAIKit backend and React frontend with thread management, CORS, and persistent memory.
+---
+
+# Full-Stack Setup
+
+This guide walks through wiring a ZAIKit agent on the backend to a React frontend with thread management, message persistence, and streaming.
+
+## Project Structure
+
+A typical ZAIKit project has a backend that hosts the agent and a frontend that renders the conversation. In a monorepo this looks like:
+
+```
+my-app/
+  packages/
+    backend/
+      src/
+        agent/index.ts    # createAgent + tools
+        server.ts         # Hono HTTP server
+    frontend/
+      src/
+        App.tsx           # AgentProvider + thread management
+        Chat.tsx          # Message list + input
+        tools/            # Tool renderer components
+```
+
+You can also use separate repositories -- the only contract between frontend and backend is the `/api/chat` POST endpoint.
+
+## Backend
+
+### 1. Install Dependencies
+
+```bash
+pnpm add @zaikit/core @zaikit/memory-postgres ai zod hono @hono/node-server
+pnpm add @ai-sdk/openai  # or your preferred model provider
+```
+
+### 2. Define the Agent
+
+```ts title="src/agent/index.ts"
+import { z } from "zod";
+import { createAgent, createTool } from "@zaikit/core";
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+import { openai } from "@ai-sdk/openai";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+await memory.initialize();
+
+const get_weather = createTool({
+  description: "Get the current weather for a location",
+  inputSchema: z.object({
+    location: z.string().describe("City name, e.g. 'Sydney'"),
+  }),
+  execute: async ({ input }) => ({
+    location: input.location,
+    temperature: 22,
+    condition: "Sunny",
+  }),
+});
+
+export const agent = createAgent({
+  model: openai("gpt-4o"),
+  system: "You are a helpful weather assistant.",
+  tools: { get_weather },
+  memory,
+});
+```
+
+The `memory` option enables `agent.chat()`, which handles persisting messages, generating thread titles, and managing the full request lifecycle.
+
+### 3. Create the Server
+
+```ts title="src/server.ts"
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { serve } from "@hono/node-server";
+import { agent } from "./agent/index.js";
+
+const app = new Hono();
+
+// Allow your frontend origin
+app.use("*", cors({ origin: "http://localhost:5173" }));
+
+app.get("/health", (c) => c.json({ status: "ok" }));
+
+// Streaming chat endpoint
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json();
+  return agent.chat(body);
+});
+
+serve({ fetch: app.fetch, port: 3001 }, (info) => {
+  console.log(`Server running at http://localhost:${info.port}`);
+});
+```
+
+The `/api/chat` endpoint accepts two body shapes, and `agent.chat()` dispatches automatically:
+
+| Body shape | Purpose |
+|---|---|
+| `{ threadId, message }` | New user message |
+| `{ threadId, resume: { toolCallId, data } }` | Resume a suspended tool |
+
+### 4. Thread Management Endpoints
+
+You need endpoints for listing, deleting, and fetching messages for threads. The `agent.memory` object exposes the full `Memory` interface:
+
+```ts title="src/server.ts"
+// List all threads (sorted by most recent)
+app.get("/api/threads", async (c) => {
+  const threads = await agent.memory!.listThreads();
+  return c.json(threads);
+});
+
+// Delete a thread (cascade-deletes its messages)
+app.delete("/api/threads/:id", async (c) => {
+  await agent.memory!.deleteThread(c.req.param("id"));
+  return c.json({ ok: true });
+});
+
+// Get messages for a thread
+app.get("/api/threads/:id/messages", async (c) => {
+  const messages = await agent.memory!.getMessages(c.req.param("id"));
+  return c.json(messages);
+});
+
+// Update thread title
+app.patch("/api/threads/:id", async (c) => {
+  const { title } = await c.req.json();
+  const thread = await agent.memory!.updateThread(c.req.param("id"), { title });
+  return c.json(thread);
+});
+```
+
+### 5. Environment Variables
+
+```bash title=".env"
+DATABASE_URL=postgresql://postgres:postgres@localhost:5432/myapp
+OPENAI_API_KEY=sk-...
+```
+
+## Frontend
+
+### 1. Install Dependencies
+
+```bash
+pnpm add @zaikit/react @ai-sdk/react ai
+```
+
+### 2. Thread Management
+
+Thread IDs are generated on the client with `crypto.randomUUID()`. When the user creates a new thread, generate an ID and clear the initial messages. When switching threads, fetch messages from the server.
+
+```tsx title="src/App.tsx"
+import { useState } from "react";
+import type { UIMessage } from "ai";
+import { AgentProvider } from "@zaikit/react";
+import { Chat } from "./Chat";
+
+type Thread = {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export default function App() {
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
+
+  const handleCreateThread = () => {
+    const id = crypto.randomUUID();
+    setActiveThreadId(id);
+    setInitialMessages([]);
+  };
+
+  const handleSelectThread = async (id: string) => {
+    const res = await fetch(`http://localhost:3001/api/threads/${id}/messages`);
+    const msgs: UIMessage[] = await res.json();
+    setInitialMessages(msgs);
+    setActiveThreadId(id);
+  };
+
+  const refreshThreads = async () => {
+    const res = await fetch("http://localhost:3001/api/threads");
+    setThreads(await res.json());
+  };
+
+  return (
+    <div>
+      <aside>
+        <button onClick={handleCreateThread}>New Thread</button>
+        {threads.map((t) => (
+          <button key={t.id} onClick={() => handleSelectThread(t.id)}>
+            {t.title ?? "Untitled"}
+          </button>
+        ))}
+      </aside>
+
+      {activeThreadId && (
+        <AgentProvider
+          key={activeThreadId}
+          api="http://localhost:3001/api/chat"
+          threadId={activeThreadId}
+          initialMessages={initialMessages}
+          fetchMessages={async (threadId) => {
+            const res = await fetch(
+              `http://localhost:3001/api/threads/${threadId}/messages`
+            );
+            return res.json();
+          }}
+          onFinish={refreshThreads}
+        >
+          <Chat />
+        </AgentProvider>
+      )}
+    </div>
+  );
+}
+```
+
+### Key Props on AgentProvider
+
+| Prop | Purpose |
+|---|---|
+| `key={activeThreadId}` | Forces a full remount when threads switch, resetting all chat state cleanly |
+| `api` | URL of the `/api/chat` endpoint |
+| `threadId` | Current thread ID (sent in every request body) |
+| `initialMessages` | Pre-loaded messages for the thread (empty array for new threads) |
+| `fetchMessages` | Called after resume operations to refresh messages from the server |
+| `onFinish` | Called after each assistant response completes -- use it to refresh the thread list so titles update |
+
+### 3. The onFinish Pattern
+
+The backend generates thread titles automatically when the first user message arrives. Use `onFinish` to refresh your thread list after every response so newly-generated titles appear:
+
+```tsx
+<AgentProvider
+  // ...
+  onFinish={async () => {
+    const res = await fetch("http://localhost:3001/api/threads");
+    setThreads(await res.json());
+  }}
+>
+```
+
+### 4. Thread Switching with `key`
+
+Setting `key={activeThreadId}` on `AgentProvider` is critical. Without it, React will reuse the same component instance and stale state from the previous thread will leak into the new one. The `key` prop forces a full unmount/remount, which:
+
+- Resets the internal `useChat` state
+- Re-initializes with the new `initialMessages`
+- Clears any pending tool resume state
+
+```tsx
+<AgentProvider
+  key={activeThreadId}  // Forces remount on thread switch
+  threadId={activeThreadId}
+  initialMessages={initialMessages}
+  // ...
+>
+```
+
+## CORS Configuration
+
+The backend must allow the frontend origin. With Hono:
+
+```ts
+import { cors } from "hono/cors";
+
+// Development: allow your Vite dev server
+app.use("*", cors({ origin: "http://localhost:5173" }));
+
+// Production: restrict to your domain
+app.use("*", cors({ origin: "https://myapp.example.com" }));
+```
+
+The `/api/chat` endpoint streams responses using `ReadableStream`, so the CORS middleware must handle both the preflight `OPTIONS` request and the actual `POST` with streaming.

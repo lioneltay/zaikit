@@ -1,0 +1,148 @@
+---
+title: createAgent
+description: Create an AI agent with tools, memory, and streaming chat capabilities.
+---
+
+# createAgent
+
+Creates an agent that combines a language model, tools, optional memory, and optional stop conditions into a single object that can stream responses back to clients.
+
+```ts
+import { createAgent } from "@zaikit/core";
+```
+
+## Usage
+
+```ts
+import { createAgent } from "@zaikit/core";
+import { openai } from "@ai-sdk/openai";
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+await memory.initialize();
+
+const agent = createAgent({
+  model: openai("gpt-4o"),
+  system: "You are a helpful assistant.",
+  tools: { get_weather, search },
+  memory,
+});
+```
+
+## Options
+
+`createAgent<T extends ToolSet>(options: CreateAgentOptions<T>): Agent<T>`
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `model` | `LanguageModel` | Yes | Any AI SDK compatible language model. |
+| `system` | `string` | No | System prompt sent with every request. |
+| `tools` | `T extends ToolSet` | No | Object mapping tool names to tool definitions. Keys become the tool names visible to the LLM. |
+| `memory` | `Memory` | No | A memory adapter for persisting threads and messages. Required if you call `agent.chat()`. |
+| `stopWhen` | `StopCondition<ToolSet>` | No | Custom stop condition composed alongside the built-in `hasSuspendedTool` condition. |
+
+## Return Type
+
+`createAgent` returns an `Agent<T>` object:
+
+```ts
+type Agent<T extends ToolSet = ToolSet> = {
+  tools: T;
+  memory: Memory | undefined;
+  chat(options: ChatOptions): Promise<Response>;
+};
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `tools` | `T` | The tools object passed to the agent. Useful for codegen to inspect tool types. |
+| `memory` | `Memory \| undefined` | The memory adapter, if one was provided. |
+| `chat` | `(options: ChatOptions) => Promise<Response>` | Stream a response. Accepts a message or a resume request. |
+
+## ChatOptions
+
+`ChatOptions` is a discriminated union. The agent inspects the shape of the request body to determine the action:
+
+```ts
+type ChatOptions =
+  | { threadId: string; message: UIMessage; frontendTools?: FrontendToolDef[] }
+  | { threadId: string; resume: { toolCallId: string; data: unknown }; frontendTools?: FrontendToolDef[] }
+  | { threadId: string; toolOutputs: { toolCallId: string; output: unknown }[]; frontendTools?: FrontendToolDef[] };
+```
+
+### Message path
+
+When the body contains `message`, the agent:
+
+1. Creates the thread if it does not exist.
+2. Persists the user message via `memory.addMessage`.
+3. Loads the full conversation via `memory.getMessages`.
+4. Fires off a background title generation request (fire-and-forget).
+5. Streams the LLM response back, persisting the assistant message on finish.
+
+### Resume path
+
+When the body contains `resume`, the agent:
+
+1. Finds the suspended message by scanning for a `data-tool-suspend` part matching `resume.toolCallId`.
+2. Re-executes the tool with `resumeData` passed via `AsyncLocalStorage`.
+3. Updates the message in-place with the tool output.
+4. If other tools in the same message are still suspended, returns `204 No Content` -- the client should re-fetch messages.
+5. Otherwise, continues the LLM with the updated conversation and streams the follow-up.
+
+### Tool outputs path
+
+When the body contains `toolOutputs`, the agent handles frontend tool results:
+
+1. For each `{ toolCallId, output }` entry, finds the corresponding tool call and writes the output.
+2. Persists the updated message.
+3. If other tools are still pending, returns `204 No Content`.
+4. Otherwise, continues the LLM loop and streams the follow-up.
+
+### `frontendTools`
+
+All three variants accept an optional `frontendTools` array. When provided, the agent dynamically registers these as tools that the LLM can call but whose execution is deferred to the client. See `FrontendToolDef`:
+
+```ts
+type FrontendToolDef = {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+```
+
+## Stop Conditions
+
+`hasSuspendedTool` is always composed into `stopWhen` alongside any user-provided stop condition. This ensures the agent loop halts whenever a tool returns a `SuspendResult`, giving the client a chance to show UI and collect user input.
+
+```ts
+import { createAgent } from "@zaikit/core";
+
+const agent = createAgent({
+  model: openai("gpt-4o"),
+  tools: { confirm_purchase },
+  memory,
+  // Your custom stop condition is composed alongside hasSuspendedTool
+  stopWhen: myCustomStopCondition,
+});
+```
+
+## Wiring to an HTTP Endpoint
+
+`agent.chat()` returns a standard `Response` with a streaming body, so it works with any HTTP framework:
+
+```ts
+// Hono
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json();
+  return agent.chat(body);
+});
+
+// Express (with a streaming adapter)
+app.post("/api/chat", async (req, res) => {
+  const response = await agent.chat(req.body);
+  // Pipe response.body to res
+});
+```

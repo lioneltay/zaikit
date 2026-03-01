@@ -1,0 +1,128 @@
+---
+title: createPostgresMemory
+description: PostgreSQL implementation of the Memory interface using the postgres driver.
+---
+
+# createPostgresMemory
+
+Creates a `Memory` adapter backed by PostgreSQL. Uses the [`postgres`](https://github.com/porsager/postgres) driver (not `pg`).
+
+```ts
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+```
+
+## Usage
+
+```ts
+import { createPostgresMemory } from "@zaikit/memory-postgres";
+import { createAgent } from "@zaikit/core";
+import { openai } from "@ai-sdk/openai";
+
+const memory = createPostgresMemory({
+  connectionString: process.env.DATABASE_URL!,
+});
+
+// Create tables on startup
+await memory.initialize();
+
+const agent = createAgent({
+  model: openai("gpt-4o"),
+  tools: { /* ... */ },
+  memory,
+});
+```
+
+## Signature
+
+```ts
+function createPostgresMemory(options: {
+  connectionString: string;
+}): Memory & { initialize: () => Promise<void> };
+```
+
+## Options
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `connectionString` | `string` | Yes | PostgreSQL connection string (e.g. `postgresql://user:pass@localhost:5432/mydb`). |
+
+## Return Type
+
+Returns a `Memory` object (implementing all methods from the [`Memory` interface](/reference/core/memory)) plus an additional `initialize` method.
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `initialize` | `() => Promise<void>` | Creates the required tables and indexes if they do not exist. Call this once on application startup. |
+| *(all Memory methods)* | | See the [Memory reference](/reference/core/memory) for the full method list. |
+
+## initialize()
+
+`initialize()` creates the following database schema using `CREATE TABLE IF NOT EXISTS` and `CREATE INDEX IF NOT EXISTS`, making it safe to call multiple times:
+
+### Tables
+
+#### `zaikit_threads`
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `TEXT` | `PRIMARY KEY` |
+| `title` | `TEXT` | Nullable |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` |
+| `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` |
+
+#### `zaikit_messages`
+
+| Column | Type | Constraints |
+| --- | --- | --- |
+| `id` | `TEXT` | `PRIMARY KEY` |
+| `thread_id` | `TEXT` | `NOT NULL REFERENCES zaikit_threads(id) ON DELETE CASCADE` |
+| `role` | `TEXT` | `NOT NULL` |
+| `parts` | `JSONB` | `NOT NULL DEFAULT '[]'` |
+| `metadata` | `JSONB` | Nullable |
+| `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` |
+
+### Indexes
+
+| Index | Columns |
+| --- | --- |
+| `idx_zaikit_messages_thread_id` | `(thread_id, created_at)` |
+
+## Implementation Details
+
+### Upsert Semantics
+
+`addMessage` uses `ON CONFLICT (id) DO UPDATE` to implement upsert behavior. If a message with the same ID already exists, its `parts` and `metadata` are updated. This is important because the agent may persist a message during streaming and then update it in `onFinish`.
+
+```sql
+INSERT INTO zaikit_messages (id, thread_id, role, parts, metadata)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (id) DO UPDATE SET
+  parts = $4,
+  metadata = $5
+```
+
+### Partial Updates
+
+`updateThread` uses `COALESCE` so only provided fields are updated:
+
+```sql
+UPDATE zaikit_threads
+SET title = COALESCE($1, title), updated_at = NOW()
+WHERE id = $2
+```
+
+### Cascade Delete
+
+The `thread_id` foreign key on `zaikit_messages` uses `ON DELETE CASCADE`. Deleting a thread automatically removes all its messages.
+
+### Thread Ordering
+
+`listThreads` returns threads ordered by `updated_at DESC` (most recently active first).
+
+### Message Ordering
+
+`getMessages` returns messages ordered by `created_at ASC` (chronological order).
+
+### Updated Timestamps
+
+Both `addMessage` and `updateMessage` touch the parent thread's `updated_at` timestamp, ensuring the thread list stays sorted by recent activity.

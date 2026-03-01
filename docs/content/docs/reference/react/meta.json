@@ -1,0 +1,10 @@
+{
+  "title": "@zaikit/react",
+  "defaultOpen": true,
+  "pages": [
+    "agent-provider",
+    "use-agent",
+    "use-agent-chat",
+    "use-tool-renderer"
+  ]
+}
