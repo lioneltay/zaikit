@@ -2,6 +2,13 @@
   "name": "@zaikit/memory-postgres",
   "version": "0.1.1",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lioneltay/zaikit.git",
+    "directory": "packages/memory-postgres"
+  },
+  "homepage": "https://zaikit.dev",
+  "bugs": "https://github.com/lioneltay/zaikit/issues",
   "type": "module",
   "files": [
     "dist"
