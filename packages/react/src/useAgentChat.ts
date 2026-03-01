@@ -5,7 +5,7 @@ import {
   lastAssistantMessageIsCompleteWithToolCalls,
 } from "ai";
 import { useCallback, useMemo, useState } from "react";
-import type { FrontendToolRegistration } from "./types.js";
+import type { FrontendToolRegistration } from "./types";
 
 export type UseAgentChatOptions = {
   api: string;

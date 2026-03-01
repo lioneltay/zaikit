@@ -1,10 +1,4 @@
 {
   "root": true,
-  "pages": [
-    "index",
-    "getting-started",
-    "concepts",
-    "guides",
-    "reference"
-  ]
+  "pages": ["index", "getting-started", "concepts", "guides", "reference"]
 }

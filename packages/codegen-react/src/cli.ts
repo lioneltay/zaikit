@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { extractToolTypes } from "./extract.js";
-import { generateOutput } from "./generate.js";
+import { extractToolTypes } from "./extract";
+import { generateOutput } from "./generate";
 
 function findTsConfig(startDir: string): string | null {
   let dir = startDir;

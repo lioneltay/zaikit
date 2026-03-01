@@ -1,9 +1,9 @@
 import type React from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toJSONSchema, type ZodType } from "zod";
-import type { ToolRenderProps, ToolRenderState } from "./types.js";
-import { useAgent } from "./useAgent.js";
-import { useToolRenderer } from "./useToolRenderer.js";
+import type { ToolRenderProps, ToolRenderState } from "./types";
+import { useAgent } from "./useAgent";
+import { useToolRenderer } from "./useToolRenderer";
 
 export type UseToolRenderProps<INPUT> = {
   args: INPUT;

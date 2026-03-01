@@ -1,7 +1,7 @@
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { extractToolTypes, type ToolTypeInfo } from "../src/extract.js";
-import { generateOutput, toPascalCase } from "../src/generate.js";
+import { extractToolTypes, type ToolTypeInfo } from "../src/extract";
+import { generateOutput, toPascalCase } from "../src/generate";
 
 // ─── toPascalCase ───
 

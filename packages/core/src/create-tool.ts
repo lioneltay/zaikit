@@ -4,8 +4,8 @@ import {
   isSuspendResult,
   type SuspendResult,
   suspend as suspendFn,
-} from "./suspend.js";
-import { getResumeData } from "./suspend-context.js";
+} from "./suspend";
+import { getResumeData } from "./suspend-context";
 
 // Enriched tool type that preserves all type parameters for codegen.
 // Extends the AI SDK's Tool so it satisfies ToolSet everywhere.

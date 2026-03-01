@@ -7,8 +7,8 @@ import type {
   ToolRenderFn,
   ToolRenderProps,
   ToolRenderState,
-} from "./types.js";
-import { useAgentChat } from "./useAgentChat.js";
+} from "./types";
+import { useAgentChat } from "./useAgentChat";
 
 export const AgentContext = createContext<AgentContextValue | null>(null);
 

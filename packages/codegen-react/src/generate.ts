@@ -1,4 +1,4 @@
-import type { ToolTypeInfo } from "./extract.js";
+import type { ToolTypeInfo } from "./extract";
 
 export function toPascalCase(s: string): string {
   return s

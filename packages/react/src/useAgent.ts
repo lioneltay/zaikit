@@ -1,6 +1,6 @@
 import { useContext } from "react";
-import { AgentContext } from "./AgentProvider.js";
-import type { AgentContextValue } from "./types.js";
+import { AgentContext } from "./AgentProvider";
+import type { AgentContextValue } from "./types";
 
 export function useAgent(): AgentContextValue {
   const ctx = useContext(AgentContext);

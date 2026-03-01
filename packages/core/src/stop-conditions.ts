@@ -1,5 +1,5 @@
 import type { StopCondition } from "ai";
-import { isSuspendResult } from "./suspend.js";
+import { isSuspendResult } from "./suspend";
 
 /**
  * Stop condition that halts the LLM loop when any tool in the last step
