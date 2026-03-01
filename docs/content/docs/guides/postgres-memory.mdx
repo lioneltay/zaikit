@@ -38,6 +38,7 @@ You must call `initialize()` before using the memory. This runs `CREATE TABLE IF
 |---|---|---|
 | `id` | `TEXT PRIMARY KEY` | Thread ID (typically a UUID from `crypto.randomUUID()`) |
 | `title` | `TEXT` | Thread title (nullable, auto-generated from the first message) |
+| `owner_id` | `TEXT` | Optional owner identifier for access control and filtering |
 | `created_at` | `TIMESTAMPTZ` | Creation timestamp |
 | `updated_at` | `TIMESTAMPTZ` | Last update timestamp (updated on every message) |
 
@@ -103,18 +104,21 @@ The memory object implements the full `Memory` interface. Use it in your server 
 
 ### List Threads
 
-Returns all threads sorted by most recently updated:
+Returns all threads sorted by most recently updated. Optionally filter by `ownerId`:
 
 ```ts
 const threads = await memory.listThreads();
-// [{ id, title, createdAt, updatedAt }, ...]
+// [{ id, title, ownerId, createdAt, updatedAt }, ...]
+
+// Filter by owner
+const myThreads = await memory.listThreads({ ownerId: "user-123" });
 ```
 
 ### Get a Single Thread
 
 ```ts
 const thread = await memory.getThread("thread-abc-123");
-// { id, title, createdAt, updatedAt } or null
+// { id, title, ownerId, createdAt, updatedAt } or null
 ```
 
 ### Delete a Thread
@@ -125,11 +129,12 @@ Cascade-deletes all messages belonging to the thread:
 await memory.deleteThread("thread-abc-123");
 ```
 
-### Update Thread Title
+### Update a Thread
 
 ```ts
 const updated = await memory.updateThread("thread-abc-123", {
   title: "Weather discussion",
+  ownerId: "user-456",
 });
 ```
 
@@ -172,6 +177,7 @@ The `Thread` type returned by memory methods:
 type Thread = {
   id: string;
   title: string | null;
+  ownerId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

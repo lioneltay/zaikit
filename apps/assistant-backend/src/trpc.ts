@@ -11,9 +11,11 @@ export function createAppRouter(agent: Agent) {
 
   return t.router({
     thread: t.router({
-      list: t.procedure.query(async () => {
-        return memory.listThreads();
-      }),
+      list: t.procedure
+        .input(z.object({ ownerId: z.string().optional() }).optional())
+        .query(async ({ input }) => {
+          return memory.listThreads(input ?? undefined);
+        }),
 
       delete: t.procedure
         .input(z.object({ id: z.string() }))
@@ -22,9 +24,18 @@ export function createAppRouter(agent: Agent) {
         }),
 
       update: t.procedure
-        .input(z.object({ id: z.string(), title: z.string().optional() }))
+        .input(
+          z.object({
+            id: z.string(),
+            title: z.string().optional(),
+            ownerId: z.string().optional(),
+          }),
+        )
         .mutation(async ({ input }) => {
-          return memory.updateThread(input.id, { title: input.title });
+          return memory.updateThread(input.id, {
+            title: input.title,
+            ownerId: input.ownerId,
+          });
         }),
 
       getMessages: t.procedure

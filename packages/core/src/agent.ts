@@ -31,7 +31,12 @@ export type FrontendToolDef = {
 };
 
 export type ChatOptions =
-  | { threadId: string; message: UIMessage; frontendTools?: FrontendToolDef[] }
+  | {
+      threadId: string;
+      message: UIMessage;
+      ownerId?: string;
+      frontendTools?: FrontendToolDef[];
+    }
   | {
       threadId: string;
       resume: { toolCallId: string; data: unknown };
@@ -443,11 +448,11 @@ export function createAgent<T extends ToolSet>({
         );
       }
 
-      const { threadId, message } = options;
+      const { threadId, message, ownerId } = options;
 
       const thread = await memory.getThread(threadId);
       if (!thread) {
-        await memory.createThread(threadId);
+        await memory.createThread(threadId, undefined, ownerId);
       }
 
       await memory.addMessage(threadId, message);

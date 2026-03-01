@@ -67,7 +67,7 @@ type Agent<T extends ToolSet = ToolSet> = {
 
 ```ts
 type ChatOptions =
-  | { threadId: string; message: UIMessage; frontendTools?: FrontendToolDef[] }
+  | { threadId: string; message: UIMessage; ownerId?: string; frontendTools?: FrontendToolDef[] }
   | { threadId: string; resume: { toolCallId: string; data: unknown }; frontendTools?: FrontendToolDef[] }
   | { threadId: string; toolOutputs: { toolCallId: string; output: unknown }[]; frontendTools?: FrontendToolDef[] };
 ```
@@ -76,7 +76,7 @@ type ChatOptions =
 
 When the body contains `message`, the agent:
 
-1. Creates the thread if it does not exist.
+1. Creates the thread if it does not exist. If `ownerId` is provided, it is stored on the new thread.
 2. Persists the user message via `memory.addMessage`.
 3. Loads the full conversation via `memory.getMessages`.
 4. Fires off a background title generation request (fire-and-forget).

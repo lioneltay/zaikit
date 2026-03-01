@@ -67,6 +67,7 @@ Returns a `Memory` object (implementing all methods from the [`Memory` interface
 | --- | --- | --- |
 | `id` | `TEXT` | `PRIMARY KEY` |
 | `title` | `TEXT` | Nullable |
+| `owner_id` | `TEXT` | Nullable |
 | `created_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` |
 | `updated_at` | `TIMESTAMPTZ` | `NOT NULL DEFAULT NOW()` |
 
@@ -85,6 +86,7 @@ Returns a `Memory` object (implementing all methods from the [`Memory` interface
 
 | Index | Columns |
 | --- | --- |
+| `idx_zaikit_threads_owner_id` | `(owner_id)` |
 | `idx_zaikit_messages_thread_id` | `(thread_id, created_at)` |
 
 ## Implementation Details
@@ -107,8 +109,10 @@ ON CONFLICT (id) DO UPDATE SET
 
 ```sql
 UPDATE zaikit_threads
-SET title = COALESCE($1, title), updated_at = NOW()
-WHERE id = $2
+SET title = COALESCE($1, title),
+    owner_id = COALESCE($2, owner_id),
+    updated_at = NOW()
+WHERE id = $3
 ```
 
 ### Cascade Delete

@@ -16,9 +16,13 @@ export function createPostgresMemory({
       CREATE TABLE IF NOT EXISTS zaikit_threads (
         id TEXT PRIMARY KEY,
         title TEXT,
+        owner_id TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_zaikit_threads_owner_id ON zaikit_threads(owner_id)
     `;
     await sql`
       CREATE TABLE IF NOT EXISTS zaikit_messages (
@@ -36,15 +40,16 @@ export function createPostgresMemory({
   }
 
   const memory: Memory = {
-    async createThread(id, title) {
+    async createThread(id, title, ownerId) {
       const [row] = await sql`
-        INSERT INTO zaikit_threads (id, title)
-        VALUES (${id}, ${title ?? null})
-        RETURNING id, title, created_at, updated_at
+        INSERT INTO zaikit_threads (id, title, owner_id)
+        VALUES (${id}, ${title ?? null}, ${ownerId ?? null})
+        RETURNING id, title, owner_id, created_at, updated_at
       `;
       return {
         id: row.id,
         title: row.title,
+        ownerId: row.owner_id,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -52,24 +57,32 @@ export function createPostgresMemory({
 
     async getThread(id) {
       const [row] = await sql`
-        SELECT id, title, created_at, updated_at FROM zaikit_threads WHERE id = ${id}
+        SELECT id, title, owner_id, created_at, updated_at FROM zaikit_threads WHERE id = ${id}
       `;
       if (!row) return null;
       return {
         id: row.id,
         title: row.title,
+        ownerId: row.owner_id,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
     },
 
-    async listThreads() {
-      const rows = await sql`
-        SELECT id, title, created_at, updated_at FROM zaikit_threads ORDER BY updated_at DESC
-      `;
+    async listThreads(opts) {
+      const rows = opts?.ownerId
+        ? await sql`
+            SELECT id, title, owner_id, created_at, updated_at FROM zaikit_threads
+            WHERE owner_id = ${opts.ownerId}
+            ORDER BY updated_at DESC
+          `
+        : await sql`
+            SELECT id, title, owner_id, created_at, updated_at FROM zaikit_threads ORDER BY updated_at DESC
+          `;
       return rows.map((row) => ({
         id: row.id,
         title: row.title,
+        ownerId: row.owner_id,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       }));
@@ -82,14 +95,18 @@ export function createPostgresMemory({
     async updateThread(id, updates) {
       const [row] = await sql`
         UPDATE zaikit_threads
-        SET title = COALESCE(${updates.title ?? null}, title), updated_at = NOW()
+        SET
+          title = COALESCE(${updates.title ?? null}, title),
+          owner_id = COALESCE(${updates.ownerId ?? null}, owner_id),
+          updated_at = NOW()
         WHERE id = ${id}
-        RETURNING id, title, created_at, updated_at
+        RETURNING id, title, owner_id, created_at, updated_at
       `;
       if (!row) throw new Error(`Thread not found: ${id}`);
       return {
         id: row.id,
         title: row.title,
+        ownerId: row.owner_id,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };

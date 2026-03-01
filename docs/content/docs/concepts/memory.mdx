@@ -23,17 +23,18 @@ import type { UIMessage } from "ai";
 type Thread = {
   id: string;
   title: string | null;
+  ownerId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
 
 type Memory = {
   // Thread operations
-  createThread(id: string, title?: string): Promise<Thread>;
+  createThread(id: string, title?: string, ownerId?: string): Promise<Thread>;
   getThread(id: string): Promise<Thread | null>;
-  listThreads(): Promise<Thread[]>;
+  listThreads(opts?: { ownerId?: string }): Promise<Thread[]>;
   deleteThread(id: string): Promise<void>;
-  updateThread(id: string, updates: { title?: string }): Promise<Thread>;
+  updateThread(id: string, updates: { title?: string; ownerId?: string }): Promise<Thread>;
 
   // Message operations
   getMessages(threadId: string): Promise<UIMessage[]>;
@@ -50,11 +51,11 @@ type Memory = {
 
 | Method | Description |
 |---|---|
-| `createThread(id, title?)` | Create a new thread. The `id` is provided by the client. `title` defaults to `null`. |
+| `createThread(id, title?, ownerId?)` | Create a new thread. The `id` is provided by the client. `title` and `ownerId` default to `null`. |
 | `getThread(id)` | Return a thread by ID, or `null` if not found. |
-| `listThreads()` | Return all threads, typically ordered by `updatedAt` descending. |
+| `listThreads(opts?)` | Return threads, optionally filtered by `ownerId`. Ordered by `updatedAt` descending. |
 | `deleteThread(id)` | Delete a thread and its messages. |
-| `updateThread(id, updates)` | Update thread fields (currently only `title`). |
+| `updateThread(id, updates)` | Update thread fields (`title`, `ownerId`). Only provided fields are changed. |
 
 ### Message Operations
 
@@ -132,16 +133,16 @@ To use a different database, implement the `Memory` type and pass it to `createA
 import type { Memory } from "@zaikit/core";
 
 const memory: Memory = {
-  async createThread(id, title) {
+  async createThread(id, title, ownerId) {
     // Insert into your database
-    // Return { id, title, createdAt, updatedAt }
+    // Return { id, title, ownerId, createdAt, updatedAt }
   },
   async getThread(id) {
     // Query your database
     // Return thread or null
   },
-  async listThreads() {
-    // Return all threads
+  async listThreads(opts) {
+    // Return threads, optionally filtered by opts.ownerId
   },
   async deleteThread(id) {
     // Delete thread and its messages
