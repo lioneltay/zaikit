@@ -4,6 +4,7 @@
   "pages": [
     "how-it-works",
     "agent-loop",
+    "middleware-and-hooks",
     "suspend-resume",
     "memory",
     "tool-rendering"

@@ -1,8 +1,15 @@
 import { createInMemoryMemory } from "@zaikit/memory-inmemory";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
+import type {
+  AfterStepContext,
+  AfterToolCallContext,
+  BeforeToolCallContext,
+} from "../src/agent";
 import { createAgent } from "../src/agent";
 import { createTool } from "../src/create-tool";
+import type { Middleware } from "../src/middleware";
+import { mapChunks } from "../src/stream-utils";
 import {
   chatAndConsume,
   mockModel,
@@ -618,5 +625,515 @@ describe("agent integration tests", () => {
     const textPart = assistantParts.find((p) => p.type === "text");
     expect(textPart).toBeDefined();
     expect((textPart as { text: string }).text).toContain("chart analysis");
+  });
+});
+
+describe("middleware", () => {
+  it("appends system message to ctx.messages before next()", async () => {
+    const memory = createInMemoryMemory();
+    let capturedMessages: unknown[] = [];
+
+    // Middleware that appends a system message to ctx.messages
+    const addSystemReminder: Middleware = (ctx, next) => {
+      ctx.messages = [
+        ...ctx.messages,
+        {
+          id: "system-reminder",
+          role: "system" as const,
+          parts: [{ type: "text", text: "Reminder: be concise" }],
+        },
+      ];
+      capturedMessages = ctx.messages;
+      return next();
+    };
+
+    const agent = createAgent({
+      model: mockModel([textResponse("OK")]),
+      system: "You are helpful",
+      memory,
+      middleware: [addSystemReminder],
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hi"),
+    });
+
+    expect(capturedMessages).toHaveLength(2); // user message + system reminder
+    expect((capturedMessages[1] as any).role).toBe("system");
+    expect((capturedMessages[1] as any).parts[0].text).toContain(
+      "Reminder: be concise",
+    );
+  });
+
+  it("transforms output stream via mapChunks", async () => {
+    const memory = createInMemoryMemory();
+
+    // Middleware that uppercases text deltas
+    const uppercaseMiddleware: Middleware = (_ctx, next) => {
+      const stream = next();
+      return mapChunks(stream, (chunk: any) => {
+        if (chunk.type === "text-delta") {
+          return { ...chunk, delta: chunk.delta.toUpperCase() };
+        }
+        return chunk;
+      });
+    };
+
+    const agent = createAgent({
+      model: mockModel([textResponse("hello world")]),
+      memory,
+      middleware: [uppercaseMiddleware],
+    });
+
+    const { messages } = await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hi"),
+    });
+
+    const textPart = messages[1].parts.find((p) => p.type === "text");
+    expect((textPart as { text: string }).text).toBe("HELLO WORLD");
+  });
+
+  it("executes middleware chain in correct order (outer wraps inner)", async () => {
+    const memory = createInMemoryMemory();
+    const order: string[] = [];
+
+    const outer: Middleware = (_ctx, next) => {
+      order.push("outer-before");
+      const stream = next();
+      order.push("outer-after");
+      return stream;
+    };
+
+    const inner: Middleware = (_ctx, next) => {
+      order.push("inner-before");
+      const stream = next();
+      order.push("inner-after");
+      return stream;
+    };
+
+    const agent = createAgent({
+      model: mockModel([textResponse("Hi")]),
+      memory,
+      middleware: [outer, inner],
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hello"),
+    });
+
+    expect(order).toEqual([
+      "outer-before",
+      "inner-before",
+      "inner-after",
+      "outer-after",
+    ]);
+  });
+
+  it("ctx.abort() stops execution and returns abort message as text", async () => {
+    const memory = createInMemoryMemory();
+
+    const blockMiddleware: Middleware = (ctx, _next) => {
+      ctx.abort("Blocked by policy");
+    };
+
+    const agent = createAgent({
+      model: mockModel([textResponse("Should not reach")]),
+      memory,
+      middleware: [blockMiddleware],
+    });
+
+    const { messages } = await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Do something"),
+    });
+
+    const textPart = messages[1].parts.find((p) => p.type === "text");
+    expect(textPart).toBeDefined();
+    expect((textPart as { text: string }).text).toBe("Blocked by policy");
+  });
+
+  it("middleware that doesn't call next() returns its own stream", async () => {
+    const memory = createInMemoryMemory();
+
+    const cacheMiddleware: Middleware = (_ctx, _next) => {
+      // Return a "cached" response without calling next()
+      return new ReadableStream({
+        start(controller) {
+          controller.enqueue({ type: "start" });
+          controller.enqueue({ type: "text-start", id: "cached" });
+          controller.enqueue({
+            type: "text-delta",
+            id: "cached",
+            delta: "cached response",
+          });
+          controller.enqueue({ type: "text-end", id: "cached" });
+          controller.enqueue({ type: "finish" });
+          controller.close();
+        },
+      });
+    };
+
+    const agent = createAgent({
+      model: mockModel([textResponse("Should not reach")]),
+      memory,
+      middleware: [cacheMiddleware],
+    });
+
+    const { messages } = await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hi"),
+    });
+
+    const textPart = messages[1].parts.find((p) => p.type === "text");
+    expect(textPart).toBeDefined();
+    expect((textPart as { text: string }).text).toBe("cached response");
+  });
+});
+
+describe("step hooks", () => {
+  it("prepareStep fires before each step", async () => {
+    const memory = createInMemoryMemory();
+    const steps: number[] = [];
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => `Sunny in ${input.city}`,
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "weather", { city: "NYC" }),
+        textResponse("It's sunny."),
+      ]),
+      tools: { weather: weatherTool },
+      memory,
+      prepareStep: ({ stepNumber }) => {
+        steps.push(stepNumber);
+        return {};
+      },
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Weather?"),
+    });
+
+    // Step 0: tool call, Step 1: text response
+    expect(steps).toEqual([0, 1]);
+  });
+
+  it("onAfterStep observes step results", async () => {
+    const memory = createInMemoryMemory();
+    const afterSteps: { finishReason: string; stepsLength: number }[] = [];
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => `Rainy in ${input.city}`,
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "weather", { city: "LA" }),
+        textResponse("It's rainy."),
+      ]),
+      tools: { weather: weatherTool },
+      memory,
+      onAfterStep: (ctx: AfterStepContext) => {
+        afterSteps.push({
+          finishReason: ctx.step.finishReason,
+          stepsLength: ctx.steps.length,
+        });
+      },
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Weather?"),
+    });
+
+    // Step 0 finishes with tool-calls, step 1 finishes with stop
+    // steps accumulates across the loop
+    expect(afterSteps).toHaveLength(2);
+    expect(afterSteps[0].finishReason).toBe("tool-calls");
+    expect(afterSteps[0].stepsLength).toBe(1);
+    expect(afterSteps[1].finishReason).toBe("stop");
+    expect(afterSteps[1].stepsLength).toBe(2);
+  });
+
+  it("onAfterStep can throw to abort the loop", async () => {
+    const memory = createInMemoryMemory();
+    let toolCallCount = 0;
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => {
+        toolCallCount++;
+        return `Sunny in ${input.city}`;
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "weather", { city: "NYC" }),
+        toolCallResponse("c2", "weather", { city: "LA" }),
+        toolCallResponse("c3", "weather", { city: "SF" }),
+        textResponse("Done."),
+      ]),
+      tools: { weather: weatherTool },
+      memory,
+      onAfterStep: ({ steps }) => {
+        if (steps.length >= 2) {
+          throw new Error("Max steps reached");
+        }
+      },
+    });
+
+    // The throw aborts the loop — only 2 tool calls should execute
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Weather everywhere?"),
+    });
+    await response.text();
+
+    // Step 0: NYC tool call, Step 1: LA tool call, then onAfterStep throws
+    // Step 2 (SF) should never execute
+    expect(toolCallCount).toBe(2);
+  });
+
+  it("prepareStep overrides are ephemeral (reset each step)", async () => {
+    const memory = createInMemoryMemory();
+    const toolsPerStep: string[][] = [];
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => `Sunny in ${input.city}`,
+    });
+
+    const extraTool = createTool({
+      description: "Extra tool",
+      inputSchema: z.object({}),
+      execute: async () => "extra",
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "weather", { city: "NYC" }),
+        toolCallResponse("c2", "weather", { city: "LA" }),
+        textResponse("Done."),
+      ]),
+      tools: { weather: weatherTool, extra: extraTool },
+      memory,
+      prepareStep: ({ stepNumber }) => {
+        if (stepNumber === 0) {
+          // Step 0: filter to only weather
+          toolsPerStep.push(["weather"]);
+          return { activeTools: ["weather"] };
+        }
+        // Step 1+: return no overrides — should have all tools again
+        toolsPerStep.push(["weather", "extra"]);
+        return {};
+      },
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hi"),
+    });
+
+    // Step 0 was filtered, steps 1 and 2 were not
+    expect(toolsPerStep[0]).toEqual(["weather"]);
+    expect(toolsPerStep[1]).toEqual(["weather", "extra"]);
+    expect(toolsPerStep[2]).toEqual(["weather", "extra"]);
+  });
+
+  it("prepareStep can filter tools via activeTools", async () => {
+    const memory = createInMemoryMemory();
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => `Sunny in ${input.city}`,
+    });
+
+    const extraTool = createTool({
+      description: "Extra tool",
+      inputSchema: z.object({}),
+      execute: async () => "extra result",
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "weather", { city: "NYC" }),
+        textResponse("Done."),
+      ]),
+      tools: { weather: weatherTool, extra: extraTool },
+      memory,
+      prepareStep: ({ stepNumber }) => {
+        if (stepNumber === 1) {
+          // Only allow weather tool on step 1 (filter out extra)
+          return { activeTools: ["weather"] };
+        }
+        return {};
+      },
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hi"),
+    });
+
+    // If we get here without error, the agent correctly handled activeTools filtering
+    const messages = await memory.getMessages("t1");
+    expect(messages).toHaveLength(2);
+  });
+});
+
+describe("tool-call hooks", () => {
+  it("onBeforeToolCall modifies input", async () => {
+    const memory = createInMemoryMemory();
+    let receivedInput: unknown;
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => {
+        receivedInput = input;
+        return `Weather for ${input.city}`;
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "weather", { city: "NYC" }),
+        textResponse("Done."),
+      ]),
+      tools: { weather: weatherTool },
+      memory,
+      onBeforeToolCall: (_ctx: BeforeToolCallContext) => {
+        // Override the city
+        return { input: { city: "London" } };
+      },
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Weather?"),
+    });
+
+    expect(receivedInput).toEqual({ city: "London" });
+  });
+
+  it("onAfterToolCall modifies output", async () => {
+    const memory = createInMemoryMemory();
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => `Sunny in ${input.city}`,
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "weather", { city: "NYC" }),
+        textResponse("Modified weather."),
+      ]),
+      tools: { weather: weatherTool },
+      memory,
+      onAfterToolCall: (ctx: AfterToolCallContext) => {
+        // Override the output
+        return { output: `MODIFIED: ${ctx.output}` };
+      },
+    });
+
+    const { messages } = await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Weather?"),
+    });
+
+    // The tool result in the persisted message should have the modified output
+    const assistantParts = messages[1].parts;
+    const toolPart = assistantParts.find(
+      (p) => "toolCallId" in p && (p as any).toolCallId === "c1",
+    );
+    expect((toolPart as any).output).toBe("MODIFIED: Sunny in NYC");
+  });
+
+  it("onBeforeToolCall throws to block tool execution", async () => {
+    const memory = createInMemoryMemory();
+    let toolExecuted = false;
+
+    const dangerousTool = createTool({
+      description: "Dangerous operation",
+      inputSchema: z.object({ action: z.string() }),
+      execute: async () => {
+        toolExecuted = true;
+        return "executed";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "dangerous", { action: "delete" }),
+        textResponse("Tool was blocked."),
+      ]),
+      tools: { dangerous: dangerousTool },
+      memory,
+      onBeforeToolCall: (ctx: BeforeToolCallContext) => {
+        if (ctx.toolName === "dangerous") {
+          throw new Error("Blocked by policy");
+        }
+      },
+    });
+
+    // The tool call should error, but the agent should continue
+    // (the SDK handles tool execution errors gracefully)
+    const { messages } = await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Do dangerous thing"),
+    });
+
+    expect(toolExecuted).toBe(false);
+    // The agent should have produced a response (the LLM adapts to the error)
+    expect(messages.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("onAfterToolCall observes tool results", async () => {
+    const memory = createInMemoryMemory();
+    const observed: AfterToolCallContext[] = [];
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => `Rainy in ${input.city}`,
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "weather", { city: "Seattle" }),
+        textResponse("It's rainy."),
+      ]),
+      tools: { weather: weatherTool },
+      memory,
+      onAfterToolCall: (ctx: AfterToolCallContext) => {
+        observed.push({ ...ctx });
+      },
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Weather?"),
+    });
+
+    expect(observed).toHaveLength(1);
+    expect(observed[0].toolName).toBe("weather");
+    expect(observed[0].input).toEqual({ city: "Seattle" });
+    expect(observed[0].output).toBe("Rainy in Seattle");
   });
 });

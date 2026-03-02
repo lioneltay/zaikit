@@ -3,7 +3,7 @@ title: createAgent
 description: Create an AI agent with tools, memory, and streaming chat capabilities.
 ---
 
-Creates an agent that combines a language model, tools, optional memory, and optional stop conditions into a single object that can stream responses back to clients.
+Creates an agent that combines a language model, tools, optional memory, and optional middleware/hooks into a single object that can stream responses back to clients.
 
 ```ts
 import { createAgent } from "@zaikit/core";
@@ -39,7 +39,11 @@ const agent = createAgent({
 | `system` | `string` | No | System prompt sent with every request. |
 | `tools` | `T extends ToolSet` | No | Object mapping tool names to tool definitions. Keys become the tool names visible to the LLM. |
 | `memory` | `Memory` | No | A memory adapter for persisting threads and messages. Required if you call `agent.chat()`. |
-| `stopWhen` | `StopCondition<ToolSet>` | No | Custom stop condition composed alongside the built-in `hasSuspendedTool` condition. |
+| `middleware` | `Middleware[]` | No | Composable middleware that wraps the entire response. See [Middleware & Hooks](/docs/concepts/middleware-and-hooks). |
+| `prepareStep` | `PrepareStepFunction<T>` | No | Hook that fires before each LLM call. Returns per-step overrides (`activeTools`, `toolChoice`, `system`, `model`, `messages`). Follows the [AI SDK `prepareStep` API](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#preparestep). |
+| `onAfterStep` | `(ctx: AfterStepContext) => void \| Promise<void>` | No | Hook that fires after each LLM call. Receives `{ step, steps }` with the full `StepResult`. Throw to abort. |
+| `onBeforeToolCall` | `(ctx: BeforeToolCallContext) => { input? } \| void \| Promise<...>` | No | Hook that fires before each tool execution. Return `{ input }` to override, throw to block. |
+| `onAfterToolCall` | `(ctx: AfterToolCallContext) => { output? } \| void \| Promise<...>` | No | Hook that fires after each tool execution. Return `{ output }` to override. |
 
 ## Return Type
 
@@ -111,19 +115,26 @@ type FrontendToolDef = {
 };
 ```
 
-## Stop Conditions
+## Middleware & Hooks
 
-`hasSuspendedTool` is always composed into `stopWhen` alongside any user-provided stop condition. This ensures the agent loop halts whenever a tool returns a `SuspendResult`, giving the client a chance to show UI and collect user input.
+The agent supports three levels of interception. See [Middleware & Hooks](/docs/concepts/middleware-and-hooks) for full details and examples.
 
 ```ts
-import { createAgent } from "@zaikit/core";
+import { createAgent, type Middleware } from "@zaikit/core";
+
+const logging: Middleware = (ctx, next) => {
+  console.log(`Processing ${ctx.messages.length} messages`);
+  return next();
+};
 
 const agent = createAgent({
   model: openai("gpt-4o"),
   tools: { confirm_purchase },
   memory,
-  // Your custom stop condition is composed alongside hasSuspendedTool
-  stopWhen: myCustomStopCondition,
+  middleware: [logging],
+  onAfterStep: ({ steps }) => {
+    if (steps.length >= 5) throw new Error("Max steps reached");
+  },
 });
 ```
 

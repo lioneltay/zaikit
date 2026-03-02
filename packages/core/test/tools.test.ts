@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createTool } from "../src/create-tool";
-import { hasSuspendedTool } from "../src/stop-conditions";
 import { isSuspendResult, SUSPEND_MARKER, suspend } from "../src/suspend";
 
 describe("suspend utilities", () => {
@@ -88,44 +87,5 @@ describe("createTool", () => {
         ),
     );
     expect(result).toBe("done");
-  });
-});
-
-describe("hasSuspendedTool stop condition", () => {
-  it("returns true when last step has a suspended tool result", () => {
-    const steps = [
-      {
-        toolResults: [{ output: suspend("data") }],
-      },
-    ];
-    expect(hasSuspendedTool({ steps } as any)).toBe(true);
-  });
-
-  it("returns false when tool results are normal values", () => {
-    const steps = [
-      {
-        toolResults: [{ output: "normal result" }, { output: 42 }],
-      },
-    ];
-    expect(hasSuspendedTool({ steps } as any)).toBe(false);
-  });
-
-  it("returns false when steps are empty", () => {
-    expect(hasSuspendedTool({ steps: [] } as any)).toBe(false);
-  });
-
-  it("returns false when last step has no tool results", () => {
-    const steps = [{ toolResults: [] }];
-    expect(hasSuspendedTool({ steps } as any)).toBe(false);
-  });
-
-  it("only checks the last step", () => {
-    const steps = [
-      // First step has a suspended tool
-      { toolResults: [{ output: suspend("old") }] },
-      // Last step has normal output
-      { toolResults: [{ output: "normal" }] },
-    ];
-    expect(hasSuspendedTool({ steps } as any)).toBe(false);
   });
 });

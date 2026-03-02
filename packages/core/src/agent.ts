@@ -6,22 +6,62 @@ import {
   generateText,
   jsonSchema,
   type LanguageModel,
-  type StopCondition,
+  type PrepareStepFunction,
+  type StepResult,
   streamText,
   type ToolSet,
   tool,
   type UIMessage,
 } from "ai";
-import { hasSuspendedTool } from "./stop-conditions";
+import {
+  composeMiddleware,
+  createAbort,
+  type Middleware,
+  type MiddlewareContext,
+} from "./middleware";
 import { isSuspendResult } from "./suspend";
 import { runWithSuspendContext } from "./suspend-context";
+
+export type AfterStepContext = {
+  /** The step that just completed. */
+  step: StepResult<ToolSet>;
+  /** All steps completed so far, including this one. */
+  steps: StepResult<ToolSet>[];
+};
+
+export type BeforeToolCallContext = {
+  toolName: string;
+  toolCallId: string;
+  input: unknown;
+};
+
+export type AfterToolCallContext = {
+  toolName: string;
+  toolCallId: string;
+  input: unknown;
+  output: unknown;
+};
 
 type CreateAgentOptions<T extends ToolSet = ToolSet> = {
   model: LanguageModel;
   system?: string;
   tools?: T;
   memory?: Memory;
-  stopWhen?: StopCondition<ToolSet>;
+  middleware?: Middleware[];
+  prepareStep?: PrepareStepFunction<T>;
+  onAfterStep?: (ctx: AfterStepContext) => Promise<void> | void;
+  onBeforeToolCall?: (
+    ctx: BeforeToolCallContext,
+  ) =>
+    | Promise<{ input?: unknown } | undefined>
+    | { input?: unknown }
+    | undefined;
+  onAfterToolCall?: (
+    ctx: AfterToolCallContext,
+  ) =>
+    | Promise<{ output?: unknown } | undefined>
+    | { output?: unknown }
+    | undefined;
 };
 
 export type FrontendToolDef = {
@@ -54,22 +94,72 @@ export type Agent<T extends ToolSet = ToolSet> = {
   chat(options: ChatOptions): Promise<Response>;
 };
 
+/**
+ * Wrap each tool's execute function with onBeforeToolCall/onAfterToolCall hooks.
+ */
+function wrapToolsWithHooks(
+  tools: ToolSet,
+  hooks: {
+    onBeforeToolCall?: CreateAgentOptions["onBeforeToolCall"];
+    onAfterToolCall?: CreateAgentOptions["onAfterToolCall"];
+  },
+): ToolSet {
+  if (!hooks.onBeforeToolCall && !hooks.onAfterToolCall) return tools;
+
+  return Object.fromEntries(
+    Object.entries(tools).map(([name, t]) => {
+      if (!t.execute) return [name, t];
+      const originalExecute = t.execute;
+      return [
+        name,
+        {
+          ...t,
+          execute: async (input: unknown, context: any) => {
+            let finalInput = input;
+            if (hooks.onBeforeToolCall) {
+              const beforeResult = await hooks.onBeforeToolCall({
+                toolName: name,
+                input,
+                toolCallId: context.toolCallId,
+              });
+              if (beforeResult?.input !== undefined) {
+                finalInput = beforeResult.input;
+              }
+            }
+
+            const output = await originalExecute(finalInput, context);
+
+            if (hooks.onAfterToolCall) {
+              const afterResult = await hooks.onAfterToolCall({
+                toolName: name,
+                input: finalInput,
+                output,
+                toolCallId: context.toolCallId,
+              });
+              if (afterResult?.output !== undefined) {
+                return afterResult.output;
+              }
+            }
+
+            return output;
+          },
+        },
+      ];
+    }),
+  );
+}
+
 export function createAgent<T extends ToolSet>({
   model,
   system,
   tools,
   memory,
-  stopWhen,
+  middleware = [],
+  prepareStep,
+  onAfterStep,
+  onBeforeToolCall,
+  onAfterToolCall,
 }: CreateAgentOptions<T>): Agent<T> {
-  // Always stop when a tool suspends so the client can prompt the user.
-  // User-provided stopWhen conditions are composed alongside this.
-  // Cast: StopCondition<ToolSet> → StopCondition<T>. Safe because T extends
-  // ToolSet and stop conditions only read tool results (contravariant).
-  const composedStopWhen: StopCondition<T>[] = [
-    hasSuspendedTool as unknown as StopCondition<T>,
-  ];
-  if (stopWhen) composedStopWhen.push(stopWhen as unknown as StopCondition<T>);
-
   function buildDynamicTools(defs: FrontendToolDef[]): ToolSet {
     const result: ToolSet = {};
     for (const def of defs) {
@@ -91,7 +181,139 @@ export function createAgent<T extends ToolSet>({
   }
 
   /**
+   * Core agent loop that produces a ReadableStream of UI message chunks.
+   * Accepts a MiddlewareContext so middleware can mutate tools, messages,
+   * and model before the loop runs.
+   */
+  function coreAgentStream(ctx: MiddlewareContext): ReadableStream<unknown> {
+    // toolName isn't available on tool-output-available chunks, so we track
+    // the mapping from tool-input-start/tool-input-available chunks.
+    const toolNameMap = new Map<string, string>();
+
+    return new ReadableStream({
+      async start(controller) {
+        try {
+          let currentModelMessages = await convertToModelMessages(ctx.messages);
+          let isFirstStep = true;
+          let stepNumber = 0;
+          const allSteps: StepResult<ToolSet>[] = [];
+
+          while (true) {
+            // Per-step overrides via prepareStep (ephemeral — starts from base each time)
+            const overrides =
+              (await prepareStep?.({
+                steps: allSteps,
+                stepNumber,
+                model: ctx.model,
+                messages: currentModelMessages,
+              } as any)) ?? {};
+
+            // Apply activeTools filter
+            let stepTools = ctx.tools;
+            if (overrides.activeTools) {
+              stepTools = Object.fromEntries(
+                Object.entries(ctx.tools).filter(([name]) =>
+                  (overrides.activeTools as string[]).includes(name),
+                ),
+              );
+            }
+
+            const result = streamText({
+              model: overrides.model ?? ctx.model,
+              system: overrides.system ?? system,
+              tools: wrapToolsWithHooks(stepTools, {
+                onBeforeToolCall,
+                onAfterToolCall,
+              }) as T,
+              messages: overrides.messages ?? currentModelMessages,
+              toolChoice: overrides.toolChoice,
+              providerOptions: overrides.providerOptions,
+            });
+
+            const uiStream = result.toUIMessageStream({
+              sendStart: isFirstStep,
+              sendFinish: false,
+            });
+            isFirstStep = false;
+
+            let hasSuspension = false;
+
+            // Consume the stream chunk-by-chunk. This replaces SuspendResult
+            // tool outputs with data-tool-suspend parts and detects suspension.
+            for await (const chunk of uiStream) {
+              if (
+                (chunk.type === "tool-input-start" ||
+                  chunk.type === "tool-input-available") &&
+                "toolName" in chunk
+              ) {
+                toolNameMap.set(chunk.toolCallId, chunk.toolName as string);
+              }
+
+              if (
+                chunk.type === "tool-output-available" &&
+                isSuspendResult(chunk.output)
+              ) {
+                hasSuspension = true;
+                controller.enqueue({
+                  type: "data-tool-suspend",
+                  id: chunk.toolCallId,
+                  data: {
+                    toolCallId: chunk.toolCallId,
+                    toolName: toolNameMap.get(chunk.toolCallId) ?? "unknown",
+                    payload: chunk.output.payload,
+                  },
+                });
+                continue;
+              }
+
+              controller.enqueue(chunk);
+            }
+
+            // Stream consumed — check stop conditions
+            if (hasSuspension) break;
+
+            // Accumulate step results
+            const resultSteps = await result.steps;
+            allSteps.push(...(resultSteps as unknown as StepResult<ToolSet>[]));
+
+            const finishReason = await result.finishReason;
+
+            // Step-level after hook — receives current step and all steps
+            if (onAfterStep) {
+              const currentStep = allSteps[allSteps.length - 1];
+              await onAfterStep({
+                step: currentStep,
+                steps: [...allSteps],
+              });
+            }
+
+            if (finishReason === "stop") break;
+
+            // Chain: append response messages for the next step
+            const response = await result.response;
+            currentModelMessages = [
+              ...currentModelMessages,
+              ...response.messages,
+            ];
+            stepNumber++;
+          }
+
+          // Emit a single finish chunk to close the message
+          controller.enqueue({ type: "finish" });
+          controller.close();
+        } catch (err) {
+          controller.error(err);
+        }
+      },
+    });
+  }
+
+  /**
    * Stream an LLM response back to the client.
+   *
+   * Uses a manual loop of single-step streamText() calls instead of
+   * delegating multi-step to the SDK. This gives us control between steps
+   * for middleware, hooks, and suspension detection.
    *
    * When `messageId` is provided (resume path), onFinish updates the existing
    * suspended message in-place instead of creating a new assistant message.
@@ -106,62 +328,29 @@ export function createAgent<T extends ToolSet>({
     },
   ): Response {
     const mergedTools = mergeTools(options.frontendTools);
-    // toolName isn't available on tool-output-available chunks, so we track
-    // the mapping from tool-input-start/tool-input-available chunks.
-    const toolNameMap = new Map<string, string>();
+
+    const chain = composeMiddleware(middleware, coreAgentStream);
 
     const stream = createUIMessageStream({
       originalMessages: messages,
       execute: async ({ writer }) => {
-        const result = streamText({
+        const ctx: MiddlewareContext = {
+          messages,
           model,
-          system,
           tools: mergedTools,
-          stopWhen: composedStopWhen as unknown as StopCondition<ToolSet>[],
-          messages: await convertToModelMessages(messages),
-        });
+          threadId: options.threadId,
+          abort: createAbort(),
+        };
 
-        const uiStream = result.toUIMessageStream();
+        const resultStream = chain(ctx);
 
-        // Intercept the UI message stream to replace SuspendResult tool outputs
-        // with data-tool-suspend parts. This single transform fixes the shape
-        // for both the client stream and server-side persistence (onFinish).
-        const filtered = uiStream.pipeThrough(
-          new TransformStream({
-            transform(chunk, controller) {
-              if (
-                (chunk.type === "tool-input-start" ||
-                  chunk.type === "tool-input-available") &&
-                "toolName" in chunk
-              ) {
-                toolNameMap.set(chunk.toolCallId, chunk.toolName as string);
-              }
-
-              if (
-                chunk.type === "tool-output-available" &&
-                isSuspendResult(chunk.output)
-              ) {
-                // Strip the tool-output-available so the tool stays at
-                // input-available on the client and in the persisted message.
-                // Only emit data-tool-suspend so the client can show UI.
-                controller.enqueue({
-                  type: "data-tool-suspend" as const,
-                  id: chunk.toolCallId,
-                  data: {
-                    toolCallId: chunk.toolCallId,
-                    toolName: toolNameMap.get(chunk.toolCallId) ?? "unknown",
-                    payload: chunk.output.payload,
-                  },
-                });
-                return;
-              }
-
-              controller.enqueue(chunk);
-            },
-          }),
-        );
-
-        writer.merge(filtered);
+        // Pipe the middleware output into the createUIMessageStream writer
+        const reader = resultStream.getReader();
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          writer.write(value as any);
+        }
       },
       onFinish: async ({ responseMessage }) => {
         if (options.messageId) {

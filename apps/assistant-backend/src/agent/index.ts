@@ -1,6 +1,5 @@
 import { createAgent, createTool, model } from "@zaikit/core";
 import { createPostgresMemory } from "@zaikit/memory-postgres";
-import { stepCountIs } from "ai";
 import { z } from "zod";
 
 const memory = createPostgresMemory({
@@ -213,5 +212,9 @@ Use the appropriate tool for each request. For destructive or important actions,
     send_email,
   },
   memory,
-  stopWhen: stepCountIs(5),
+  onAfterStep: ({ steps }) => {
+    if (steps.length >= 5) {
+      throw new Error("Max steps (5) reached");
+    }
+  },
 });

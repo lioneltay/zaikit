@@ -1,11 +1,26 @@
 export type { Memory, Thread } from "@zaikit/memory";
+export type {
+  PrepareStepFunction,
+  PrepareStepResult,
+  StepResult,
+} from "ai";
 export { convertToModelMessages, streamText } from "ai";
-export type { Agent, ChatOptions, FrontendToolDef } from "./agent";
+export type {
+  AfterStepContext,
+  AfterToolCallContext,
+  Agent,
+  BeforeToolCallContext,
+  ChatOptions,
+  FrontendToolDef,
+} from "./agent";
 export { createAgent } from "./agent";
 export type { ZaikitTool } from "./create-tool";
 export { createTool } from "./create-tool";
+export type { Middleware, MiddlewareContext } from "./middleware";
+export { composeMiddleware } from "./middleware";
 export { fastModel, model, proModel } from "./model";
-export { hasSuspendedTool } from "./stop-conditions";
+export type { CollectedStream } from "./stream-utils";
+export { collectStream, mapChunks, toStream } from "./stream-utils";
 export type { SuspendResult } from "./suspend";
 export { isSuspendResult } from "./suspend";
 export { getResumeData, runWithSuspendContext } from "./suspend-context";
