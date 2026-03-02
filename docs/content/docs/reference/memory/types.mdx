@@ -1,11 +1,18 @@
 ---
-title: Memory
-description: The Memory interface for persisting threads and messages, and the Thread type.
+title: Memory & Thread Types
+description: The Memory interface and Thread type for persisting threads and messages.
 ---
 
-The `Memory` type defines the interface that all memory adapters must implement. It provides methods for managing threads and messages.
+The `@zaikit/memory` package defines the `Memory` and `Thread` types that all memory adapters implement. Install it directly when building a custom adapter, or use it through `@zaikit/core` which re-exports these types.
+
+```bash
+pnpm add @zaikit/memory
+```
 
 ```ts
+import type { Memory, Thread } from "@zaikit/memory";
+
+// Also re-exported from @zaikit/core for convenience
 import type { Memory, Thread } from "@zaikit/core";
 ```
 
@@ -73,10 +80,10 @@ type Memory = {
 
 ## Building a Custom Adapter
 
-You can implement the `Memory` interface for any storage backend. Here is a skeleton:
+Implement the `Memory` interface for any storage backend:
 
 ```ts
-import type { Memory, Thread } from "@zaikit/core";
+import type { Memory, Thread } from "@zaikit/memory";
 import type { UIMessage } from "ai";
 
 export function createMyMemory(): Memory {
@@ -127,6 +134,23 @@ export function createMyMemory(): Memory {
 - **Partial updates**: `updateThread` should only modify fields that are present in the `updates` object. Use `COALESCE` (SQL) or equivalent logic.
 - **Ordering**: `getMessages` must return messages in chronological order. `listThreads` should return threads in reverse-chronological order by `updatedAt`.
 
+## Conformance Tests
+
+`@zaikit/memory` ships a conformance test suite you can run against your custom adapter to verify correctness:
+
+```ts
+import { memoryConformanceTests } from "@zaikit/memory/test";
+import { describe } from "vitest";
+import { createMyMemory } from "./index";
+
+describe("MyMemory", () => {
+  memoryConformanceTests(() => createMyMemory());
+});
+```
+
+The suite covers all thread and message operations including edge cases like upsert semantics, cascade deletes, and ordering.
+
 ## Official Adapters
 
 - [`@zaikit/memory-postgres`](/reference/memory-postgres/create-postgres-memory) -- PostgreSQL adapter using the `postgres` driver.
+- [`@zaikit/memory-inmemory`](/reference/memory-inmemory/create-in-memory-memory) -- In-memory adapter for development and testing.

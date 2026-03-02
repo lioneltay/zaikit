@@ -1,4 +1,11 @@
 import { useChat } from "@ai-sdk/react";
+import {
+  hasPendingFrontendTools as _hasPendingFrontendTools,
+  hasSuspendedTools as _hasSuspendedTools,
+  enrichToolPartsWithSuspendData,
+  getToolName,
+  mergeConsecutiveAssistantMessages,
+} from "@zaikit/utils";
 import type { UIMessage } from "ai";
 import {
   DefaultChatTransport,
@@ -16,15 +23,6 @@ export type UseAgentChatOptions = {
   getFrontendTools: () => FrontendToolRegistration[];
   isFrontendTool: (name: string) => boolean;
 };
-
-/** Extract tool name from a UIMessage part (handles both toolName prop and type prefix). */
-function getToolName(p: unknown): string | undefined {
-  const part = p as Record<string, unknown>;
-  if (typeof part.toolName === "string") return part.toolName;
-  if (typeof part.type === "string" && part.type.startsWith("tool-"))
-    return part.type.slice(5);
-  return undefined;
-}
 
 export function useAgentChat({
   api,
@@ -77,85 +75,21 @@ export function useAgentChat({
 
   const [isResuming, setIsResuming] = useState(false);
 
-  // Transform messages:
-  // 1. Merge consecutive assistant messages (follow-ups after tool output continuation)
-  // 2. Merge data-tool-suspend parts onto their corresponding tool parts as a `suspend` field
-  // 3. Strip resolved data-tool-suspend parts from the output
   const messages = useMemo(() => {
-    let result = chat.messages;
-
-    // Merge consecutive assistant messages
-    const merged: UIMessage[] = [];
-    for (const msg of result) {
-      const prev = merged[merged.length - 1];
-      if (prev?.role === "assistant" && msg.role === "assistant") {
-        merged[merged.length - 1] = {
-          ...prev,
-          parts: [...prev.parts, ...msg.parts],
-        };
-      } else {
-        merged.push(msg);
-      }
-    }
-    result = merged;
-
-    // Enrich tool parts with suspend data, then strip data-tool-suspend parts
-    return result.map((m) => {
-      const suspendMap = new Map<string, unknown>();
-      for (const p of m.parts) {
-        if (p.type === "data-tool-suspend" && !(p as any).data?.resolved) {
-          const data = (p as any).data;
-          suspendMap.set(data.toolCallId, data);
-        }
-      }
-      if (suspendMap.size === 0) {
-        // Still strip resolved data-tool-suspend parts
-        const hasDataToolSuspend = m.parts.some(
-          (p) => p.type === "data-tool-suspend",
-        );
-        if (!hasDataToolSuspend) return m;
-        return {
-          ...m,
-          parts: m.parts.filter((p) => p.type !== "data-tool-suspend"),
-        };
-      }
-
-      const parts = m.parts
-        .filter((p) => p.type !== "data-tool-suspend")
-        .map((p) => {
-          if ("toolCallId" in p) {
-            const suspendData = suspendMap.get(
-              (p as { toolCallId: string }).toolCallId,
-            );
-            if (suspendData) {
-              return { ...p, suspend: suspendData };
-            }
-          }
-          return p;
-        });
-
-      return { ...m, parts };
-    });
+    return enrichToolPartsWithSuspendData(
+      mergeConsecutiveAssistantMessages(chat.messages),
+    );
   }, [chat.messages]);
 
   const hasSuspendedTools = useMemo(
-    () => messages.some((m) => m.parts.some((p) => "suspend" in p)),
+    () => _hasSuspendedTools(messages),
     [messages],
   );
 
-  const hasPendingFrontendTools = useMemo(() => {
-    const lastMsg = chat.messages[chat.messages.length - 1];
-    if (lastMsg?.role !== "assistant") return false;
-    return lastMsg.parts.some((p) => {
-      const name = getToolName(p);
-      return (
-        "toolCallId" in p &&
-        name != null &&
-        isFrontendTool(name) &&
-        (p as any).state === "input-available"
-      );
-    });
-  }, [chat.messages, isFrontendTool]);
+  const hasPendingFrontendTools = useMemo(
+    () => _hasPendingFrontendTools(chat.messages, isFrontendTool),
+    [chat.messages, isFrontendTool],
+  );
 
   const resumeTool = useCallback(
     async (toolCallId: string, data: unknown) => {

@@ -1,5 +1,12 @@
 {
   "title": "Reference",
   "defaultOpen": true,
-  "pages": ["core", "react", "memory-postgres", "codegen-react"]
+  "pages": [
+    "core",
+    "react",
+    "memory",
+    "memory-inmemory",
+    "memory-postgres",
+    "codegen-react"
+  ]
 }

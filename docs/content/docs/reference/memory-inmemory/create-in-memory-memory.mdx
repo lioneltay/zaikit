@@ -1,0 +1,55 @@
+---
+title: createInMemoryMemory
+description: In-memory implementation of the Memory interface for development and testing.
+---
+
+`@zaikit/memory-inmemory` provides a `Memory` implementation that stores threads and messages in plain JavaScript `Map` objects. Data lives only in process memory and is lost when the server restarts.
+
+Use it for local development, testing, and prototyping where you don't need persistence across restarts.
+
+## Install
+
+```bash
+pnpm add @zaikit/memory-inmemory
+```
+
+## Usage
+
+```ts
+import { createInMemoryMemory } from "@zaikit/memory-inmemory";
+import { createAgent } from "@zaikit/core";
+
+const memory = createInMemoryMemory();
+
+const agent = createAgent({
+  model: yourModel,
+  tools: { /* ... */ },
+  memory,
+});
+```
+
+No initialization step is needed -- unlike the PostgreSQL adapter, there are no tables to create.
+
+## Signature
+
+```ts
+function createInMemoryMemory(): Memory;
+```
+
+Returns a `Memory` object that implements the full [Memory interface](/reference/memory/types).
+
+## Behavior
+
+- **Threads** are stored in a `Map<string, Thread>`.
+- **Messages** are stored in a `Map<string, UIMessage[]>`, keyed by thread ID.
+- **Upsert**: `addMessage` replaces an existing message with the same ID, matching the PostgreSQL adapter's `ON CONFLICT ... DO UPDATE` semantics.
+- **Cascade delete**: `deleteThread` removes both the thread and all its messages.
+- **Ordering**: `listThreads` sorts by `updatedAt` descending. `getMessages` returns messages in insertion order.
+
+## When to Use
+
+| Scenario | Adapter |
+|---|---|
+| Local development | `@zaikit/memory-inmemory` |
+| Tests | `@zaikit/memory-inmemory` |
+| Production | [`@zaikit/memory-postgres`](/reference/memory-postgres/create-postgres-memory) |

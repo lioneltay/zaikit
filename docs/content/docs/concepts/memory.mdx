@@ -96,9 +96,29 @@ if (title) {
 
 This runs as fire-and-forget — it does not block the chat response. Title generation only runs when `thread.title` is `null` (i.e., the thread was just created).
 
-## Built-in Adapter: `@zaikit/memory-postgres`
+## Official Adapters
 
-The `@zaikit/memory-postgres` package provides a PostgreSQL-backed implementation:
+### `@zaikit/memory-inmemory`
+
+An in-memory implementation for development and testing. Data is lost when the process exits.
+
+```ts
+import { createInMemoryMemory } from "@zaikit/memory-inmemory";
+
+const memory = createInMemoryMemory();
+
+const agent = createAgent({
+  model,
+  tools,
+  memory,
+});
+```
+
+No initialization step needed.
+
+### `@zaikit/memory-postgres`
+
+A PostgreSQL-backed implementation for production use:
 
 ```ts
 import { createPostgresMemory } from "@zaikit/memory-postgres";
@@ -129,7 +149,7 @@ Messages cascade-delete when a thread is deleted.
 To use a different database, implement the `Memory` type and pass it to `createAgent`:
 
 ```ts
-import type { Memory } from "@zaikit/core";
+import type { Memory } from "@zaikit/memory";
 
 const memory: Memory = {
   async createThread(id, title, ownerId) {
@@ -166,3 +186,5 @@ const agent = createAgent({ model, tools, memory });
 ```
 
 The most important detail is that `addMessage` and `updateMessage` must correctly serialize `UIMessage.parts` (an array of typed objects) and that `getMessages` must deserialize them back to the same structure. The Postgres adapter uses JSONB for this.
+
+`@zaikit/memory` also ships [conformance tests](/reference/memory/types#conformance-tests) you can run against your custom adapter to verify correctness.

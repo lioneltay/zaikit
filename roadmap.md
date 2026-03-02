@@ -8,10 +8,19 @@
 
 - document manual testing steps and get ai to do it
 
+## RAG
+
+- vectorisation? Just the ability to make rag tools? do you actualy need rag, or is the fact that you can make any tool you want already rag?
+
 ## Testing
 
-- Tests for the packages
-- package for testing ai
+- [ ] comprehensive e2e coverage, we dont have state so it should be easy, can we mix playwright with ai????
+- [ ] integration tests can replace e2e??
+- [ ] Tests for the packages
+- [ ] package for testing ai
+
+- [ ] Testing internally
+- testing for consumers
 
 ## DX
 

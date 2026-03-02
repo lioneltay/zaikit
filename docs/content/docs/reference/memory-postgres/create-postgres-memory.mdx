@@ -46,12 +46,12 @@ function createPostgresMemory(options: {
 
 ## Return Type
 
-Returns a `Memory` object (implementing all methods from the [`Memory` interface](/reference/core/memory)) plus an additional `initialize` method.
+Returns a `Memory` object (implementing all methods from the [`Memory` interface](/reference/memory/types)) plus an additional `initialize` method.
 
 | Property | Type | Description |
 | --- | --- | --- |
 | `initialize` | `() => Promise<void>` | Creates the required tables and indexes if they do not exist. Call this once on application startup. |
-| *(all Memory methods)* | | See the [Memory reference](/reference/core/memory) for the full method list. |
+| *(all Memory methods)* | | See the [Memory reference](/reference/memory/types) for the full method list. |
 
 ## initialize()
 

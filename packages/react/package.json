@@ -26,7 +26,8 @@
   },
   "dependencies": {
     "ai": "^6",
-    "@ai-sdk/react": "^3"
+    "@ai-sdk/react": "^3",
+    "@zaikit/utils": "workspace:*"
   },
   "peerDependencies": {
     "react": "^18 || ^19",
