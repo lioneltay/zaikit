@@ -10,4 +10,4 @@ pre-commit:
 commit-msg:
   commands:
     strip-co-author:
-      run: "sed -i '' '/^Co-Authored-By: Claude/d' {1}"
+      run: "sed -i '' '/^[Cc]o-[Aa]uthored-[Bb]y: Claude/d' {1}"
