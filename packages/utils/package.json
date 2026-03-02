@@ -1,0 +1,37 @@
+{
+  "name": "@zaikit/utils",
+  "version": "0.1.1",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lioneltay/zaikit.git",
+    "directory": "packages/utils"
+  },
+  "homepage": "https://zaikit.dev",
+  "bugs": "https://github.com/lioneltay/zaikit/issues",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ai": "^6"
+  },
+  "devDependencies": {
+    "@zaikit/typescript-config": "workspace:*",
+    "tsup": "^8",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}
