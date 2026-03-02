@@ -1,15 +1,28 @@
 # <img src="logo.svg" width="28" height="28" alt="" /> ZAIKit
 
-A toolkit for building AI-powered applications with TypeScript.
+A TypeScript toolkit for building full-stack AI agents with streaming, tool rendering, and human-in-the-loop.
+
+> **[Read the docs at zaikit.dev](https://zaikit.dev)**
+
+## Features
+
+- **Full-stack agents** — Define your agent and tools on the server, connect from React with a single provider.
+- **Streaming** — Responses stream from backend to browser over SSE with zero configuration.
+- **Tool rendering** — Map tool calls to React components with full type inference via codegen.
+- **Suspend and resume** — Tools can pause for human input and resume with the user's response.
+- **Middleware** — Intercept and transform requests/responses with composable middleware (guard rails, RAG injection, HTML stripping).
+- **Persistence** — Plug in a memory backend to save and restore conversations across sessions.
 
 ## Packages
 
 | Package | Description |
 | --- | --- |
-| [`@zaikit/core`](packages/core) | Agent creation, tool definitions, model configuration |
-| [`@zaikit/react`](packages/react) | React hooks and components (`useAgent`, `useAgentChat`, `AgentProvider`) |
-| [`@zaikit/memory-postgres`](packages/memory-postgres) | Postgres-backed memory for agents |
-| [`@zaikit/codegen-react`](packages/codegen-react) | Code generation for React tool renderers |
+| [`@zaikit/core`](https://zaikit.dev/concepts/agent-loop) | Agent and tool primitives — `createAgent`, `createTool` |
+| [`@zaikit/react`](https://zaikit.dev/reference/react) | React bindings — `AgentProvider`, `useAgent`, `useToolRenderer` |
+| [`@zaikit/memory`](https://zaikit.dev/reference/memory) | Memory interface types — `Memory`, `Thread` |
+| [`@zaikit/memory-postgres`](https://zaikit.dev/reference/memory-postgres) | PostgreSQL-backed conversation persistence |
+| [`@zaikit/memory-inmemory`](https://zaikit.dev/reference/memory-inmemory) | In-memory persistence for development and testing |
+| [`@zaikit/codegen-react`](https://zaikit.dev/reference/codegen-react) | CLI to generate typed tool render props from your agent definition |
 
 ## Quick Start
 
@@ -17,26 +30,61 @@ A toolkit for building AI-powered applications with TypeScript.
 pnpm add @zaikit/core @zaikit/react
 ```
 
-```tsx
-import { createAgent, createTool, model } from "@zaikit/core";
-import { AgentProvider, useAgentChat } from "@zaikit/react";
+**Backend** — define an agent with tools:
+
+```ts
+import { createAgent, createTool } from "@zaikit/core";
+import { z } from "zod";
 
 const agent = createAgent({
-  model: model("google-vertex:gemini-2.0-flash"),
-  tools: [
-    createTool({
-      name: "greet",
-      description: "Greet the user",
-      parameters: z.object({ name: z.string() }),
-      execute: async ({ name }) => `Hello, ${name}!`,
+  model: yourModel, // any AI SDK LanguageModel
+  tools: {
+    get_weather: createTool({
+      description: "Get weather for a city",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => ({
+        city: input.city,
+        temp: 22,
+        condition: "Sunny",
+      }),
     }),
-  ],
+  },
 });
 ```
 
-## Documentation
+**Frontend** — connect and render:
 
-[https://zaikit.dev](https://zaikit.dev)
+```tsx
+import { AgentProvider, useAgent } from "@zaikit/react";
+
+function Chat() {
+  const { messages, sendMessage } = useAgent();
+  return (
+    <div>
+      {messages.map((m) => (
+        <div key={m.id}>
+          {m.parts.map((part, i) =>
+            part.type === "text" ? <p key={i}>{part.text}</p> : null,
+          )}
+        </div>
+      ))}
+      <button onClick={() => sendMessage?.({ text: "What's the weather?" })}>
+        Send
+      </button>
+    </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AgentProvider api="/api/chat" threadId="thread-1">
+      <Chat />
+    </AgentProvider>
+  );
+}
+```
+
+See the [Getting Started guide](https://zaikit.dev/getting-started) for a full walkthrough.
 
 ## License
 

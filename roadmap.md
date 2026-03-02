@@ -4,6 +4,11 @@
 
 - make sure renderers have correct state? we can add a suspend state?
 
+- configuration demo, ability to select middlewares
+- input should stay focused and not disabled, just disable send
+
+## Docs Server Rag
+
 ## Ideas
 
 - document manual testing steps and get ai to do it
