@@ -97,6 +97,7 @@ export function AgentChat({
   const [input, setInput] = useState("");
 
   const isLoading = status === "streaming" || status === "submitted";
+  const canSend = !isLoading && !!input.trim() && !hasSuspendedTools;
 
   // Intentional: do not remove — used to inspect message structure in browser devtools
   console.info("messages", messages);
@@ -258,12 +259,7 @@ export function AgentChat({
             size="small"
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={
-              hasSuspendedTools
-                ? "Resolve pending actions first..."
-                : "Type a message..."
-            }
-            disabled={isLoading || hasSuspendedTools}
+            placeholder="Type a message..."
             autoFocus
             sx={{
               "& .MuiOutlinedInput-root": {
@@ -285,25 +281,13 @@ export function AgentChat({
           />
           <IconButton
             type="submit"
-            disabled={isLoading || !input.trim() || hasSuspendedTools}
+            disabled={!canSend}
             sx={{
-              bgcolor:
-                !isLoading && input.trim() && !hasSuspendedTools
-                  ? "primary.main"
-                  : "action.disabledBackground",
-              color:
-                !isLoading && input.trim() && !hasSuspendedTools
-                  ? "#fff"
-                  : "action.disabled",
+              bgcolor: canSend ? "primary.main" : "action.disabledBackground",
+              color: canSend ? "#fff" : "action.disabled",
               width: 40,
               height: 40,
-              "&:hover": {
-                bgcolor: "primary.dark",
-              },
-              "&.Mui-disabled": {
-                bgcolor: "action.disabledBackground",
-                color: "action.disabled",
-              },
+              "&:hover": canSend ? { bgcolor: "primary.dark" } : {},
             }}
           >
             <SendIcon sx={{ fontSize: 20 }} />
