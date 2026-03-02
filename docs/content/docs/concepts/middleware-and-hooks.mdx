@@ -109,9 +109,20 @@ The context object carries mutable fields that middleware can modify before call
 | `threadId` | `string` | No | Thread identifier. |
 | `abort` | `(message: string) => never` | — | Abort the response with an error message. |
 
+### Persistence model
+
+Middleware changes to `ctx.messages` are **ephemeral** — they affect what the LLM sees but are never persisted. The persistence flow is:
+
+1. `agent.chat()` saves the user's message to memory **before** middleware runs.
+2. Messages are loaded from memory and passed to the middleware chain.
+3. Middleware can mutate `ctx.messages` (inject context, rewrite prompts, etc.) — the LLM sees these changes.
+4. After the stream completes, only the **assistant's response** is saved to memory.
+
+This means the conversation history always reflects the user's actual input. Ephemeral context like RAG documents or system reminders is injected fresh on each request and never stored, keeping the thread clean and the retrieval up-to-date.
+
 ### Example: inject a system reminder
 
-Append a system message to `ctx.messages`. This keeps the system prompt stable for [prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching) and makes the reminder ephemeral (it's never persisted — messages are already saved to memory before middleware runs).
+Append a system message to `ctx.messages`. This keeps the system prompt stable for [prompt caching](https://docs.anthropic.com/en/docs/build-with-claude/prompt-caching) and the reminder is ephemeral — it only exists for this LLM call.
 
 ```ts
 const addReminder: Middleware = (ctx, next) => {

@@ -8,7 +8,7 @@ import type {
 } from "../src/agent";
 import { createAgent } from "../src/agent";
 import { createTool } from "../src/create-tool";
-import type { Middleware } from "../src/middleware";
+import type { Middleware } from "../src/middleware/core";
 import { mapChunks } from "../src/stream-utils";
 import {
   chatAndConsume,

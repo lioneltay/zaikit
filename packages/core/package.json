@@ -21,6 +21,10 @@
     "./test": {
       "import": "./dist/test/index.js",
       "types": "./dist/test/index.d.ts"
+    },
+    "./middleware": {
+      "types": "./dist/middleware/index.d.ts",
+      "import": "./dist/middleware/index.js"
     }
   },
   "scripts": {

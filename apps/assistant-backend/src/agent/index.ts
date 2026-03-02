@@ -1,4 +1,5 @@
 import { createAgent, createTool, model } from "@zaikit/core";
+import { stripHtml } from "@zaikit/core/middleware";
 import { createPostgresMemory } from "@zaikit/memory-postgres";
 import { z } from "zod";
 
@@ -197,6 +198,12 @@ const send_email = createTool({
 
 export const agent = createAgent({
   model,
+  middleware: [
+    stripHtml({
+      transform: (html) => `...html redacted (${html.length})...`,
+      ignoreCodeBlocks: true,
+    }),
+  ],
   system: `You are a helpful assistant with the following tools:
 
 - get_weather: Get current weather for a city.

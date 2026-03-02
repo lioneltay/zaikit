@@ -18,7 +18,7 @@ import {
   createAbort,
   type Middleware,
   type MiddlewareContext,
-} from "./middleware";
+} from "./middleware/core";
 import { isSuspendResult } from "./suspend";
 import { runWithSuspendContext } from "./suspend-context";
 
