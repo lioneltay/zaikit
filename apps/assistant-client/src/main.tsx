@@ -9,7 +9,7 @@ const theme = createTheme({
   },
   palette: {
     mode: "light",
-    primary: { main: "#6C63FF" },
+    primary: { main: "#10B981" },
     background: { default: "#f7f7f8", paper: "#ffffff" },
   },
   shape: { borderRadius: 12 },

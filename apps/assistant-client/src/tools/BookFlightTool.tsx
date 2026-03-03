@@ -37,7 +37,7 @@ export function BookFlightTool(props: BookFlightToolProps) {
               borderColor: selectedId === f.id ? "primary.main" : "#ccc",
               borderWidth: selectedId === f.id ? 2 : 1,
               borderRadius: "8px",
-              bgcolor: selectedId === f.id ? "rgba(108,99,255,0.08)" : "#fff",
+              bgcolor: selectedId === f.id ? "rgba(16,185,129,0.08)" : "#fff",
               "&:hover": { borderColor: "primary.light" },
               transition: "all 0.15s",
             }}

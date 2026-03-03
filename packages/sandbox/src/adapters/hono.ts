@@ -1,0 +1,101 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import { getAgentDetail, listAgents } from "../routes/agents";
+import { executeTool } from "../routes/tools";
+import { serveIndexHtml, serveStaticFile } from "../static";
+import type { SandboxConfig } from "../types";
+
+export function createSandboxHono(config: SandboxConfig) {
+  const app = new Hono();
+
+  app.use("*", cors());
+
+  function getAgent(name: string) {
+    return config.agents[name];
+  }
+
+  function getMemory(name: string) {
+    const agent = getAgent(name);
+    if (!agent) return null;
+    if (!agent.memory) throw new Error("Agent has no memory configured.");
+    return agent.memory;
+  }
+
+  // --- API Routes ---
+
+  app.get("/api/agents", (c) => {
+    return c.json(listAgents(config.agents));
+  });
+
+  app.get("/api/agents/:name", (c) => {
+    const name = c.req.param("name");
+    const agent = getAgent(name);
+    if (!agent) return c.json({ error: "Agent not found" }, 404);
+    return c.json(getAgentDetail(name, agent));
+  });
+
+  app.post("/api/agents/:name/chat", async (c) => {
+    const name = c.req.param("name");
+    const agent = getAgent(name);
+    if (!agent) return c.json({ error: "Agent not found" }, 404);
+    const body = await c.req.json();
+    return agent.chat(body as Parameters<typeof agent.chat>[0]);
+  });
+
+  app.get("/api/agents/:name/threads", async (c) => {
+    const name = c.req.param("name");
+    const memory = getMemory(name);
+    if (!memory) return c.json({ error: "Agent not found" }, 404);
+    return c.json(await memory.listThreads({ ownerId: name }));
+  });
+
+  app.get("/api/agents/:name/threads/:threadId/messages", async (c) => {
+    const name = c.req.param("name");
+    const memory = getMemory(name);
+    if (!memory) return c.json({ error: "Agent not found" }, 404);
+    return c.json(await memory.getMessages(c.req.param("threadId")));
+  });
+
+  app.delete("/api/agents/:name/threads/:threadId", async (c) => {
+    const name = c.req.param("name");
+    const memory = getMemory(name);
+    if (!memory) return c.json({ error: "Agent not found" }, 404);
+    await memory.deleteThread(c.req.param("threadId"));
+    return c.json({ ok: true });
+  });
+
+  app.post("/api/agents/:name/tools/:toolName/execute", async (c) => {
+    const name = c.req.param("name");
+    const agent = getAgent(name);
+    if (!agent) return c.json({ error: "Agent not found" }, 404);
+    const body = await c.req.json();
+    const result = await executeTool(
+      agent,
+      c.req.param("toolName"),
+      body.input,
+    );
+    return c.json(result, result.ok ? 200 : 400);
+  });
+
+  // --- Static files (embedded frontend) ---
+
+  app.get("/assets/*", (c) => {
+    // c.req.path includes the full mount prefix (e.g. /sandbox/assets/...).
+    // Extract just the "/assets/..." portion for static file lookup.
+    const fullPath = c.req.path;
+    const assetsIdx = fullPath.indexOf("/assets/");
+    const assetPath = assetsIdx >= 0 ? fullPath.slice(assetsIdx) : fullPath;
+    const response = serveStaticFile(assetPath);
+    if (response) return response;
+    return c.notFound();
+  });
+
+  // SPA fallback — serve index.html for all non-API, non-asset routes
+  app.get("*", (c) => {
+    const response = serveIndexHtml(config.basePath);
+    if (response) return response;
+    return c.notFound();
+  });
+
+  return app;
+}

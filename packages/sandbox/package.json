@@ -1,0 +1,63 @@
+{
+  "name": "@zaikit/sandbox",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lioneltay/zaikit.git",
+    "directory": "packages/sandbox"
+  },
+  "homepage": "https://zaikit.dev",
+  "bugs": "https://github.com/lioneltay/zaikit/issues",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./hono": {
+      "import": "./dist/adapters/hono.js",
+      "types": "./dist/adapters/hono.d.ts"
+    },
+    "./express": {
+      "import": "./dist/adapters/express.js",
+      "types": "./dist/adapters/express.d.ts"
+    }
+  },
+  "scripts": {
+    "build:ui": "cd ui && npx vite build",
+    "build:server": "tsup",
+    "build": "rm -rf dist && pnpm build:ui && pnpm build:server",
+    "dev:ui": "cd ui && vite build --watch",
+    "dev": "tsup --watch",
+    "dev:sandbox": "tsx --env-file=../../.env test/dev.ts",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1",
+    "@zaikit/core": "workspace:*",
+    "@zaikit/memory": "workspace:*",
+    "@zaikit/memory-inmemory": "workspace:*",
+    "hono": "^4",
+    "ai": "^6",
+    "zod": "^4"
+  },
+  "peerDependencies": {
+    "express": "^4 || ^5"
+  },
+  "peerDependenciesMeta": {
+    "express": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@zaikit/typescript-config": "workspace:*",
+    "@types/express": "^5",
+    "tsup": "^8",
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}

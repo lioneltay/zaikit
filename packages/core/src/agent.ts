@@ -91,6 +91,8 @@ export type ChatOptions =
 export type Agent<T extends ToolSet = ToolSet> = {
   tools: T;
   memory: Memory | undefined;
+  model: LanguageModel;
+  system: string | undefined;
   chat(options: ChatOptions): Promise<Response>;
 };
 
@@ -618,6 +620,8 @@ export function createAgent<T extends ToolSet>({
   return {
     tools: tools ?? ({} as T),
     memory,
+    model,
+    system,
     async chat(options: ChatOptions): Promise<Response> {
       if (!memory) {
         throw new Error("chat() requires memory to be configured on the agent");

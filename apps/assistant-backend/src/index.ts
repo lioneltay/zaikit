@@ -1,5 +1,6 @@
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
+import { createSandboxHono } from "@zaikit/sandbox/hono";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { agent } from "./agent/index";
@@ -32,6 +33,14 @@ app.post("/api/chat", async (c) => {
   return agent.chat(body);
 });
 
+// Sandbox UI at /sandbox
+const sandbox = createSandboxHono({
+  agents: { assistant: agent },
+  basePath: "/sandbox",
+});
+app.route("/sandbox", sandbox);
+
 serve({ fetch: app.fetch, port: 7301 }, (info) => {
   console.log(`Server running at http://localhost:${info.port}`);
+  console.log(`Sandbox UI at http://localhost:${info.port}/sandbox`);
 });

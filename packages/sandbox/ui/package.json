@@ -1,0 +1,33 @@
+{
+  "name": "@zaikit/sandbox-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "check-types": "tsc -b"
+  },
+  "dependencies": {
+    "@ai-sdk/react": "^3",
+    "@emotion/react": "^11",
+    "@emotion/styled": "^11",
+    "@zaikit/react": "workspace:*",
+    "@mui/icons-material": "^7",
+    "@mui/material": "^7",
+    "@tanstack/react-router": "^1",
+    "ai": "^6",
+    "react": "^19",
+    "react-dom": "^19",
+    "react-markdown": "^10",
+    "remark-gfm": "^4"
+  },
+  "devDependencies": {
+    "@tanstack/router-devtools": "^1",
+    "@tanstack/router-plugin": "^1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^4",
+    "typescript": "^5",
+    "vite": "^6"
+  }
+}

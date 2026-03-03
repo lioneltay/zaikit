@@ -14,7 +14,7 @@ export type {
   FrontendToolDef,
 } from "./agent";
 export { createAgent } from "./agent";
-export type { ZaikitTool } from "./create-tool";
+export type { ToolMeta, ZaikitTool } from "./create-tool";
 export { createTool } from "./create-tool";
 export type { Middleware, MiddlewareContext } from "./middleware/core";
 export { composeMiddleware } from "./middleware/core";

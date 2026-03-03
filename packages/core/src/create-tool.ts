@@ -1,11 +1,16 @@
 import { type Tool, tool } from "ai";
-import type { z } from "zod";
+import { toJSONSchema, type z } from "zod";
 import {
   isSuspendResult,
   type SuspendResult,
   suspend as suspendFn,
 } from "./suspend";
 import { getResumeData } from "./suspend-context";
+
+export type ToolMeta = {
+  suspendSchema?: Record<string, unknown>;
+  resumeSchema?: Record<string, unknown>;
+};
 
 // Enriched tool type that preserves all type parameters for codegen.
 // Extends the AI SDK's Tool so it satisfies ToolSet everywhere.
@@ -23,6 +28,7 @@ export type ZaikitTool<
     readonly suspend: SUSPEND;
     readonly resume: RESUME;
   };
+  readonly __meta?: ToolMeta;
 };
 
 // Base options shared by both overloads
@@ -66,7 +72,14 @@ export function createTool(options: any): ZaikitTool<any, any> {
 
   const isSuspendable = options.suspendSchema && options.resumeSchema;
 
-  return tool({
+  const meta: ToolMeta | undefined = isSuspendable
+    ? {
+        suspendSchema: toJSONSchema(options.suspendSchema),
+        resumeSchema: toJSONSchema(options.resumeSchema),
+      }
+    : undefined;
+
+  const t = tool({
     description,
     inputSchema,
     execute: async (input) => {
@@ -97,4 +110,10 @@ export function createTool(options: any): ZaikitTool<any, any> {
       return result;
     },
   }) as ZaikitTool<any, any>;
+
+  if (meta) {
+    (t as any).__meta = meta;
+  }
+
+  return t;
 }

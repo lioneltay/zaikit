@@ -1,65 +1,57 @@
 import BugReportIcon from "@mui/icons-material/BugReport";
+import InfoIcon from "@mui/icons-material/Info";
 import SendIcon from "@mui/icons-material/Send";
 import { Box, IconButton, TextField, Typography } from "@mui/material";
 import { useAgent } from "@zaikit/react";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import type { AgentDetail } from "./api";
 import { DebugSidebar } from "./DebugSidebar";
+import { GenericToolCard } from "./GenericToolCard";
+import { type Tokens, useTokens } from "./theme";
 
-const markdownStyles = {
-  "& p": {
-    my: "0.5em",
-    "&:first-of-type": { mt: 0 },
-    "&:last-of-type": { mb: 0 },
-  },
-  "& pre": {
-    bgcolor: "#1e1e1e",
-    color: "#d4d4d4",
-    borderRadius: "8px",
-    p: "0.75rem 1rem",
-    overflowX: "auto",
-    my: "0.5em",
-  },
-  "& code": {
-    fontFamily:
-      '"SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace',
-    fontSize: "0.9em",
-  },
-  "& :not(pre) > code": {
-    bgcolor: "#f0f0f3",
-    color: "#10B981",
-    p: "0.15em 0.35em",
-    borderRadius: "4px",
-  },
-  "& ul, & ol": { my: "0.5em", pl: "1.5em" },
-  "& li": { my: "0.25em" },
-  "& blockquote": {
-    borderLeft: "3px solid #ccc",
-    my: "0.5em",
-    p: "0.25em 0.75em",
-    color: "#666",
-  },
-  "& h1, & h2, & h3, & h4, & h5, & h6": {
-    mt: "0.75em",
-    mb: "0.25em",
-    lineHeight: 1.3,
-  },
-  "& h1:first-of-type, & h2:first-of-type, & h3:first-of-type": { mt: 0 },
-  "& table": { borderCollapse: "collapse", my: "0.5em", width: "100%" },
-  "& th, & td": {
-    border: "1px solid #ddd",
-    p: "0.4em 0.75em",
-    textAlign: "left",
-  },
-  "& th": { bgcolor: "#f5f5f5", fontWeight: 600 },
-  "& hr": { border: "none", borderTop: "1px solid #ddd", my: "0.75em" },
-  "& a": {
-    color: "#10B981",
-    textDecoration: "none",
-    "&:hover": { textDecoration: "underline" },
-  },
-} as const;
+function getMarkdownStyles(tokens: Tokens) {
+  return {
+    "& p": {
+      my: "0.5em",
+      "&:first-of-type": { mt: 0 },
+      "&:last-of-type": { mb: 0 },
+    },
+    "& pre": {
+      bgcolor: tokens.code.preBg,
+      color: tokens.code.preColor,
+      borderRadius: "8px",
+      p: "0.75rem 1rem",
+      overflowX: "auto",
+      my: "0.5em",
+    },
+    "& code": {
+      fontFamily: '"SF Mono", "Fira Code", Menlo, Consolas, monospace',
+      fontSize: "0.9em",
+    },
+    "& :not(pre) > code": {
+      bgcolor: tokens.code.inlineBg,
+      color: tokens.code.inlineColor,
+      p: "0.15em 0.35em",
+      borderRadius: "4px",
+    },
+    "& ul, & ol": { my: "0.5em", pl: "1.5em" },
+    "& li": { my: "0.25em" },
+    "& blockquote": {
+      borderLeft: `3px solid ${tokens.markdown.blockquoteBorder}`,
+      my: "0.5em",
+      p: "0.25em 0.75em",
+      color: tokens.markdown.blockquoteColor,
+    },
+    "& table": { borderCollapse: "collapse", my: "0.5em", width: "100%" },
+    "& th, & td": {
+      border: `1px solid ${tokens.markdown.tableBorder}`,
+      p: "0.4em 0.75em",
+    },
+    "& th": { bgcolor: tokens.markdown.tableHeaderBg, fontWeight: 600 },
+  } as const;
+}
 
 const thinkingDots = {
   "@keyframes dotPulse": {
@@ -79,28 +71,51 @@ const thinkingDots = {
   "& span:nth-of-type(3)": { animationDelay: "0.4s" },
 } as const;
 
+const remarkPlugins = [remarkGfm];
+
 export function AgentChat({
+  agentName,
+  agentDetail,
   showDebug,
   onToggleDebug,
+  showInfo,
+  onToggleInfo,
 }: {
+  agentName: string;
+  agentDetail: AgentDetail | null;
   showDebug: boolean;
   onToggleDebug: () => void;
+  showInfo: boolean;
+  onToggleInfo: () => void;
 }) {
-  const {
-    rawMessages,
-    messages,
-    sendMessage,
-    status,
-    hasSuspendedTools,
-    renderToolPart,
-  } = useAgent();
+  const tokens = useTokens();
+  const markdownStyles = useMemo(() => getMarkdownStyles(tokens), [tokens]);
+
+  const { rawMessages, messages, sendMessage, status, hasSuspendedTools } =
+    useAgent();
   const [input, setInput] = useState("");
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const isLoading = status === "streaming" || status === "submitted";
   const canSend = !isLoading && !!input.trim() && !hasSuspendedTools;
 
-  // Intentional: do not remove — used to inspect message structure in browser devtools
-  console.info("messages", messages);
+  const resumeSchemaMap = useMemo(() => {
+    const map = new Map<string, Record<string, unknown>>();
+    if (agentDetail) {
+      for (const tool of agentDetail.tools) {
+        if (tool.resumeSchema) {
+          map.set(tool.name, tool.resumeSchema);
+        }
+      }
+    }
+    return map;
+  }, [agentDetail]);
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional auto-scroll on message changes
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages, isLoading]);
 
   return (
     <Box sx={{ display: "flex", height: "100%" }}>
@@ -112,7 +127,44 @@ export function AgentChat({
           minWidth: 0,
         }}
       >
+        {/* Header */}
         <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            px: 3,
+            py: 1,
+            borderBottom: "1px solid",
+            borderColor: "divider",
+          }}
+        >
+          <Typography variant="subtitle1" fontWeight={600}>
+            {agentName}
+          </Typography>
+          <Box>
+            <IconButton
+              onClick={onToggleInfo}
+              color={showInfo ? "primary" : "default"}
+              title="Agent info"
+              size="small"
+            >
+              <InfoIcon />
+            </IconButton>
+            <IconButton
+              onClick={onToggleDebug}
+              color={showDebug ? "primary" : "default"}
+              title="Debug inspector"
+              size="small"
+            >
+              <BugReportIcon />
+            </IconButton>
+          </Box>
+        </Box>
+
+        {/* Messages */}
+        <Box
+          ref={scrollRef}
           sx={{
             flex: 1,
             overflowY: "auto",
@@ -163,7 +215,7 @@ export function AgentChat({
                         if (!isUser) {
                           return (
                             <Box key={i} sx={markdownStyles}>
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              <ReactMarkdown remarkPlugins={remarkPlugins}>
                                 {part.text}
                               </ReactMarkdown>
                             </Box>
@@ -175,32 +227,22 @@ export function AgentChat({
                         part.type === "dynamic-tool" ||
                         part.type.startsWith("tool-")
                       ) {
-                        const rendered = renderToolPart(part);
-                        if (rendered)
-                          return <Fragment key={i}>{rendered}</Fragment>;
+                        const toolName =
+                          (part as any).toolName ??
+                          (part.type.startsWith("tool-")
+                            ? part.type.slice(5)
+                            : undefined);
                         return (
-                          <Typography
-                            key={i}
-                            component="pre"
-                            variant="body2"
-                            sx={{ color: "text.secondary" }}
-                          >
-                            Tool: {(part as any).toolName ?? (part as any).type}
-                          </Typography>
-                        );
-                      }
-                      if (part.type === "source-url") {
-                        return (
-                          <Typography
-                            key={i}
-                            component="a"
-                            href={part.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            color="primary"
-                          >
-                            {part.title || part.url}
-                          </Typography>
+                          <Fragment key={i}>
+                            <GenericToolCard
+                              part={part as any}
+                              resumeSchema={
+                                toolName
+                                  ? resumeSchemaMap.get(toolName)
+                                  : undefined
+                              }
+                            />
+                          </Fragment>
                         );
                       }
                       return null;
@@ -234,6 +276,7 @@ export function AgentChat({
           </Box>
         </Box>
 
+        {/* Input */}
         <Box
           component="form"
           onSubmit={(e) => {
@@ -273,10 +316,6 @@ export function AgentChat({
                   borderWidth: 1,
                 },
               },
-              "& .MuiInputBase-input::placeholder": {
-                color: "#999",
-                opacity: 1,
-              },
             }}
           />
           <IconButton
@@ -291,13 +330,6 @@ export function AgentChat({
             }}
           >
             <SendIcon sx={{ fontSize: 20 }} />
-          </IconButton>
-          <IconButton
-            onClick={onToggleDebug}
-            color={showDebug ? "primary" : "default"}
-            title="Toggle debug sidebar"
-          >
-            <BugReportIcon />
           </IconButton>
         </Box>
       </Box>
