@@ -54,7 +54,7 @@ npx tsx sandbox.ts
 
 Open [http://localhost:4000](http://localhost:4000) in your browser.
 
-{/* TODO: Add screenshot of sandbox UI */}
+![Sandbox welcome screen](./sandbox-welcome.png)
 
 ## Features
 
@@ -87,13 +87,19 @@ The sandbox provides a full chat interface with:
 - Streaming responses
 - Thread management (create, switch, delete)
 
+![Chat with tool call](./sandbox-tool-call.png)
+
 ### Tool call inspector
 
 Toggle the debug sidebar to see the raw tool call data for every message — inputs, outputs, and metadata. This is useful for verifying that your tools receive the expected inputs and return the right shapes.
 
+![Debug sidebar](./sandbox-debug.png)
+
 ### Tool test panel
 
 Each tool can be tested in isolation from the agent info panel. The sandbox reads your tool's Zod input schema and generates a form with appropriate field types. You can also switch to raw JSON input. This lets you test tool execution without waiting for the LLM to call it.
+
+![Tool test panel](./sandbox-tool-test.png)
 
 ### Suspend/resume testing
 
@@ -161,3 +167,5 @@ app.listen(3000);
 ## Dark mode
 
 The sandbox supports light and dark modes. It follows your system preference by default, and you can toggle it from the theme button in the UI. The preference is persisted in `localStorage`.
+
+![Dark mode](./sandbox-dark.png)
