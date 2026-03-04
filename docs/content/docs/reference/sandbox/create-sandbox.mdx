@@ -1,0 +1,93 @@
+---
+title: createSandbox
+description: Create a development sandbox with an embedded UI for testing agents.
+---
+
+`createSandbox` creates a self-contained development server with a built-in UI for chatting with agents, inspecting tool calls, and testing tools in isolation.
+
+```ts
+import { createSandbox } from "@zaikit/sandbox";
+```
+
+## Usage
+
+```ts
+import { createSandbox } from "@zaikit/sandbox";
+
+const sandbox = createSandbox({
+  agents: {
+    weather: weatherAgent,
+    support: supportAgent,
+  },
+});
+
+sandbox.listen(4000);
+```
+
+## Parameters
+
+### `config`
+
+| Property | Type | Required | Description |
+|---|---|---|---|
+| `agents` | `Record<string, Agent>` | Yes | Map of agent name to agent instance. Each agent appears as a separate entry in the sidebar. |
+| `basePath` | `string` | No | Mount prefix for the sandbox (e.g. `"/sandbox"`). Injects a `<base>` tag so SPA routing works under subpaths. |
+
+## Return value
+
+| Property | Type | Description |
+|---|---|---|
+| `app` | `Hono` | The underlying Hono app. Use this to mount the sandbox into an existing server via `app.route()`. |
+| `listen(port?)` | `(port?: number) => void` | Starts a standalone HTTP server. Defaults to port `4000`. |
+
+## Memory behavior
+
+If an agent does not have a `memory` adapter configured, the sandbox automatically wraps it with `createInMemoryMemory()`. This means every agent in the sandbox has persistence enabled — you can create threads, switch between them, and inspect message history without any setup.
+
+If an agent already has a memory adapter (e.g. `createPostgresMemory`), it is used as-is.
+
+## Adapters
+
+### Hono
+
+```ts
+import { createSandboxHono } from "@zaikit/sandbox/hono";
+
+const sandboxApp = createSandboxHono({
+  agents: { weather: weatherAgent },
+  basePath: "/sandbox",
+});
+
+// Mount into your existing Hono app
+app.route("/sandbox", sandboxApp);
+```
+
+### Express
+
+```ts
+import { createSandboxExpress } from "@zaikit/sandbox/express";
+
+const router = createSandboxExpress({
+  agents: { weather: weatherAgent },
+  basePath: "/sandbox",
+});
+
+// Mount into your existing Express app
+app.use("/sandbox", router);
+```
+
+Both adapters accept the same `SandboxConfig` options.
+
+## API routes
+
+The sandbox serves the following API routes (relative to the mount point):
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/agents` | List all registered agents |
+| `GET` | `/api/agents/:name` | Get agent details (model, system prompt, tools) |
+| `POST` | `/api/agents/:name/chat` | Chat with an agent (streaming SSE response) |
+| `GET` | `/api/agents/:name/threads` | List threads for an agent |
+| `GET` | `/api/agents/:name/threads/:id/messages` | Get messages for a thread |
+| `DELETE` | `/api/agents/:name/threads/:id` | Delete a thread |
+| `POST` | `/api/agents/:name/tools/:tool/execute` | Execute a tool in isolation |

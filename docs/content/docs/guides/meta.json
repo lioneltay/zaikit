@@ -6,6 +6,7 @@
     "creating-tools",
     "human-in-the-loop",
     "postgres-memory",
-    "type-safe-tools"
+    "type-safe-tools",
+    "sandbox"
   ]
 }
