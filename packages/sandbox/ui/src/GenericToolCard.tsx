@@ -11,6 +11,7 @@ import {
   Typography,
 } from "@mui/material";
 import { useAgent } from "@zaikit/react";
+import { useEffect, useState } from "react";
 import { ResumeForm } from "./ResumeForm";
 import { useTokens } from "./theme";
 
@@ -51,6 +52,12 @@ export function GenericToolCard({
   const toolName = getToolName(part);
   const state = getState(part);
   const suspendPayload = part.suspend?.payload;
+  const [expanded, setExpanded] = useState(false);
+
+  // Auto-expand when tool becomes suspended
+  useEffect(() => {
+    if (state === "suspended") setExpanded(true);
+  }, [state]);
 
   const stateColor =
     state === "result" ? "success" : state === "suspended" ? "warning" : "info";
@@ -63,9 +70,8 @@ export function GenericToolCard({
 
   return (
     <Accordion
-      // key forces remount when state changes (call→suspended) so defaultExpanded applies
-      key={state === "suspended" ? "suspended" : "other"}
-      defaultExpanded={state === "suspended"}
+      expanded={expanded}
+      onChange={(_, isExpanded) => setExpanded(isExpanded)}
       disableGutters
       sx={{
         my: 1,

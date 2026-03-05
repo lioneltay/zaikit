@@ -1,9 +1,11 @@
 import ClearIcon from "@mui/icons-material/Clear";
 import PlayArrowIcon from "@mui/icons-material/PlayArrow";
+import RestoreIcon from "@mui/icons-material/Restore";
 import {
   Box,
   Button,
   CircularProgress,
+  Collapse,
   Tab,
   Tabs,
   TextField,
@@ -19,14 +21,16 @@ type ToolTestPanelProps = {
   agentName: string;
   toolName: string;
   parameters: Record<string, unknown> | undefined;
+  agentContext: Record<string, unknown>;
+  toolContextSchema?: Record<string, unknown>;
 };
-
-type Status = "idle" | "running" | "success" | "error" | "suspended";
 
 export function ToolTestPanel({
   agentName,
   toolName,
   parameters,
+  agentContext,
+  toolContextSchema,
 }: ToolTestPanelProps) {
   const tokens = useTokens();
 
@@ -34,6 +38,12 @@ export function ToolTestPanel({
     parameters?.type === "object" &&
     parameters.properties &&
     Object.keys(parameters.properties as object).length > 0;
+
+  const hasToolContextSchema = Boolean(
+    toolContextSchema?.type === "object" &&
+      toolContextSchema.properties &&
+      Object.keys(toolContextSchema.properties as object).length > 0,
+  );
 
   const [mode, setMode] = useState<"form" | "json">(
     hasSchema ? "form" : "json",
@@ -47,8 +57,14 @@ export function ToolTestPanel({
       : "{}",
   );
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [status, setStatus] = useState<Status>("idle");
+  const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<ToolExecutionResult | null>(null);
+
+  // Tool-level context override
+  const [showContextOverride, setShowContextOverride] = useState(false);
+  const [contextOverride, setContextOverride] = useState<
+    Record<string, unknown> | undefined
+  >(undefined);
 
   const handleModeChange = (_: unknown, newMode: "form" | "json") => {
     if (newMode === "json") {
@@ -78,43 +94,45 @@ export function ToolTestPanel({
       }
     }
 
-    setStatus("running");
-    setResult(null);
+    const context = contextOverride ?? agentContext;
+    setIsRunning(true);
 
     try {
-      const res = await executeTool(agentName, toolName, input);
+      const res = await executeTool(agentName, toolName, input, context);
       setResult(res);
-      if (!res.ok) {
-        setStatus("error");
-      } else if (res.suspended) {
-        setStatus("suspended");
-      } else {
-        setStatus("success");
-      }
     } catch (err) {
       setResult({
         ok: false,
         error: err instanceof Error ? err.message : String(err),
       });
-      setStatus("error");
+    } finally {
+      setIsRunning(false);
     }
   };
 
   const handleClear = () => {
-    setStatus("idle");
     setResult(null);
   };
 
+  const resultKind = result
+    ? !result.ok
+      ? "error"
+      : result.suspended
+        ? "suspended"
+        : "success"
+    : null;
+
   const resultBgColor =
-    status === "success"
+    resultKind === "success"
       ? tokens.schema.output
-      : status === "suspended"
+      : resultKind === "suspended"
         ? tokens.schema.suspend
-        : status === "error"
+        : resultKind === "error"
           ? "rgba(211, 47, 47, 0.08)"
           : undefined;
 
-  const resultTextColor = status === "error" ? "error.main" : "text.primary";
+  const resultTextColor =
+    resultKind === "error" ? "error.main" : "text.primary";
 
   return (
     <Box sx={{ mt: 1.5 }}>
@@ -178,19 +196,78 @@ export function ToolTestPanel({
         </>
       )}
 
+      {/* Tool context override */}
+      {hasToolContextSchema && (
+        <Box sx={{ mt: 1.5 }}>
+          <Button
+            size="small"
+            variant="text"
+            onClick={() => {
+              if (!showContextOverride) {
+                setShowContextOverride(true);
+              } else {
+                setShowContextOverride(false);
+                setContextOverride(undefined);
+              }
+            }}
+            sx={{ textTransform: "none", fontSize: "0.75rem" }}
+          >
+            {contextOverride
+              ? "Context (override)"
+              : showContextOverride
+                ? "Context (editing)"
+                : "Context (using agent default)"}
+          </Button>
+          {contextOverride && (
+            <Button
+              size="small"
+              variant="text"
+              startIcon={<RestoreIcon sx={{ fontSize: 14 }} />}
+              onClick={() => {
+                setContextOverride(undefined);
+                setShowContextOverride(false);
+              }}
+              sx={{ textTransform: "none", fontSize: "0.75rem", ml: 0.5 }}
+            >
+              Reset
+            </Button>
+          )}
+          <Collapse in={showContextOverride}>
+            <Box
+              sx={{
+                mt: 0.5,
+                p: 1.5,
+                border: "1px dashed",
+                borderColor: "divider",
+                borderRadius: "6px",
+              }}
+            >
+              <SchemaField
+                name=""
+                schema={toolContextSchema as Record<string, unknown>}
+                value={contextOverride ?? agentContext}
+                onChange={(v) =>
+                  setContextOverride(v as Record<string, unknown>)
+                }
+              />
+            </Box>
+          </Collapse>
+        </Box>
+      )}
+
       <Box sx={{ mt: 1, display: "flex", gap: 1, alignItems: "center" }}>
         <Button
           variant="contained"
           size="small"
           startIcon={
-            status === "running" ? (
+            isRunning ? (
               <CircularProgress size={16} color="inherit" />
             ) : (
               <PlayArrowIcon />
             )
           }
           onClick={handleRun}
-          disabled={status === "running"}
+          disabled={isRunning}
         >
           Run
         </Button>
@@ -201,7 +278,7 @@ export function ToolTestPanel({
         )}
       </Box>
 
-      {result && status !== "idle" && (
+      {result && resultKind && (
         <Box
           sx={{
             mt: 1.5,
@@ -212,7 +289,7 @@ export function ToolTestPanel({
             maxHeight: 300,
           }}
         >
-          {status === "success" && (
+          {resultKind === "success" && (
             <>
               <Typography
                 variant="caption"
@@ -241,7 +318,7 @@ export function ToolTestPanel({
             </>
           )}
 
-          {status === "suspended" && (
+          {resultKind === "suspended" && (
             <>
               <Typography
                 variant="caption"
@@ -274,7 +351,7 @@ export function ToolTestPanel({
             </>
           )}
 
-          {status === "error" && (
+          {resultKind === "error" && (
             <>
               <Typography
                 variant="caption"
