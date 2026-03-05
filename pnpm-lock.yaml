@@ -121,6 +121,9 @@ importers:
       '@zaikit/codegen-react':
         specifier: workspace:*
         version: link:../../packages/codegen-react
+      '@zaikit/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/sandbox
       '@zaikit/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
@@ -356,6 +359,9 @@ importers:
       hono:
         specifier: ^4
         version: 4.12.3
+      react:
+        specifier: ^18 || ^19
+        version: 19.2.4
       zod:
         specifier: ^4
         version: 4.3.6
@@ -363,6 +369,12 @@ importers:
       '@types/express':
         specifier: ^5
         version: 5.0.6
+      '@types/react':
+        specifier: ^19
+        version: 19.2.14
+      '@zaikit/react':
+        specifier: workspace:*
+        version: link:../react
       '@zaikit/typescript-config':
         specifier: workspace:*
         version: link:../typescript-config

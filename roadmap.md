@@ -1,88 +1,93 @@
 # Features Roadmap
 
-## Tasks
+## P0 — Polish & Foundations
 
-- make sure renderers have correct state? we can add a suspend state?
+Things that fix or complete existing work. Do these first.
 
-- configuration demo, ability to select middlewares
-- input should stay focused and not disabled, just disable send
+- [x] Make sure renderers have correct state (add a suspend state?)
+- [ ] Configuration demo — ability to select middlewares
+- [ ] Docs server RAG
 
-## Docs Server Rag
+## P1 — Core Capabilities
+
+Features that make the framework usable for real applications.
+
+### Context Management
+
+- [ ] Compacting
+- [ ] Programmatic tool calling
+- [ ] Memory / observational memory
+
+### Persistence
+
+### Interaction
+
+- [ ] Message queues
+- [ ] Ability to interrupt the agent
+
+### Testing
+
+- [ ] Testing utilities for consumers
+- [ ] Package for testing AI
+
+### Observability
+
+- [ ] Langfuse integration
+
+## P2 — Differentiation
+
+Features that expand what you can build with the framework.
+
+### Generative UI & Artefacts
+
+- [ ] Generative UI, dynamic forms
+- [ ] Artefacts as a first class citizen
+- [ ] Artefacts attached to threads rather than stored in messages
+- [ ] Markdown editor artefact
+- [ ] Ability to see user selections
+
+### RAG
+
+- [ ] Vectorisation? Just the ability to make RAG tools? Do you actually need RAG, or is the fact that you can make any tool you want already RAG?
+
+### Long Term / Multi-Threaded Memory
+
+- [ ] Store memories and add to context, RAG the memories
+
+### Request Context & Background Tasks
+
+- [ ] Request context
+- [ ] Background tasks
+
+## P3 — Expand
+
+Integrations, advanced features, and exploratory ideas.
+
+### DX
+
+- [x] UI Preview (hard to see all your tools in all their states — auto-gen this)
+- [x] Frontend app that connects to backend (sandbox, playground)
+
+### Frontend
+
+- [ ] Web MCP
+
+### Integrations
+
+- [ ] Web search
+- [ ] Telegram
+- [ ] Google Drive integration
+
+### Advanced
+
+- [ ] Code execution sandbox
+- [ ] Ability to screenshot things in the browser
+
+### Demo Apps
+
+- [ ] Chat Assistant Web App
+- [ ] Coding agent CLI
 
 ## Ideas
 
-- document manual testing steps and get ai to do it
-
-## RAG
-
-- vectorisation? Just the ability to make rag tools? do you actualy need rag, or is the fact that you can make any tool you want already rag?
-
-## Testing
-
-- [ ] comprehensive e2e coverage, we dont have state so it should be easy, can we mix playwright with ai????
-- [ ] integration tests can replace e2e??
-- [ ] Tests for the packages
-- [ ] package for testing ai
-
-- [ ] Testing internally
-- testing for consumers
-
-## DX
-
-- UI Preview (its hard to see all your tools in all their states, auto gen this)
-- frontend app that connects to backend (sandbox, playground)
-
-## frontend
-
-- web mcp
-
-## Capabilities
-
-- ability to select which tools are used, prepare step i guess?
-- Generative UI, dynamic forms
-- request context
-- background tasks
-
-## Quality
-
-- guardrails, assess quality and retry
-
-## Context Management
-
-- compacting
-- programmatic tool calling
-- code execution sandbox
-- memory? observational memory?
-
-## Interaction
-
-- message queues
-- ability to interrupt the agent
-- ability to screen shot things in the browser
-
-## Artefacts
-
-- artefacts as a first class citizen?
-- Artefacts attached to threads rather than stored in messages?
-
-## Persistence
-
-## Integrations
-
-- web search
-- telegram
-- google drive integration
-
-## Markdown Document Editor Artefact
-
-- markdown editor artefact
-- ability to see user selections
-
-## Observability
-
-- langfuse
-
-## Demo Apps
-
-- Chat Assistant Web App
-- Coding agent cli
+- [ ] Document manual testing steps and get AI to do it

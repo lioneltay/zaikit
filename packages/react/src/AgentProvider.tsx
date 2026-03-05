@@ -89,6 +89,8 @@ export function AgentProvider({
         state = "suspended";
       } else if ((p.state as string) === "output-available") {
         state = "result";
+      } else if ((p.state as string) === "output-error") {
+        state = "error";
       } else {
         state = "call";
       }
@@ -102,10 +104,14 @@ export function AgentProvider({
           ? (suspend as Record<string, unknown>).payload
           : undefined,
         result: (p.output ?? p.result) as unknown,
+        error:
+          state === "error"
+            ? ((p.errorText as string) ?? "Unknown error")
+            : undefined,
         resume: (data: unknown) => {
           if (frontendToolsRef.current.has(toolName)) {
             chat.addToolOutput({ tool: toolName, toolCallId, output: data });
-          } else if (state !== "result") {
+          } else if (state !== "result" && state !== "error") {
             chat.resumeTool(toolCallId, data);
           }
         },

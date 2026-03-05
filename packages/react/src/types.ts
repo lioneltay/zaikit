@@ -1,7 +1,7 @@
 import type { UIMessage } from "ai";
 import type React from "react";
 
-export type ToolRenderState = "call" | "suspended" | "result";
+export type ToolRenderState = "call" | "suspended" | "result" | "error";
 
 export type ToolRenderProps<
   TArgs = Record<string, unknown>,
@@ -14,6 +14,7 @@ export type ToolRenderProps<
   args: TArgs;
   suspendPayload: TSuspend | undefined;
   result: unknown;
+  error: string | undefined;
   resume: (data: TResume) => void;
 };
 

@@ -148,6 +148,7 @@ export function ToolStory({ name, render, schema }: ToolStoryProps) {
     schema?.suspend ? buildDefaultValues(schema.suspend) : {},
   );
   const [resultText, setResultText] = useState("null");
+  const [errorText, setErrorText] = useState("Something went wrong");
   const [capturedResume, setCapturedResume] = useState<unknown>(undefined);
 
   const result = useMemo(() => {
@@ -167,8 +168,9 @@ export function ToolStory({ name, render, schema }: ToolStoryProps) {
         state,
         suspendPayload: state === "suspended" ? suspendPayload : undefined,
         result: state === "result" ? result : undefined,
+        error: state === "error" ? errorText : undefined,
       }),
-    [args, state, suspendPayload, result],
+    [args, state, suspendPayload, result, errorText],
   );
 
   const mockProps: ToolRenderProps = useMemo(
@@ -179,11 +181,12 @@ export function ToolStory({ name, render, schema }: ToolStoryProps) {
       args: (args ?? {}) as Record<string, unknown>,
       suspendPayload: state === "suspended" ? suspendPayload : undefined,
       result: state === "result" ? result : undefined,
+      error: state === "error" ? errorText : undefined,
       resume: (data: unknown) => {
         setCapturedResume(data);
       },
     }),
-    [name, state, args, suspendPayload, result],
+    [name, state, args, suspendPayload, result, errorText],
   );
 
   return (
@@ -245,6 +248,13 @@ export function ToolStory({ name, render, schema }: ToolStoryProps) {
           >
             result
           </button>
+          <button
+            type="button"
+            style={stateButtonStyle(state === "error")}
+            onClick={() => setState("error")}
+          >
+            error
+          </button>
         </div>
       </div>
 
@@ -297,6 +307,18 @@ export function ToolStory({ name, render, schema }: ToolStoryProps) {
                   style={textareaStyle}
                   value={resultText}
                   onChange={(e) => setResultText(e.target.value)}
+                />
+              </div>
+            )}
+
+            {/* Error — shown in error state */}
+            {state === "error" && (
+              <div>
+                <div style={sectionLabelStyle}>Error Text</div>
+                <textarea
+                  style={textareaStyle}
+                  value={errorText}
+                  onChange={(e) => setErrorText(e.target.value)}
                 />
               </div>
             )}
