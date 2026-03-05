@@ -57,7 +57,9 @@ type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   model: LanguageModel;
   system: string | ((context: C) => string | Promise<string>) | undefined;
   contextSchema: Record<string, unknown> | undefined;
+  stream(options: StreamOptions<C>): Promise<StreamResult>;
   chat(options: ChatOptions<C>): Promise<Response>;
+  generate(options: GenerateOptions<C>): Promise<GenerateResult>;
 };
 ```
 
@@ -68,7 +70,160 @@ type Agent<T extends ToolSet = ToolSet, C = undefined> = {
 | `model` | `LanguageModel` | The language model instance. |
 | `system` | `string \| ((context: C) => string \| Promise<string>) \| undefined` | The system prompt or function, if one was provided. |
 | `contextSchema` | `Record<string, unknown> \| undefined` | JSON Schema representation of the context Zod type, if `context` was provided. Used by the sandbox UI to render context forms. |
-| `chat` | `(options: ChatOptions<C>) => Promise<Response>` | Stream a response. Accepts a message or a resume request. When the agent has a context schema, all variants require a `context` field. |
+| `stream` | `(options: StreamOptions<C>) => Promise<StreamResult>` | Pure agent execution. Returns a stream and a result promise. No memory or persistence -- the caller decides what to do with the output. |
+| `chat` | `(options: ChatOptions<C>) => Promise<Response>` | Stream a response with persistence. Wraps `stream()` with memory, thread management, and title generation. Returns an HTTP `Response`. |
+| `generate` | `(options: GenerateOptions<C>) => Promise<GenerateResult>` | Run the agent and return structured results. Consumes the stream internally. No memory required. |
+
+## `stream()`
+
+Pure agent execution. Runs middleware and the core agent loop, returning a stream of UI message chunks and a promise that resolves to structured results when the stream completes. No memory, no persistence.
+
+```ts
+const { stream, result } = await agent.stream({
+  messages: [{ id: "1", role: "user", parts: [{ type: "text", text: "Hello" }] }],
+});
+
+// Consume the stream (e.g. pipe to a client, or just drain it)
+const reader = stream.getReader();
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  // process chunks...
+}
+
+// Get structured results after stream completes
+const agentResult = await result;
+console.log(agentResult.text);        // final text
+console.log(agentResult.steps);       // all StepResult objects
+console.log(agentResult.usage);       // aggregated token usage
+console.log(agentResult.finishReason); // "stop" | "tool-calls" | ...
+```
+
+### StreamOptions
+
+```ts
+type StreamOptions<C = undefined> = ([C] extends [undefined]
+  ? { context?: never }
+  : { context: C }) & {
+  messages: UIMessage[];
+  model?: LanguageModel;
+  threadId?: string;
+  maxSteps?: number;
+  frontendTools?: FrontendToolDef[];
+};
+```
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `messages` | `UIMessage[]` | Yes | The conversation messages to send to the model. |
+| `model` | `LanguageModel` | No | Per-call model override. Defaults to the agent's model. |
+| `threadId` | `string` | No | Thread ID for middleware context. Auto-generated if not provided. |
+| `maxSteps` | `number` | No | Maximum number of loop iterations. |
+| `frontendTools` | `FrontendToolDef[]` | No | Frontend tool definitions to register dynamically. |
+| `context` | `C` | When agent has `context` | Request-scoped context passed to tools and hooks. |
+
+### StreamResult
+
+```ts
+type StreamResult = {
+  stream: ReadableStream<unknown>;
+  result: Promise<AgentResult>;
+};
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `stream` | `ReadableStream<unknown>` | UI message chunks. Must be consumed for the result promise to resolve. |
+| `result` | `Promise<AgentResult>` | Resolves when the stream completes with structured results. |
+
+### AgentResult
+
+```ts
+type AgentResult = {
+  text: string;
+  steps: StepResult<ToolSet>[];
+  finishReason: string;
+  usage: LanguageModelUsage;
+};
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `text` | `string` | The text from the final step. |
+| `steps` | `StepResult[]` | All step results from the agent loop (AI SDK type). |
+| `finishReason` | `string` | Why the model stopped (`"stop"`, `"tool-calls"`, etc.). |
+| `usage` | `LanguageModelUsage` | Aggregated token usage across all steps (AI SDK type). |
+
+## `generate()`
+
+Run the agent and return structured results directly. Internally calls `stream()` and consumes the stream. Defaults `maxSteps` to 10.
+
+```ts
+// Simple prompt
+const result = await agent.generate({ prompt: "What is 2 + 2?" });
+console.log(result.text); // "4"
+
+// With messages
+const result = await agent.generate({
+  messages: [{ id: "1", role: "user", parts: [{ type: "text", text: "Hello" }] }],
+});
+
+// With tools and context
+const result = await agent.generate({
+  prompt: "Weather in NYC?",
+  model: openai("gpt-4o-mini"), // per-call model override
+  context: { userId: "user-123" },
+});
+```
+
+### GenerateOptions
+
+```ts
+type GenerateOptions<C = undefined> = ([C] extends [undefined]
+  ? { context?: never }
+  : { context: C }) & {
+  model?: LanguageModel;
+  maxSteps?: number;
+  frontendTools?: FrontendToolDef[];
+} & ({ prompt: string } | { messages: UIMessage[] });
+```
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `prompt` | `string` | One of `prompt` or `messages` | A simple text prompt. Converted to a `UIMessage` internally. |
+| `messages` | `UIMessage[]` | One of `prompt` or `messages` | Full conversation messages. |
+| `model` | `LanguageModel` | No | Per-call model override. |
+| `maxSteps` | `number` | No | Maximum loop iterations. Defaults to `10`. |
+| `frontendTools` | `FrontendToolDef[]` | No | Frontend tool definitions. |
+| `context` | `C` | When agent has `context` | Request-scoped context. |
+
+`generate()` does not support tool suspension. If a tool calls `suspend()`, `generate()` throws an error. Use `chat()` for tools that require human-in-the-loop interaction.
+
+### Sub-agents
+
+`generate()` is designed for invoking agents from within tools. Since tools are closures, sub-agents are accessed via closure scope -- no registry needed:
+
+```ts
+const subAgent = createAgent({
+  model: openai("gpt-4o-mini"),
+  system: "You summarize text concisely.",
+});
+
+const summarizeTool = createTool({
+  description: "Summarize a document",
+  inputSchema: z.object({ text: z.string() }),
+  execute: async ({ input }) => {
+    const result = await subAgent.generate({ prompt: input.text });
+    return result.text;
+  },
+});
+
+const mainAgent = createAgent({
+  model: openai("gpt-4o"),
+  tools: { summarize: summarizeTool },
+  memory,
+});
+```
 
 ## ChatOptions
 

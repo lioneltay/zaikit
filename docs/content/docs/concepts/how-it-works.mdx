@@ -20,20 +20,63 @@ HTTP Endpoint (Hono, Express, etc.)
   agent.chat(body)
        |
        v
+  agent.stream()  (core pipeline)
+       |
+       v
   streamText loop  (AI SDK)
        |
        v
   SSE stream back to browser
 ```
 
+## Three Methods
+
+The agent exposes three methods, each building on the previous:
+
+### `stream()` -- Pure Execution
+
+The core pipeline. Takes messages, runs middleware and the agent loop, returns a stream and a result promise. No memory, no persistence.
+
+```ts
+const { stream, result } = await agent.stream({
+  messages: [userMessage],
+});
+// stream: ReadableStream of UI chunks
+// result: Promise<AgentResult> (resolves when stream completes)
+```
+
+### `chat()` -- Streaming with Persistence
+
+Wraps `stream()` with chat concerns: memory persistence, thread creation, title generation, and HTTP response formatting. Requires `memory` to be configured.
+
+```ts
+agent.chat({
+  threadId: "thread-123",
+  message: userMessage, // UIMessage
+});
+```
+
 The client sends a JSON body to your HTTP endpoint. `agent.chat()` inspects the body shape and dispatches to the right handler:
 
-- **`{ threadId, message }`** — a new user message. The agent saves it to memory, loads the full thread, and starts the `streamText` loop.
-- **`{ threadId, resume: { toolCallId, data } }`** — resuming a suspended tool. The agent re-executes the tool with the user's response, then continues the LLM if all suspensions are resolved.
+- **`{ threadId, message }`** -- a new user message. The agent saves it to memory, loads the full thread, and starts the agent loop.
+- **`{ threadId, resume: { toolCallId, data } }`** -- resuming a suspended tool. The agent re-executes the tool with the user's response, then continues the LLM if all suspensions are resolved.
+- **`{ threadId, toolOutputs: [...] }`** -- frontend tool outputs. The agent writes the outputs and continues the LLM.
 
-## Two Entry Points
+### `generate()` -- Non-Streaming Results
 
-Every call to `agent.chat()` hits one of two paths:
+Calls `stream()` internally and consumes the stream, returning structured results. Designed for sub-agent invocation from tools.
+
+```ts
+const result = await agent.generate({ prompt: "Summarize this text." });
+console.log(result.text);   // final text
+console.log(result.usage);  // aggregated token usage
+```
+
+`generate()` does not support tool suspension -- it throws if a tool calls `suspend()`.
+
+## Chat Entry Points
+
+Every call to `agent.chat()` hits one of three paths:
 
 ### Normal Chat
 
@@ -48,7 +91,7 @@ agent.chat({
 2. The user message is saved via `memory.addMessage()`.
 3. All messages for the thread are loaded.
 4. Title generation fires in the background (first message only).
-5. The `streamText` loop runs and an SSE `Response` is returned.
+5. The agent loop runs and an SSE `Response` is returned.
 
 ### Resume
 

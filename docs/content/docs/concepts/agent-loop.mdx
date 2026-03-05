@@ -77,7 +77,27 @@ This means suspended tools appear as interactive UI components on the client rat
 
 ## Step Limits
 
-Use `onAfterStep` to enforce a maximum number of steps:
+### `maxSteps` option
+
+Both `stream()` and `generate()` accept a `maxSteps` option that limits the number of loop iterations. `generate()` defaults to `maxSteps: 10` as a safety bound for sub-agent calls:
+
+```ts
+// Explicit limit on stream
+const { stream, result } = await agent.stream({
+  messages,
+  maxSteps: 5,
+});
+
+// generate defaults to 10, can be overridden
+const result = await agent.generate({
+  prompt: "...",
+  maxSteps: 3,
+});
+```
+
+### `onAfterStep` hook
+
+For more control, use `onAfterStep` to inspect step results and throw to abort:
 
 ```ts
 const agent = createAgent({
@@ -95,7 +115,7 @@ Throwing from a hook aborts the loop and closes the stream.
 
 ## Persistence
 
-When the stream completes, the `onFinish` callback persists the assistant message to memory:
+Persistence is a `chat()` concern -- `stream()` and `generate()` do not interact with memory. When `chat()` wraps the stream, it adds an `onFinish` callback that persists the assistant message:
 
 - **New messages** are saved with `memory.addMessage()`.
 - **Resumed messages** are updated in-place with `memory.updateMessage()`, preserving the original message ID.
