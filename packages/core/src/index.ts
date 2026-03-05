@@ -5,10 +5,15 @@ export type {
   AfterStepContext,
   AfterToolCallContext,
   Agent,
+  AgentResult,
   BeforeToolCallContext,
   ChatOptions,
   FrontendToolDef,
+  GenerateOptions,
+  GenerateResult,
   PrepareStep,
+  StreamOptions,
+  StreamResult,
 } from "./agent";
 export { createAgent } from "./agent";
 export type { ToolMeta, ZaikitTool } from "./create-tool";

@@ -1439,3 +1439,237 @@ describe("dynamic system prompt", () => {
     expect(systemMessages[0].content).toBe("You are helpful.");
   });
 });
+
+describe("stream()", () => {
+  it("returns a stream and result without requiring memory", async () => {
+    const agent = createAgent({
+      model: mockModel([textResponse("Hello from stream!")]),
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Hi")],
+    });
+
+    // Consume the stream
+    const reader = stream.getReader();
+    const chunks: unknown[] = [];
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+    }
+
+    const agentResult = await result;
+    expect(agentResult.text).toBe("Hello from stream!");
+    expect(agentResult.finishReason).toBe("stop");
+    expect(agentResult.steps).toHaveLength(1);
+    expect(agentResult.usage.inputTokens).toBeGreaterThan(0);
+  });
+
+  it("runs tools in multi-step flow", async () => {
+    let toolExecuted = false;
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => {
+        toolExecuted = true;
+        return `72°F in ${input.city}`;
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "get_weather", { city: "NYC" }),
+        textResponse("The weather is 72°F."),
+      ]),
+      tools: { get_weather: weatherTool },
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Weather?")],
+    });
+
+    const reader = stream.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+
+    const agentResult = await result;
+    expect(toolExecuted).toBe(true);
+    expect(agentResult.text).toBe("The weather is 72°F.");
+    expect(agentResult.steps).toHaveLength(2);
+  });
+
+  it("accepts a model override", async () => {
+    const defaultModel = mockModel([textResponse("default")]);
+    const overrideModel = mockModel([textResponse("override")]);
+
+    const agent = createAgent({ model: defaultModel });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Hi")],
+      model: overrideModel,
+    });
+
+    const reader = stream.getReader();
+    while (true) {
+      const { done } = await reader.read();
+      if (done) break;
+    }
+
+    const agentResult = await result;
+    expect(agentResult.text).toBe("override");
+  });
+});
+
+describe("generate()", () => {
+  it("returns text from a simple prompt", async () => {
+    const agent = createAgent({
+      model: mockModel([textResponse("The answer is 42.")]),
+    });
+
+    const result = await agent.generate({ prompt: "What is the answer?" });
+
+    expect(result.text).toBe("The answer is 42.");
+    expect(result.finishReason).toBe("stop");
+    expect(result.steps).toHaveLength(1);
+  });
+
+  it("runs tools and returns the final text", async () => {
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input }) => `72°F in ${input.city}`,
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "get_weather", { city: "NYC" }),
+        textResponse("NYC is 72°F."),
+      ]),
+      tools: { get_weather: weatherTool },
+    });
+
+    const result = await agent.generate({ prompt: "Weather in NYC?" });
+
+    expect(result.text).toBe("NYC is 72°F.");
+    expect(result.steps).toHaveLength(2);
+  });
+
+  it("accepts UIMessage[] instead of prompt", async () => {
+    const agent = createAgent({
+      model: mockModel([textResponse("Hello back!")]),
+    });
+
+    const result = await agent.generate({
+      messages: [userMessage("Hello")],
+    });
+
+    expect(result.text).toBe("Hello back!");
+  });
+
+  it("passes context to tools", async () => {
+    let receivedContext: unknown;
+
+    const greetTool = createTool({
+      description: "Greet user",
+      inputSchema: z.object({}),
+      context: z.object({ userName: z.string() }),
+      execute: async ({ context }) => {
+        receivedContext = context;
+        return `Hello ${context.userName}`;
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "greet", {}),
+        textResponse("Done."),
+      ]),
+      context: z.object({ userName: z.string() }),
+      tools: { greet: greetTool },
+    });
+
+    await agent.generate({
+      prompt: "Greet me",
+      context: { userName: "Alice" },
+    });
+
+    expect(receivedContext).toEqual({ userName: "Alice" });
+  });
+
+  it("accepts a per-call model override", async () => {
+    const defaultModel = mockModel([textResponse("default")]);
+    const overrideModel = mockModel([textResponse("override")]);
+
+    const agent = createAgent({ model: defaultModel });
+
+    const result = await agent.generate({
+      prompt: "Hi",
+      model: overrideModel,
+    });
+
+    expect(result.text).toBe("override");
+  });
+
+  it("sums usage across multiple steps", async () => {
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "noop", {}),
+        textResponse("Done."),
+      ]),
+      tools: {
+        noop: createTool({
+          description: "No-op",
+          inputSchema: z.object({}),
+          execute: async () => "ok",
+        }),
+      },
+    });
+
+    const result = await agent.generate({ prompt: "Go" });
+
+    // Each step has 10 input + 5 output tokens (from defaultUsage in helpers)
+    expect(result.usage.inputTokens).toBe(20);
+    expect(result.usage.outputTokens).toBe(10);
+    expect(result.usage.totalTokens).toBe(30);
+  });
+
+  it("does not require memory", async () => {
+    // Agent has no memory — generate should still work
+    const agent = createAgent({
+      model: mockModel([textResponse("No memory needed.")]),
+    });
+
+    const result = await agent.generate({ prompt: "Hi" });
+    expect(result.text).toBe("No memory needed.");
+  });
+
+  it("throws on tool suspension", async () => {
+    const confirmTool = createTool({
+      description: "Ask for confirmation",
+      inputSchema: z.object({ action: z.string() }),
+      suspendSchema: z.object({ prompt: z.string() }),
+      resumeSchema: z.object({ confirmed: z.boolean() }),
+      execute: async ({ input, suspend, resumeData }) => {
+        if (!resumeData) {
+          return suspend({ prompt: `Confirm: ${input.action}?` });
+        }
+        return resumeData.confirmed ? "Confirmed" : "Cancelled";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "confirm", { action: "delete" }),
+      ]),
+      tools: { confirm: confirmTool },
+    });
+
+    await expect(agent.generate({ prompt: "Delete it" })).rejects.toThrow(
+      "Tool suspension is not supported in generate()",
+    );
+  });
+});

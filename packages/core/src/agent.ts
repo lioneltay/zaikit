@@ -6,6 +6,7 @@ import {
   generateText,
   jsonSchema,
   type LanguageModel,
+  type LanguageModelUsage,
   type ModelMessage,
   type PrepareStepResult,
   type StepResult,
@@ -24,6 +25,8 @@ import {
 } from "./middleware/core";
 import { isSuspendResult } from "./suspend";
 import { getToolInjection, runWithToolInjection } from "./tool-injection";
+
+// --- Hook context types ---
 
 export type AfterStepContext = {
   /** The step that just completed. */
@@ -45,32 +48,25 @@ export type AfterToolCallContext = {
   output: unknown;
 };
 
-// A tool entry paired with a context mapper — used when a tool needs a
-// different context shape than the agent provides.
+// --- Tool config types ---
+
 type MappedToolEntry<C> = {
   tool: Tool<any, any>;
   mapContext: (ctx: C) => unknown;
 };
 
-// Each value in the tools config is either a plain tool or a mapped entry.
-// When the agent has no context (C = undefined), only plain tools are allowed.
 type ToolConfigValue<C = undefined> = [C] extends [undefined]
   ? Tool<any, any>
   : Tool<any, any> | MappedToolEntry<C>;
 
-// Extract the underlying Tool from a config entry.
 type ResolveToolEntry<E> = E extends { tool: infer T extends Tool<any, any> }
   ? T
   : E;
 
-// Resolve a full tools config record to a plain ToolSet.
 type ResolveToolsConfig<T> = {
   [K in keyof T]: ResolveToolEntry<T[K]>;
 };
 
-// Post-inference validation: for each mapped entry, enforce that mapContext
-// returns the tool's declared context type (read from __toolTypes phantom brand).
-// Plain tool entries pass through unchanged.
 type ValidateMappedTools<T, C> = {
   [K in keyof T]: T[K] extends {
     tool: { readonly __toolTypes: { readonly context: infer TC } };
@@ -82,6 +78,8 @@ type ValidateMappedTools<T, C> = {
       }
     : T[K];
 };
+
+// --- PrepareStep ---
 
 export type PrepareStep<
   TOOLS extends ToolSet = ToolSet,
@@ -95,6 +93,8 @@ export type PrepareStep<
 }) =>
   | PrepareStepResult<NoInfer<TOOLS>>
   | PromiseLike<PrepareStepResult<NoInfer<TOOLS>>>;
+
+// --- CreateAgentOptions ---
 
 type CreateAgentOptions<
   T extends Record<string, ToolConfigValue<C>> = ToolSet,
@@ -123,11 +123,15 @@ type CreateAgentOptions<
     | undefined;
 };
 
+// --- Frontend tool types ---
+
 export type FrontendToolDef = {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
 };
+
+// --- ChatOptions ---
 
 export type ChatOptions<C = undefined> = ([C] extends [undefined]
   ? { context?: never }
@@ -151,14 +155,109 @@ export type ChatOptions<C = undefined> = ([C] extends [undefined]
       }
   );
 
+// --- Stream / Generate types ---
+
+export type AgentResult = {
+  text: string;
+  steps: StepResult<ToolSet>[];
+  finishReason: string;
+  usage: LanguageModelUsage;
+};
+
+export type StreamOptions<C = undefined> = ([C] extends [undefined]
+  ? { context?: never }
+  : { context: C }) & {
+  messages: UIMessage[];
+  model?: LanguageModel;
+  threadId?: string;
+  maxSteps?: number;
+  frontendTools?: FrontendToolDef[];
+};
+
+export type StreamResult = {
+  stream: ReadableStream<unknown>;
+  result: Promise<AgentResult>;
+};
+
+export type GenerateOptions<C = undefined> = ([C] extends [undefined]
+  ? { context?: never }
+  : { context: C }) & {
+  model?: LanguageModel;
+  maxSteps?: number;
+  frontendTools?: FrontendToolDef[];
+} & ({ prompt: string } | { messages: UIMessage[] });
+
+export type GenerateResult = AgentResult;
+
+// --- Agent type ---
+
 export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   tools: T;
   memory: Memory | undefined;
   model: LanguageModel;
   system: string | ((context: C) => string | Promise<string>) | undefined;
   contextSchema: Record<string, unknown> | undefined;
+  stream(options: StreamOptions<C>): Promise<StreamResult>;
   chat(options: ChatOptions<C>): Promise<Response>;
+  generate(options: GenerateOptions<C>): Promise<GenerateResult>;
 };
+
+// --- Helpers ---
+
+function addTokenCounts(
+  a: number | undefined,
+  b: number | undefined,
+): number | undefined {
+  return a == null && b == null ? undefined : (a ?? 0) + (b ?? 0);
+}
+
+function sumUsage(steps: StepResult<ToolSet>[]): LanguageModelUsage {
+  return steps.reduce<LanguageModelUsage>(
+    (acc, step) => ({
+      inputTokens: addTokenCounts(acc.inputTokens, step.usage?.inputTokens),
+      inputTokenDetails: {
+        noCacheTokens: addTokenCounts(
+          acc.inputTokenDetails?.noCacheTokens,
+          step.usage?.inputTokenDetails?.noCacheTokens,
+        ),
+        cacheReadTokens: addTokenCounts(
+          acc.inputTokenDetails?.cacheReadTokens,
+          step.usage?.inputTokenDetails?.cacheReadTokens,
+        ),
+        cacheWriteTokens: addTokenCounts(
+          acc.inputTokenDetails?.cacheWriteTokens,
+          step.usage?.inputTokenDetails?.cacheWriteTokens,
+        ),
+      },
+      outputTokens: addTokenCounts(acc.outputTokens, step.usage?.outputTokens),
+      outputTokenDetails: {
+        textTokens: addTokenCounts(
+          acc.outputTokenDetails?.textTokens,
+          step.usage?.outputTokenDetails?.textTokens,
+        ),
+        reasoningTokens: addTokenCounts(
+          acc.outputTokenDetails?.reasoningTokens,
+          step.usage?.outputTokenDetails?.reasoningTokens,
+        ),
+      },
+      totalTokens: addTokenCounts(acc.totalTokens, step.usage?.totalTokens),
+    }),
+    {
+      inputTokens: undefined,
+      inputTokenDetails: {
+        noCacheTokens: undefined,
+        cacheReadTokens: undefined,
+        cacheWriteTokens: undefined,
+      },
+      outputTokens: undefined,
+      outputTokenDetails: {
+        textTokens: undefined,
+        reasoningTokens: undefined,
+      },
+      totalTokens: undefined,
+    },
+  );
+}
 
 /**
  * Wrap each tool's execute function with onBeforeToolCall/onAfterToolCall hooks.
@@ -258,6 +357,8 @@ function resolveToolEntries(
   );
 }
 
+// --- createAgent ---
+
 export function createAgent<
   T extends Record<string, ToolConfigValue<C>>,
   C = undefined,
@@ -301,8 +402,19 @@ export function createAgent<
    * Core agent loop that produces a ReadableStream of UI message chunks.
    * Accepts a MiddlewareContext so middleware can mutate tools, messages,
    * and model before the loop runs.
+   *
+   * Callbacks:
+   * - onResult: called with structured results before the stream closes
+   * - onError: called if the loop throws, before the stream errors
    */
-  function coreAgentStream(ctx: MiddlewareContext): ReadableStream<unknown> {
+  function coreAgentStream(
+    ctx: MiddlewareContext,
+    callbacks?: {
+      maxSteps?: number;
+      onResult?: (result: AgentResult) => void;
+      onError?: (err: unknown) => void;
+    },
+  ): ReadableStream<unknown> {
     // toolName isn't available on tool-output-available chunks, so we track
     // the mapping from tool-input-start/tool-input-available chunks.
     const toolNameMap = new Map<string, string>();
@@ -407,6 +519,14 @@ export function createAgent<
 
             if (finishReason === "stop") break;
 
+            // Check maxSteps before continuing to next step
+            if (
+              callbacks?.maxSteps !== undefined &&
+              stepNumber + 1 >= callbacks.maxSteps
+            ) {
+              break;
+            }
+
             // Chain: append response messages for the next step
             const response = await result.response;
             currentModelMessages = [
@@ -416,10 +536,19 @@ export function createAgent<
             stepNumber++;
           }
 
-          // Emit a single finish chunk to close the message
+          // Emit structured result before closing the stream
+          const lastStep = allSteps[allSteps.length - 1];
+          callbacks?.onResult?.({
+            text: lastStep?.text ?? "",
+            steps: allSteps,
+            finishReason: lastStep?.finishReason ?? "stop",
+            usage: sumUsage(allSteps),
+          });
+
           controller.enqueue({ type: "finish" });
           controller.close();
         } catch (err) {
+          callbacks?.onError?.(err);
           controller.error(err);
         }
       },
@@ -427,60 +556,81 @@ export function createAgent<
   }
 
   /**
-   * Stream an LLM response back to the client.
+   * Pure agent execution pipeline. Runs middleware + core loop, returns
+   * a stream of UI message chunks and a promise that resolves to structured
+   * results when the stream completes.
    *
-   * Uses a manual loop of single-step streamText() calls instead of
-   * delegating multi-step to the SDK. This gives us control between steps
-   * for middleware, hooks, and suspension detection.
-   *
-   * When `messageId` is provided (resume path), onFinish updates the existing
-   * suspended message in-place instead of creating a new assistant message.
+   * No memory, no persistence — the caller decides what to do with the output.
    */
-  function buildStreamResponse(
+  async function agentStream(opts: StreamOptions<C>): Promise<StreamResult> {
+    // Validate context against schema if provided
+    if (contextSchema) {
+      contextSchema.parse((opts as any).context);
+    }
+
+    // Resolve system prompt once per request
+    const resolvedSystem =
+      typeof system === "function"
+        ? await system((opts as any).context as C)
+        : system;
+
+    // Deferred result — resolve on success, reject on error.
+    // Suppress unhandled rejection on the promise itself — callers that care
+    // (generate) will await it; callers that don't (chat) won't see a warning.
+    let resolveResult!: (r: AgentResult) => void;
+    let rejectResult!: (err: unknown) => void;
+    const resultPromise = new Promise<AgentResult>((resolve, reject) => {
+      resolveResult = resolve;
+      rejectResult = reject;
+    });
+    resultPromise.catch(() => {});
+
+    // Compose middleware around core loop
+    const chain = composeMiddleware(middleware, (ctx) =>
+      coreAgentStream(ctx, {
+        maxSteps: opts.maxSteps,
+        onResult: resolveResult,
+        onError: rejectResult,
+      }),
+    );
+
+    // Build middleware context
+    const mergedTools = mergeTools(opts.frontendTools);
+    const ctx: MiddlewareContext = {
+      messages: opts.messages,
+      model: opts.model ?? model,
+      system: resolvedSystem,
+      tools: mergedTools,
+      threadId: opts.threadId ?? crypto.randomUUID(),
+      abort: createAbort(),
+    };
+
+    // Run under ALS so tools can access context
+    const resultStream = runWithToolInjection(
+      { context: (opts as any).context },
+      () => chain(ctx),
+    );
+
+    return { stream: resultStream, result: resultPromise };
+  }
+
+  /**
+   * Wrap an agent stream in a persistence layer, returning an HTTP Response.
+   * Used by chat() and the resume/toolOutputs paths.
+   */
+  function streamToResponse(
+    agentStreamResult: StreamResult,
     messages: UIMessage[],
-    options: {
+    opts: {
       memory: Memory;
       threadId: string;
       messageId?: string;
-      frontendTools?: FrontendToolDef[];
-      context?: unknown;
     },
   ): Response {
-    const mergedTools = mergeTools(options.frontendTools);
-
-    // Validate context against schema if provided
-    if (contextSchema) {
-      contextSchema.parse(options.context);
-    }
-
-    const chain = composeMiddleware(middleware, coreAgentStream);
-
-    const stream = createUIMessageStream({
+    const uiStream = createUIMessageStream({
       originalMessages: messages,
       execute: async ({ writer }) => {
-        // Resolve system prompt once per request
-        const resolvedSystem =
-          typeof system === "function"
-            ? await system(options.context as C)
-            : system;
-
-        const ctx: MiddlewareContext = {
-          messages,
-          model,
-          system: resolvedSystem,
-          tools: mergedTools,
-          threadId: options.threadId,
-          abort: createAbort(),
-        };
-
-        // Wrap in tool injection so tools can read context via AsyncLocalStorage
-        const resultStream = runWithToolInjection(
-          { context: options.context },
-          () => chain(ctx),
-        );
-
-        // Pipe the middleware output into the createUIMessageStream writer
-        const reader = resultStream.getReader();
+        const reader = agentStreamResult.stream.getReader();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -488,19 +638,17 @@ export function createAgent<
         }
       },
       onFinish: async ({ responseMessage }) => {
-        if (options.messageId) {
-          await options.memory.updateMessage(
-            options.threadId,
-            options.messageId,
-            { parts: responseMessage.parts },
-          );
+        if (opts.messageId) {
+          await opts.memory.updateMessage(opts.threadId, opts.messageId, {
+            parts: responseMessage.parts,
+          });
         } else {
-          await options.memory.addMessage(options.threadId, responseMessage);
+          await opts.memory.addMessage(opts.threadId, responseMessage);
         }
       },
     });
 
-    return createUIMessageStreamResponse({ stream });
+    return createUIMessageStreamResponse({ stream: uiStream });
   }
 
   // Fire-and-forget title generation
@@ -669,12 +817,16 @@ export function createAgent<
 
     // 6. All suspensions resolved — continue the LLM
     const allMessages = await memory.getMessages(threadId);
-    return buildStreamResponse(allMessages, {
+    const sr = await agentStream({
+      messages: allMessages,
+      threadId,
+      frontendTools,
+      context,
+    } as StreamOptions<C>);
+    return streamToResponse(sr, allMessages, {
       memory,
       threadId,
       messageId: suspendedMsg.id,
-      frontendTools,
-      context,
     });
   }
 
@@ -746,12 +898,13 @@ export function createAgent<
 
     // Continue LLM with updated conversation
     const allMessages = await memory.getMessages(threadId);
-    return buildStreamResponse(allMessages, {
-      memory,
+    const sr = await agentStream({
+      messages: allMessages,
       threadId,
       frontendTools,
       context,
-    });
+    } as StreamOptions<C>);
+    return streamToResponse(sr, allMessages, { memory, threadId });
   }
 
   return {
@@ -762,6 +915,11 @@ export function createAgent<
     contextSchema: contextSchema
       ? (toJSONSchema(contextSchema) as Record<string, unknown>)
       : undefined,
+
+    async stream(opts: StreamOptions<C>): Promise<StreamResult> {
+      return agentStream(opts);
+    },
+
     async chat(options: ChatOptions<C>): Promise<Response> {
       if (!memory) {
         throw new Error("chat() requires memory to be configured on the agent");
@@ -801,12 +959,49 @@ export function createAgent<
       // Title generation runs in parallel — fire-and-forget
       generateThreadTitle(threadId, message);
 
-      return buildStreamResponse(messages, {
-        memory,
+      const sr = await agentStream({
+        messages,
         threadId,
         frontendTools,
         context,
-      });
+      } as StreamOptions<C>);
+      return streamToResponse(sr, messages, { memory, threadId });
+    },
+
+    async generate(opts: GenerateOptions<C>): Promise<GenerateResult> {
+      const messages: UIMessage[] =
+        "prompt" in opts
+          ? [
+              {
+                id: crypto.randomUUID(),
+                role: "user" as const,
+                parts: [{ type: "text" as const, text: opts.prompt }],
+              },
+            ]
+          : opts.messages;
+
+      const { stream, result } = await agentStream({
+        messages,
+        model: opts.model,
+        maxSteps: opts.maxSteps ?? 10,
+        frontendTools: opts.frontendTools,
+        context: (opts as any).context,
+      } as StreamOptions<C>);
+
+      // Consume the stream — detect suspension (not supported in generate)
+      const reader = stream.getReader();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if ((value as any)?.type === "data-tool-suspend") {
+          throw new Error(
+            "Tool suspension is not supported in generate(). " +
+              "Use chat() for tools that call suspend().",
+          );
+        }
+      }
+
+      return result;
     },
   };
 }
