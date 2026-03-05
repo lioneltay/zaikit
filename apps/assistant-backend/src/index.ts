@@ -44,7 +44,16 @@ app.post("/api/chat", async (c) => {
 
 // Sandbox UI at /sandbox
 const sandbox = createSandboxHono({
-  agents: { assistant: agent },
+  agents: {
+    assistant: {
+      agent,
+      context: {
+        userId: "dev-user",
+        orgId: "dev-org",
+        orgName: "Dev Organization",
+      },
+    },
+  },
   basePath: "/sandbox",
 });
 app.route("/sandbox", sandbox);

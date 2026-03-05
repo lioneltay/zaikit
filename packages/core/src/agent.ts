@@ -14,7 +14,7 @@ import {
   tool,
   type UIMessage,
 } from "ai";
-import type { z } from "zod";
+import { toJSONSchema, type z } from "zod";
 import {
   composeMiddleware,
   createAbort,
@@ -142,6 +142,7 @@ export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   memory: Memory | undefined;
   model: LanguageModel;
   system: string | undefined;
+  contextSchema: Record<string, unknown> | undefined;
   chat(options: ChatOptions<C>): Promise<Response>;
 };
 
@@ -736,6 +737,9 @@ export function createAgent<
     memory,
     model,
     system,
+    contextSchema: contextSchema
+      ? (toJSONSchema(contextSchema) as Record<string, unknown>)
+      : undefined,
     async chat(options: ChatOptions<C>): Promise<Response> {
       if (!memory) {
         throw new Error("chat() requires memory to be configured on the agent");

@@ -14,12 +14,15 @@ export type ToolInfo = {
   parameters: Record<string, unknown> | undefined;
   suspendSchema?: Record<string, unknown>;
   resumeSchema?: Record<string, unknown>;
+  contextSchema?: Record<string, unknown>;
 };
 
 export type AgentDetail = {
   name: string;
   model: string;
   system: string | undefined;
+  contextSchema?: Record<string, unknown>;
+  context?: Record<string, unknown>;
   tools: ToolInfo[];
 };
 
@@ -77,13 +80,14 @@ export async function executeTool(
   agentName: string,
   toolName: string,
   input: unknown,
+  context?: Record<string, unknown>,
 ): Promise<ToolExecutionResult> {
   const res = await fetch(
     `${BASE}/agents/${agentName}/tools/${toolName}/execute`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ input }),
+      body: JSON.stringify({ input, ...(context ? { context } : {}) }),
     },
   );
   return res.json();

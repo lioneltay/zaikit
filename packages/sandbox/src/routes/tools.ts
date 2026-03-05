@@ -1,5 +1,5 @@
 import type { Agent } from "@zaikit/core";
-import { isSuspendResult } from "@zaikit/core";
+import { isSuspendResult, runWithToolInjection } from "@zaikit/core";
 
 type ToolExecutionResponse =
   | { ok: true; output: unknown; suspended: false }
@@ -10,6 +10,7 @@ export async function executeTool(
   agent: Agent,
   toolName: string,
   input: unknown,
+  context: unknown,
 ): Promise<ToolExecutionResponse> {
   const tool = agent.tools[toolName];
   if (!tool) {
@@ -24,10 +25,12 @@ export async function executeTool(
   }
 
   try {
-    const result = await tool.execute(input, {
-      toolCallId: crypto.randomUUID(),
-      messages: [],
-    });
+    const result = await runWithToolInjection({ context }, () =>
+      tool.execute?.(input, {
+        toolCallId: crypto.randomUUID(),
+        messages: [],
+      }),
+    );
 
     if (isSuspendResult(result)) {
       return {

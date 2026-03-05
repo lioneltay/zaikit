@@ -1,27 +1,46 @@
 import type { Agent } from "@zaikit/core";
 import { createInMemoryMemory } from "@zaikit/memory-inmemory";
 import { createSandboxHono } from "./adapters/hono";
-import type { SandboxConfig } from "./types";
+import {
+  type NormalizedAgentEntry,
+  type NormalizedSandboxConfig,
+  normalizeAgentEntry,
+  type SandboxConfig,
+} from "./types";
 
-export type { SandboxConfig } from "./types";
+export type { SandboxAgentEntry, SandboxConfig } from "./types";
 
-function ensureMemory(agents: Record<string, Agent>): Record<string, Agent> {
-  const result: Record<string, Agent> = {};
-  for (const [name, agent] of Object.entries(agents)) {
-    if (agent.memory) {
-      result[name] = agent;
+function ensureMemory(
+  entries: Record<string, NormalizedAgentEntry>,
+): Record<string, NormalizedAgentEntry> {
+  const result: Record<string, NormalizedAgentEntry> = {};
+  for (const [name, entry] of Object.entries(entries)) {
+    if (entry.agent.memory) {
+      result[name] = entry;
     } else {
-      result[name] = { ...agent, memory: createInMemoryMemory() };
+      const agent: Agent = {
+        ...entry.agent,
+        memory: createInMemoryMemory(),
+      };
+      result[name] = { ...entry, agent };
     }
   }
   return result;
 }
 
 export function createSandbox(config: SandboxConfig) {
-  const agents = ensureMemory(config.agents);
-  const sandboxConfig: SandboxConfig = { ...config, agents };
+  const normalized: Record<string, NormalizedAgentEntry> = {};
+  for (const [name, entry] of Object.entries(config.agents)) {
+    normalized[name] = normalizeAgentEntry(entry);
+  }
 
-  const app = createSandboxHono(sandboxConfig);
+  const agents = ensureMemory(normalized);
+  const normalizedConfig: NormalizedSandboxConfig = {
+    ...config,
+    agents,
+  };
+
+  const app = createSandboxHono(normalizedConfig);
 
   return {
     app,

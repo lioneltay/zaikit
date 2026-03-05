@@ -7,22 +7,29 @@ import {
 } from "../routes/agents";
 import { executeTool } from "../routes/tools";
 import { serveIndexHtml, serveStaticFile } from "../static";
-import type { SandboxConfig } from "../types";
+import {
+  type NormalizedSandboxConfig,
+  normalizeSandboxConfig,
+  type SandboxConfig,
+} from "../types";
 
-export function createSandboxHono(config: SandboxConfig) {
+export function createSandboxHono(
+  rawConfig: SandboxConfig | NormalizedSandboxConfig,
+) {
+  const config = normalizeSandboxConfig(rawConfig);
   const app = new Hono();
 
   app.use("*", cors());
 
-  function getAgent(name: string) {
+  function getEntry(name: string) {
     return config.agents[name];
   }
 
   function getMemory(name: string) {
-    const agent = getAgent(name);
-    if (!agent) return null;
-    if (!agent.memory) throw new Error("Agent has no memory configured.");
-    return agent.memory;
+    const entry = getEntry(name);
+    if (!entry) return null;
+    if (!entry.agent.memory) throw new Error("Agent has no memory configured.");
+    return entry.agent.memory;
   }
 
   // --- API Routes ---
@@ -33,24 +40,29 @@ export function createSandboxHono(config: SandboxConfig) {
 
   app.get("/api/agents/:name", (c) => {
     const name = c.req.param("name");
-    const agent = getAgent(name);
-    if (!agent) return c.json({ error: "Agent not found" }, 404);
-    return c.json(getAgentDetail(name, agent));
+    const entry = getEntry(name);
+    if (!entry) return c.json({ error: "Agent not found" }, 404);
+    return c.json(getAgentDetail(name, entry));
   });
 
   app.get("/api/agents/:name/schemas", (c) => {
     const name = c.req.param("name");
-    const agent = getAgent(name);
-    if (!agent) return c.json({ error: "Agent not found" }, 404);
-    return c.json(getAgentToolSchemas(agent));
+    const entry = getEntry(name);
+    if (!entry) return c.json({ error: "Agent not found" }, 404);
+    return c.json(getAgentToolSchemas(entry));
   });
 
   app.post("/api/agents/:name/chat", async (c) => {
     const name = c.req.param("name");
-    const agent = getAgent(name);
-    if (!agent) return c.json({ error: "Agent not found" }, 404);
+    const entry = getEntry(name);
+    if (!entry) return c.json({ error: "Agent not found" }, 404);
     const body = await c.req.json();
-    return agent.chat(body as Parameters<typeof agent.chat>[0]);
+    // Merge: runtime context is the base, request context overrides
+    const mergedContext = { ...entry.context, ...body.context };
+    return entry.agent.chat({
+      ...body,
+      context: mergedContext,
+    } as Parameters<typeof entry.agent.chat>[0]);
   });
 
   app.get("/api/agents/:name/threads", async (c) => {
@@ -77,13 +89,16 @@ export function createSandboxHono(config: SandboxConfig) {
 
   app.post("/api/agents/:name/tools/:toolName/execute", async (c) => {
     const name = c.req.param("name");
-    const agent = getAgent(name);
-    if (!agent) return c.json({ error: "Agent not found" }, 404);
+    const entry = getEntry(name);
+    if (!entry) return c.json({ error: "Agent not found" }, 404);
     const body = await c.req.json();
+    // Merge: runtime context is the base, request context overrides
+    const mergedContext = { ...entry.context, ...body.context };
     const result = await executeTool(
-      agent,
+      entry.agent,
       c.req.param("toolName"),
       body.input,
+      mergedContext,
     );
     return c.json(result, result.ok ? 200 : 400);
   });

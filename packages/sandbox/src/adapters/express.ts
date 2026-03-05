@@ -6,7 +6,11 @@ import type {
 import { getAgentDetail, listAgents } from "../routes/agents";
 import { executeTool } from "../routes/tools";
 import { serveIndexHtml, serveStaticFile } from "../static";
-import type { SandboxConfig } from "../types";
+import {
+  type NormalizedSandboxConfig,
+  normalizeSandboxConfig,
+  type SandboxConfig,
+} from "../types";
 
 async function sendFetchResponse(
   fetchRes: Response,
@@ -32,21 +36,25 @@ function param(req: ExpressRequest, key: string): string {
   return Array.isArray(v) ? v[0] : v;
 }
 
-export function createSandboxExpress(config: SandboxConfig): Router {
+export function createSandboxExpress(
+  rawConfig: SandboxConfig | NormalizedSandboxConfig,
+): Router {
+  const config = normalizeSandboxConfig(rawConfig);
+
   // Lazy-import express to avoid hard dependency
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const express = require("express");
   const router: Router = express.Router();
 
-  function getAgent(name: string) {
+  function getEntry(name: string) {
     return config.agents[name];
   }
 
   function getMemory(name: string) {
-    const agent = getAgent(name);
-    if (!agent) return null;
-    if (!agent.memory) throw new Error("Agent has no memory configured.");
-    return agent.memory;
+    const entry = getEntry(name);
+    if (!entry) return null;
+    if (!entry.agent.memory) throw new Error("Agent has no memory configured.");
+    return entry.agent.memory;
   }
 
   router.get("/api/agents", (_req: ExpressRequest, res: ExpressResponse) => {
@@ -57,9 +65,9 @@ export function createSandboxExpress(config: SandboxConfig): Router {
     "/api/agents/:name",
     (req: ExpressRequest, res: ExpressResponse) => {
       const name = param(req, "name");
-      const agent = getAgent(name);
-      if (!agent) return res.status(404).json({ error: "Agent not found" });
-      res.json(getAgentDetail(name, agent));
+      const entry = getEntry(name);
+      if (!entry) return res.status(404).json({ error: "Agent not found" });
+      res.json(getAgentDetail(name, entry));
     },
   );
 
@@ -67,11 +75,16 @@ export function createSandboxExpress(config: SandboxConfig): Router {
     "/api/agents/:name/chat",
     async (req: ExpressRequest, res: ExpressResponse) => {
       const name = param(req, "name");
-      const agent = getAgent(name);
-      if (!agent) return res.status(404).json({ error: "Agent not found" });
-      const fetchRes = await agent.chat(
-        req.body as Parameters<typeof agent.chat>[0],
-      );
+      const entry = getEntry(name);
+      if (!entry) return res.status(404).json({ error: "Agent not found" });
+      const mergedContext = {
+        ...entry.context,
+        ...(req.body?.context as Record<string, unknown> | undefined),
+      };
+      const fetchRes = await entry.agent.chat({
+        ...req.body,
+        context: mergedContext,
+      } as Parameters<typeof entry.agent.chat>[0]);
       await sendFetchResponse(fetchRes, res);
     },
   );
@@ -111,12 +124,17 @@ export function createSandboxExpress(config: SandboxConfig): Router {
     "/api/agents/:name/tools/:toolName/execute",
     async (req: ExpressRequest, res: ExpressResponse) => {
       const name = param(req, "name");
-      const agent = getAgent(name);
-      if (!agent) return res.status(404).json({ error: "Agent not found" });
+      const entry = getEntry(name);
+      if (!entry) return res.status(404).json({ error: "Agent not found" });
+      const mergedContext = {
+        ...entry.context,
+        ...(req.body?.context as Record<string, unknown> | undefined),
+      };
       const result = await executeTool(
-        agent,
+        entry.agent,
         param(req, "toolName"),
         req.body?.input,
+        mergedContext,
       );
       res.status(result.ok ? 200 : 400).json(result);
     },
