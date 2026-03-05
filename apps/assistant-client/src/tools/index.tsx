@@ -6,6 +6,8 @@ import { useToolRenderer } from "../generated/generated";
 import { ApprovalTool } from "./ApprovalTool";
 import { BookFlightTool } from "./BookFlightTool";
 import { SendEmailTool } from "./SendEmailTool";
+import { UserActivityTool } from "./UserActivityTool";
+import { UserSettingsTool } from "./UserSettingsTool";
 
 function FrontendTools() {
   // Handler-only: runs automatically, no UI
@@ -73,6 +75,11 @@ export function ToolRenderers() {
   useToolRenderer("delete_records", (props) => <ApprovalTool {...props} />);
   useToolRenderer("book_flight", (props) => <BookFlightTool {...props} />);
   useToolRenderer("send_email", (props) => <SendEmailTool {...props} />);
-  useToolRenderer("*", (props) => <ApprovalTool {...(props as any)} />);
+  useToolRenderer("get_user_settings", (props) => (
+    <UserSettingsTool {...props} />
+  ));
+  useToolRenderer("get_user_activity", (props) => (
+    <UserActivityTool {...props} />
+  ));
   return <FrontendTools />;
 }

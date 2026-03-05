@@ -30,7 +30,16 @@ app.all("/trpc/*", async (c) => {
 // Streaming chat endpoint
 app.post("/api/chat", async (c) => {
   const body = await c.req.json();
-  return agent.chat(body);
+  // In a real app, context would come from auth middleware / session.
+  // Here we hardcode example values for demonstration.
+  return agent.chat({
+    ...body,
+    context: {
+      userId: "user-123",
+      orgId: "org-456",
+      orgName: "Acme Corp",
+    },
+  });
 });
 
 // Sandbox UI at /sandbox

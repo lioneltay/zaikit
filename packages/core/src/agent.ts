@@ -9,10 +9,12 @@ import {
   type PrepareStepFunction,
   type StepResult,
   streamText,
+  type Tool,
   type ToolSet,
   tool,
   type UIMessage,
 } from "ai";
+import type { z } from "zod";
 import {
   composeMiddleware,
   createAbort,
@@ -20,7 +22,7 @@ import {
   type MiddlewareContext,
 } from "./middleware/core";
 import { isSuspendResult } from "./suspend";
-import { runWithSuspendContext } from "./suspend-context";
+import { getToolInjection, runWithToolInjection } from "./tool-injection";
 
 export type AfterStepContext = {
   /** The step that just completed. */
@@ -42,13 +44,56 @@ export type AfterToolCallContext = {
   output: unknown;
 };
 
-type CreateAgentOptions<T extends ToolSet = ToolSet> = {
+// A tool entry paired with a context mapper — used when a tool needs a
+// different context shape than the agent provides.
+type MappedToolEntry<C> = {
+  tool: Tool<any, any>;
+  mapContext: (ctx: C) => unknown;
+};
+
+// Each value in the tools config is either a plain tool or a mapped entry.
+// When the agent has no context (C = undefined), only plain tools are allowed.
+type ToolConfigValue<C = undefined> = [C] extends [undefined]
+  ? Tool<any, any>
+  : Tool<any, any> | MappedToolEntry<C>;
+
+// Extract the underlying Tool from a config entry.
+type ResolveToolEntry<E> = E extends { tool: infer T extends Tool<any, any> }
+  ? T
+  : E;
+
+// Resolve a full tools config record to a plain ToolSet.
+type ResolveToolsConfig<T> = {
+  [K in keyof T]: ResolveToolEntry<T[K]>;
+};
+
+// Post-inference validation: for each mapped entry, enforce that mapContext
+// returns the tool's declared context type (read from __toolTypes phantom brand).
+// Plain tool entries pass through unchanged.
+type ValidateMappedTools<T, C> = {
+  [K in keyof T]: T[K] extends {
+    tool: { readonly __toolTypes: { readonly context: infer TC } };
+    mapContext: any;
+  }
+    ? {
+        tool: T[K] extends { tool: infer U } ? U : never;
+        mapContext: (ctx: C) => TC;
+      }
+    : T[K];
+};
+
+type CreateAgentOptions<
+  T extends Record<string, ToolConfigValue<C>> = ToolSet,
+  C = undefined,
+> = ([C] extends [undefined]
+  ? { context?: never }
+  : { context: z.ZodType<C> }) & {
   model: LanguageModel;
   system?: string;
-  tools?: T;
+  tools?: T & ValidateMappedTools<T, C>;
   memory?: Memory;
   middleware?: Middleware[];
-  prepareStep?: PrepareStepFunction<T>;
+  prepareStep?: PrepareStepFunction<ResolveToolsConfig<T> & ToolSet>;
   onAfterStep?: (ctx: AfterStepContext) => Promise<void> | void;
   onBeforeToolCall?: (
     ctx: BeforeToolCallContext,
@@ -70,30 +115,34 @@ export type FrontendToolDef = {
   parameters: Record<string, unknown>;
 };
 
-export type ChatOptions =
-  | {
-      threadId: string;
-      message: UIMessage;
-      ownerId?: string;
-      frontendTools?: FrontendToolDef[];
-    }
-  | {
-      threadId: string;
-      resume: { toolCallId: string; data: unknown };
-      frontendTools?: FrontendToolDef[];
-    }
-  | {
-      threadId: string;
-      toolOutputs: { toolCallId: string; output: unknown }[];
-      frontendTools?: FrontendToolDef[];
-    };
+export type ChatOptions<C = undefined> = ([C] extends [undefined]
+  ? { context?: never }
+  : { context: C }) &
+  (
+    | {
+        threadId: string;
+        message: UIMessage;
+        ownerId?: string;
+        frontendTools?: FrontendToolDef[];
+      }
+    | {
+        threadId: string;
+        resume: { toolCallId: string; data: unknown };
+        frontendTools?: FrontendToolDef[];
+      }
+    | {
+        threadId: string;
+        toolOutputs: { toolCallId: string; output: unknown }[];
+        frontendTools?: FrontendToolDef[];
+      }
+  );
 
-export type Agent<T extends ToolSet = ToolSet> = {
+export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   tools: T;
   memory: Memory | undefined;
   model: LanguageModel;
   system: string | undefined;
-  chat(options: ChatOptions): Promise<Response>;
+  chat(options: ChatOptions<C>): Promise<Response>;
 };
 
 /**
@@ -151,17 +200,68 @@ function wrapToolsWithHooks(
   );
 }
 
-export function createAgent<T extends ToolSet>({
-  model,
-  system,
-  tools,
-  memory,
-  middleware = [],
-  prepareStep,
-  onAfterStep,
-  onBeforeToolCall,
-  onAfterToolCall,
-}: CreateAgentOptions<T>): Agent<T> {
+function isMappedToolEntry(
+  v: unknown,
+): v is { tool: Tool<any, any>; mapContext: Function } {
+  return (
+    typeof v === "object" && v !== null && "mapContext" in v && "tool" in v
+  );
+}
+
+/**
+ * Resolve a tools config record to a plain ToolSet.
+ * Entries with `{ tool, mapContext }` get their execute wrapped to
+ * intercept the agent context from ALS, transform it via the mapper,
+ * and re-inject the tool-specific context before calling the original execute.
+ */
+function resolveToolEntries(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  entries: Record<string, any>,
+): ToolSet {
+  return Object.fromEntries(
+    Object.entries(entries).map(([name, entry]) => {
+      if (!isMappedToolEntry(entry)) return [name, entry];
+
+      const { tool: sourceTool, mapContext } = entry;
+      const originalExecute = sourceTool.execute;
+      if (!originalExecute) return [name, sourceTool];
+
+      return [
+        name,
+        {
+          ...sourceTool,
+          execute: async (input: unknown, sdkOptions: any) => {
+            const { context: agentCtx } = getToolInjection();
+            const toolCtx = mapContext(agentCtx);
+            return runWithToolInjection({ context: toolCtx }, () =>
+              originalExecute(input, sdkOptions),
+            );
+          },
+        },
+      ];
+    }),
+  );
+}
+
+export function createAgent<
+  T extends Record<string, ToolConfigValue<C>>,
+  C = undefined,
+>(
+  options: CreateAgentOptions<T, C>,
+): Agent<ResolveToolsConfig<T> & ToolSet, C> {
+  const {
+    model,
+    system,
+    memory,
+    middleware = [],
+    prepareStep,
+    onAfterStep,
+    onBeforeToolCall,
+    onAfterToolCall,
+  } = options;
+  const contextSchema = (options as any).context as z.ZodType | undefined;
+  const resolvedTools = resolveToolEntries(options.tools ?? {});
+
   function buildDynamicTools(defs: FrontendToolDef[]): ToolSet {
     const result: ToolSet = {};
     for (const def of defs) {
@@ -179,7 +279,7 @@ export function createAgent<T extends ToolSet>({
   }
 
   function mergeTools(frontendTools?: FrontendToolDef[]): ToolSet {
-    return { ...tools, ...buildDynamicTools(frontendTools ?? []) };
+    return { ...resolvedTools, ...buildDynamicTools(frontendTools ?? []) };
   }
 
   /**
@@ -226,7 +326,7 @@ export function createAgent<T extends ToolSet>({
               tools: wrapToolsWithHooks(stepTools, {
                 onBeforeToolCall,
                 onAfterToolCall,
-              }) as T,
+              }),
               messages: overrides.messages ?? currentModelMessages,
               toolChoice: overrides.toolChoice,
               providerOptions: overrides.providerOptions,
@@ -327,9 +427,15 @@ export function createAgent<T extends ToolSet>({
       threadId: string;
       messageId?: string;
       frontendTools?: FrontendToolDef[];
+      context?: unknown;
     },
   ): Response {
     const mergedTools = mergeTools(options.frontendTools);
+
+    // Validate context against schema if provided
+    if (contextSchema) {
+      contextSchema.parse(options.context);
+    }
 
     const chain = composeMiddleware(middleware, coreAgentStream);
 
@@ -344,7 +450,11 @@ export function createAgent<T extends ToolSet>({
           abort: createAbort(),
         };
 
-        const resultStream = chain(ctx);
+        // Wrap in tool injection so tools can read context via AsyncLocalStorage
+        const resultStream = runWithToolInjection(
+          { context: options.context },
+          () => chain(ctx),
+        );
 
         // Pipe the middleware output into the createUIMessageStream writer
         const reader = resultStream.getReader();
@@ -419,6 +529,7 @@ export function createAgent<T extends ToolSet>({
     threadId: string,
     resume: { toolCallId: string; data: unknown },
     frontendTools?: FrontendToolDef[],
+    context?: unknown,
   ): Promise<Response> {
     if (!memory) {
       throw new Error(
@@ -483,10 +594,10 @@ export function createAgent<T extends ToolSet>({
       throw new Error(`Tool not found or has no execute: ${toolName}`);
     }
 
-    // 3. Re-execute the tool with resumeData via AsyncLocalStorage
+    // 3. Re-execute the tool with resumeData and agent context via AsyncLocalStorage
     const modelMessages = await convertToModelMessages(messages);
-    const output = await runWithSuspendContext(
-      { resumeData: resume.data },
+    const output = await runWithToolInjection(
+      { context, resumeData: resume.data },
       () =>
         execute(toolInput, {
           toolCallId: resume.toolCallId,
@@ -540,6 +651,7 @@ export function createAgent<T extends ToolSet>({
       threadId,
       messageId: suspendedMsg.id,
       frontendTools,
+      context,
     });
   }
 
@@ -558,6 +670,7 @@ export function createAgent<T extends ToolSet>({
     threadId: string,
     toolOutputs: { toolCallId: string; output: unknown }[],
     frontendTools?: FrontendToolDef[],
+    context?: unknown,
   ): Promise<Response> {
     if (!memory) {
       throw new Error(
@@ -614,23 +727,30 @@ export function createAgent<T extends ToolSet>({
       memory,
       threadId,
       frontendTools,
+      context,
     });
   }
 
   return {
-    tools: tools ?? ({} as T),
+    tools: resolvedTools as ResolveToolsConfig<T> & ToolSet,
     memory,
     model,
     system,
-    async chat(options: ChatOptions): Promise<Response> {
+    async chat(options: ChatOptions<C>): Promise<Response> {
       if (!memory) {
         throw new Error("chat() requires memory to be configured on the agent");
       }
 
       const frontendTools = options.frontendTools;
+      const context = (options as any).context;
 
       if ("resume" in options) {
-        return handleResume(options.threadId, options.resume, frontendTools);
+        return handleResume(
+          options.threadId,
+          options.resume,
+          frontendTools,
+          context,
+        );
       }
 
       if ("toolOutputs" in options) {
@@ -638,6 +758,7 @@ export function createAgent<T extends ToolSet>({
           options.threadId,
           options.toolOutputs,
           frontendTools,
+          context,
         );
       }
 
@@ -654,7 +775,12 @@ export function createAgent<T extends ToolSet>({
       // Title generation runs in parallel — fire-and-forget
       generateThreadTitle(threadId, message);
 
-      return buildStreamResponse(messages, { memory, threadId, frontendTools });
+      return buildStreamResponse(messages, {
+        memory,
+        threadId,
+        frontendTools,
+        context,
+      });
     },
   };
 }

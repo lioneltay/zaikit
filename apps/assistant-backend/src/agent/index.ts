@@ -147,6 +147,50 @@ const book_flight = createTool({
   },
 });
 
+// -- Context-aware tools --
+
+// Tool that uses the same context shape as the agent (direct match)
+const get_user_settings = createTool({
+  description: "Get settings for the current user in their organization.",
+  inputSchema: z.object({}),
+  context: z.object({
+    userId: z.string(),
+    orgId: z.string(),
+    orgName: z.string(),
+  }),
+  execute: async ({ context }) => {
+    return {
+      userId: context.userId,
+      orgId: context.orgId,
+      orgName: context.orgName,
+      theme: "dark",
+      language: "en",
+      notifications: true,
+    };
+  },
+});
+
+// Tool with a narrower context — only needs userId
+const get_user_activity = createTool({
+  description: "Get recent activity for a user.",
+  inputSchema: z.object({
+    limit: z.number().optional().describe("Max items to return (default 5)"),
+  }),
+  context: z.object({ userId: z.string() }),
+  execute: async ({ input, context }) => {
+    const limit = input.limit ?? 5;
+    return {
+      userId: context.userId,
+      activities: Array.from({ length: limit }, (_, i) => ({
+        id: `act-${i + 1}`,
+        action: ["viewed", "edited", "created", "deleted"][i % 4],
+        target: `document-${i + 1}`,
+        timestamp: new Date(Date.now() - i * 3600_000).toISOString(),
+      })),
+    };
+  },
+});
+
 const send_email = createTool({
   description:
     "Send an email. Shows a preview for the user to review and optionally edit before sending.",
@@ -198,6 +242,11 @@ const send_email = createTool({
 
 export const agent = createAgent({
   model,
+  context: z.object({
+    userId: z.string(),
+    orgId: z.string(),
+    orgName: z.string(),
+  }),
   middleware: [
     stripHtml({
       transform: (html) => `...html redacted (${html.length})...`,
@@ -210,6 +259,8 @@ export const agent = createAgent({
 - delete_records: Delete records from a database table. Always use this tool when the user asks to delete data — it will ask for their approval.
 - book_flight: Search for and book flights. Use when the user wants to travel somewhere — it will show available flights for them to choose from.
 - send_email: Send an email. Use when the user asks you to email someone — it shows a preview they can edit before sending.
+- get_user_settings: Get the current user's settings.
+- get_user_activity: Get the current user's recent activity.
 
 Use the appropriate tool for each request. For destructive or important actions, always use the tool so the user can confirm.`,
   tools: {
@@ -217,6 +268,11 @@ Use the appropriate tool for each request. For destructive or important actions,
     delete_records,
     book_flight,
     send_email,
+    get_user_settings,
+    get_user_activity: {
+      tool: get_user_activity,
+      mapContext: (agentCtx) => ({ userId: agentCtx.userId }),
+    },
   },
   memory,
   onAfterStep: ({ steps }) => {

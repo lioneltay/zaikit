@@ -88,6 +88,27 @@ export type SendEmailResume = {
   body?: string | undefined;
 };
 
+export type GetUserSettingsInput = Record<string, never>;
+export type GetUserSettingsOutput = {
+  userId: string;
+  orgId: string;
+  orgName: string;
+  theme: string;
+  language: string;
+  notifications: boolean;
+};
+
+export type GetUserActivityInput = { limit?: number | undefined };
+export type GetUserActivityOutput = {
+  userId: string;
+  activities: {
+    id: string;
+    action: string;
+    target: string;
+    timestamp: string;
+  }[];
+};
+
 // ─── Typed Props ───
 
 export type GetWeatherToolProps = ToolRenderProps<GetWeatherInput>;
@@ -110,6 +131,10 @@ export type SendEmailToolProps = ToolRenderProps<
   SendEmailResume
 >;
 
+export type GetUserSettingsToolProps = ToolRenderProps<GetUserSettingsInput>;
+
+export type GetUserActivityToolProps = ToolRenderProps<GetUserActivityInput>;
+
 // ─── Typed useToolRenderer ───
 
 type ToolPropsMap = {
@@ -117,6 +142,8 @@ type ToolPropsMap = {
   delete_records: DeleteRecordsToolProps;
   book_flight: BookFlightToolProps;
   send_email: SendEmailToolProps;
+  get_user_settings: GetUserSettingsToolProps;
+  get_user_activity: GetUserActivityToolProps;
 };
 
 export function useToolRenderer<T extends keyof ToolPropsMap>(
@@ -134,4 +161,6 @@ export type ToolName =
   | "get_weather"
   | "delete_records"
   | "book_flight"
-  | "send_email";
+  | "send_email"
+  | "get_user_settings"
+  | "get_user_activity";

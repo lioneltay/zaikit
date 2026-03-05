@@ -908,36 +908,37 @@ describe("step hooks", () => {
 
   it("prepareStep overrides are ephemeral (reset each step)", async () => {
     const memory = createInMemoryMemory();
-    const toolsPerStep: string[][] = [];
+    let toolAExecuteCount = 0;
+    let toolBExecuteCount = 0;
 
-    const weatherTool = createTool({
-      description: "Get weather",
-      inputSchema: z.object({ city: z.string() }),
-      execute: async ({ input }) => `Sunny in ${input.city}`,
+    const toolA = createTool({
+      description: "Tool A",
+      inputSchema: z.object({}),
+      execute: async () => {
+        toolAExecuteCount++;
+        return "a";
+      },
     });
 
-    const extraTool = createTool({
-      description: "Extra tool",
+    const toolB = createTool({
+      description: "Tool B",
       inputSchema: z.object({}),
-      execute: async () => "extra",
+      execute: async () => {
+        toolBExecuteCount++;
+        return "b";
+      },
     });
 
     const agent = createAgent({
       model: mockModel([
-        toolCallResponse("c1", "weather", { city: "NYC" }),
-        toolCallResponse("c2", "weather", { city: "LA" }),
+        toolCallResponse("c1", "tool_a", {}), // step 0: filtered to tool_a only
+        toolCallResponse("c2", "tool_b", {}), // step 1: no filter, tool_b should be available
         textResponse("Done."),
       ]),
-      tools: { weather: weatherTool, extra: extraTool },
+      tools: { tool_a: toolA, tool_b: toolB },
       memory,
       prepareStep: ({ stepNumber }) => {
-        if (stepNumber === 0) {
-          // Step 0: filter to only weather
-          toolsPerStep.push(["weather"]);
-          return { activeTools: ["weather"] };
-        }
-        // Step 1+: return no overrides — should have all tools again
-        toolsPerStep.push(["weather", "extra"]);
+        if (stepNumber === 0) return { activeTools: ["tool_a"] };
         return {};
       },
     });
@@ -947,41 +948,42 @@ describe("step hooks", () => {
       message: userMessage("Hi"),
     });
 
-    // Step 0 was filtered, steps 1 and 2 were not
-    expect(toolsPerStep[0]).toEqual(["weather"]);
-    expect(toolsPerStep[1]).toEqual(["weather", "extra"]);
-    expect(toolsPerStep[2]).toEqual(["weather", "extra"]);
+    // Both tools executed — proving the step 0 filter didn't persist to step 1
+    expect(toolAExecuteCount).toBe(1);
+    expect(toolBExecuteCount).toBe(1);
   });
 
   it("prepareStep can filter tools via activeTools", async () => {
     const memory = createInMemoryMemory();
+    let toolBExecuted = false;
 
-    const weatherTool = createTool({
-      description: "Get weather",
-      inputSchema: z.object({ city: z.string() }),
-      execute: async ({ input }) => `Sunny in ${input.city}`,
+    const toolA = createTool({
+      description: "Tool A",
+      inputSchema: z.object({}),
+      execute: async () => "a",
     });
 
-    const extraTool = createTool({
-      description: "Extra tool",
+    const toolB = createTool({
+      description: "Tool B",
       inputSchema: z.object({}),
-      execute: async () => "extra result",
+      execute: async () => {
+        toolBExecuted = true;
+        return "b";
+      },
     });
 
     const agent = createAgent({
       model: mockModel([
-        toolCallResponse("c1", "weather", { city: "NYC" }),
+        // Model calls both tools, but only tool_a is allowed
+        multiToolCallResponse([
+          { toolCallId: "c1", toolName: "tool_a", args: {} },
+          { toolCallId: "c2", toolName: "tool_b", args: {} },
+        ]),
         textResponse("Done."),
       ]),
-      tools: { weather: weatherTool, extra: extraTool },
+      tools: { tool_a: toolA, tool_b: toolB },
       memory,
-      prepareStep: ({ stepNumber }) => {
-        if (stepNumber === 1) {
-          // Only allow weather tool on step 1 (filter out extra)
-          return { activeTools: ["weather"] };
-        }
-        return {};
-      },
+      prepareStep: () => ({ activeTools: ["tool_a"] }),
     });
 
     await chatAndConsume(agent, {
@@ -989,9 +991,140 @@ describe("step hooks", () => {
       message: userMessage("Hi"),
     });
 
-    // If we get here without error, the agent correctly handled activeTools filtering
-    const messages = await memory.getMessages("t1");
-    expect(messages).toHaveLength(2);
+    // tool_b was filtered out via activeTools, so it should not have executed
+    expect(toolBExecuted).toBe(false);
+  });
+});
+
+describe("context injection", () => {
+  it("passes agent context to tools with matching context schema", async () => {
+    const memory = createInMemoryMemory();
+    let receivedContext: unknown;
+
+    const settingsTool = createTool({
+      description: "Get user settings",
+      inputSchema: z.object({}),
+      context: z.object({ userId: z.string(), orgId: z.string() }),
+      execute: async ({ context }) => {
+        receivedContext = context;
+        return { theme: "dark" };
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "settings", {}),
+        textResponse("Here are your settings."),
+      ]),
+      context: z.object({ userId: z.string(), orgId: z.string() }),
+      tools: { settings: settingsTool },
+      memory,
+    });
+
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Show settings"),
+      context: { userId: "user-1", orgId: "org-1" },
+    });
+    await response.text();
+
+    expect(receivedContext).toEqual({ userId: "user-1", orgId: "org-1" });
+  });
+
+  it("maps agent context to tool context via { tool, mapContext }", async () => {
+    const memory = createInMemoryMemory();
+    let receivedContext: unknown;
+
+    const activityTool = createTool({
+      description: "Get user activity",
+      inputSchema: z.object({}),
+      context: z.object({ userId: z.string() }),
+      execute: async ({ context }) => {
+        receivedContext = context;
+        return { activities: [] };
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "activity", {}),
+        textResponse("Here is your activity."),
+      ]),
+      context: z.object({ userId: z.string(), orgId: z.string() }),
+      tools: {
+        activity: {
+          tool: activityTool,
+          mapContext: (ctx) => ({ userId: ctx.userId }),
+        },
+      },
+      memory,
+    });
+
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Show activity"),
+      context: { userId: "user-1", orgId: "org-1" },
+    });
+    await response.text();
+
+    expect(receivedContext).toEqual({ userId: "user-1" });
+  });
+
+  it("supports both direct and mapped context tools in the same agent", async () => {
+    const memory = createInMemoryMemory();
+    let settingsContext: unknown;
+    let activityContext: unknown;
+
+    const settingsTool = createTool({
+      description: "Get user settings",
+      inputSchema: z.object({}),
+      context: z.object({ userId: z.string(), orgId: z.string() }),
+      execute: async ({ context }) => {
+        settingsContext = context;
+        return { theme: "dark" };
+      },
+    });
+
+    const activityTool = createTool({
+      description: "Get user activity",
+      inputSchema: z.object({}),
+      context: z.object({ userId: z.string() }),
+      execute: async ({ context }) => {
+        activityContext = context;
+        return { activities: [] };
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        multiToolCallResponse([
+          { toolCallId: "c1", toolName: "settings", args: {} },
+          { toolCallId: "c2", toolName: "activity", args: {} },
+        ]),
+        textResponse("Done."),
+      ]),
+      context: z.object({ userId: z.string(), orgId: z.string() }),
+      tools: {
+        settings: settingsTool,
+        activity: {
+          tool: activityTool,
+          mapContext: (ctx) => ({ userId: ctx.userId }),
+        },
+      },
+      memory,
+    });
+
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Show everything"),
+      context: { userId: "user-1", orgId: "org-1" },
+    });
+    await response.text();
+
+    // Direct context: receives full agent context
+    expect(settingsContext).toEqual({ userId: "user-1", orgId: "org-1" });
+    // Mapped context: receives only what mapContext returns
+    expect(activityContext).toEqual({ userId: "user-1" });
   });
 });
 

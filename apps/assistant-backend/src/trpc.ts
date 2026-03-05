@@ -2,7 +2,7 @@ import { initTRPC } from "@trpc/server";
 import type { Agent } from "@zaikit/core";
 import { z } from "zod";
 
-export function createAppRouter(agent: Agent) {
+export function createAppRouter(agent: Agent<any, any>) {
   if (!agent.memory) {
     throw new Error("createAppRouter requires an agent with memory configured");
   }

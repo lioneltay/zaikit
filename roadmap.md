@@ -67,6 +67,7 @@ Integrations, advanced features, and exploratory ideas.
 
 - [x] UI Preview (hard to see all your tools in all their states — auto-gen this)
 - [x] Frontend app that connects to backend (sandbox, playground)
+- [ ] Sandbox: allow injecting context data when executing tools in the tool playground
 
 ### Frontend
 

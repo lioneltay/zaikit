@@ -5,11 +5,12 @@ import {
   type SuspendResult,
   suspend as suspendFn,
 } from "./suspend";
-import { getResumeData } from "./suspend-context";
+import { getToolInjection } from "./tool-injection";
 
 export type ToolMeta = {
   suspendSchema?: Record<string, unknown>;
   resumeSchema?: Record<string, unknown>;
+  contextSchema?: z.ZodType;
 };
 
 // Enriched tool type that preserves all type parameters for codegen.
@@ -21,12 +22,14 @@ export type ZaikitTool<
   OUTPUT = any,
   SUSPEND = never,
   RESUME = never,
+  CONTEXT = undefined,
 > = Tool<INPUT, OUTPUT> & {
   readonly __toolTypes: {
     readonly input: INPUT;
     readonly output: Exclude<OUTPUT, SuspendResult<any>>;
     readonly suspend: SUSPEND;
     readonly resume: RESUME;
+    readonly context: CONTEXT;
   };
   readonly __meta?: ToolMeta;
 };
@@ -38,57 +41,113 @@ type BaseToolOptions<INPUT> = {
 };
 
 // Regular tool options (no suspend/resume)
-type RegularToolOptions<INPUT, OUTPUT> = BaseToolOptions<INPUT> & {
-  outputSchema?: z.ZodType<OUTPUT>;
-  suspendSchema?: never;
-  resumeSchema?: never;
-  execute: (ctx: { input: INPUT }) => Promise<OUTPUT>;
-};
+
+type RegularToolOptions<
+  INPUT,
+  OUTPUT,
+  CONTEXT = undefined,
+> = BaseToolOptions<INPUT> &
+  ([CONTEXT] extends [undefined]
+    ? {
+        context?: never;
+        outputSchema?: z.ZodType<OUTPUT>;
+        suspendSchema?: never;
+        resumeSchema?: never;
+        execute: (ctx: { input: INPUT }) => Promise<OUTPUT>;
+      }
+    : {
+        context: z.ZodType<CONTEXT>;
+        outputSchema?: z.ZodType<OUTPUT>;
+        suspendSchema?: never;
+        resumeSchema?: never;
+        execute: (ctx: { input: INPUT; context: CONTEXT }) => Promise<OUTPUT>;
+      });
 
 // Suspendable tool options (with suspend/resume schemas)
-type SuspendableToolOptions<INPUT, OUTPUT, SUSPEND, RESUME> =
-  BaseToolOptions<INPUT> & {
-    outputSchema?: z.ZodType<OUTPUT>;
-    suspendSchema: z.ZodType<SUSPEND>;
-    resumeSchema: z.ZodType<RESUME>;
-    execute: (ctx: {
-      input: INPUT;
-      suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
-      resumeData: RESUME | undefined;
-    }) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
-  };
+type SuspendableToolOptions<
+  INPUT,
+  OUTPUT,
+  SUSPEND,
+  RESUME,
+  CONTEXT = undefined,
+> = BaseToolOptions<INPUT> &
+  ([CONTEXT] extends [undefined]
+    ? {
+        context?: never;
+        outputSchema?: z.ZodType<OUTPUT>;
+        suspendSchema: z.ZodType<SUSPEND>;
+        resumeSchema: z.ZodType<RESUME>;
+        execute: (ctx: {
+          input: INPUT;
+          suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
+          resumeData: RESUME | undefined;
+        }) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
+      }
+    : {
+        context: z.ZodType<CONTEXT>;
+        outputSchema?: z.ZodType<OUTPUT>;
+        suspendSchema: z.ZodType<SUSPEND>;
+        resumeSchema: z.ZodType<RESUME>;
+        execute: (ctx: {
+          input: INPUT;
+          context: CONTEXT;
+          suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
+          resumeData: RESUME | undefined;
+        }) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
+      });
 
+// Overload: regular tool without context
 export function createTool<INPUT, OUTPUT>(
   options: RegularToolOptions<INPUT, OUTPUT>,
 ): ZaikitTool<INPUT, OUTPUT>;
 
+// Overload: regular tool with context
+export function createTool<INPUT, OUTPUT, CONTEXT>(
+  options: RegularToolOptions<INPUT, OUTPUT, CONTEXT>,
+): ZaikitTool<INPUT, OUTPUT, never, never, CONTEXT>;
+
+// Overload: suspendable tool without context
 export function createTool<INPUT, OUTPUT, SUSPEND, RESUME>(
   options: SuspendableToolOptions<INPUT, OUTPUT, SUSPEND, RESUME>,
 ): ZaikitTool<INPUT, OUTPUT | SuspendResult<SUSPEND>, SUSPEND, RESUME>;
+
+// Overload: suspendable tool with context
+export function createTool<INPUT, OUTPUT, SUSPEND, RESUME, CONTEXT>(
+  options: SuspendableToolOptions<INPUT, OUTPUT, SUSPEND, RESUME, CONTEXT>,
+): ZaikitTool<INPUT, OUTPUT | SuspendResult<SUSPEND>, SUSPEND, RESUME, CONTEXT>;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function createTool(options: any): ZaikitTool<any, any> {
   const { description, inputSchema, outputSchema, execute } = options;
 
   const isSuspendable = options.suspendSchema && options.resumeSchema;
+  const hasContext = !!options.context;
 
-  const meta: ToolMeta | undefined = isSuspendable
-    ? {
-        suspendSchema: toJSONSchema(options.suspendSchema),
-        resumeSchema: toJSONSchema(options.resumeSchema),
-      }
-    : undefined;
+  const meta: ToolMeta = {
+    ...(isSuspendable && {
+      suspendSchema: toJSONSchema(options.suspendSchema),
+      resumeSchema: toJSONSchema(options.resumeSchema),
+    }),
+    ...(hasContext && {
+      contextSchema: options.context,
+    }),
+  };
 
   const t = tool({
     description,
     inputSchema,
     execute: async (input) => {
-      let result: unknown;
+      const injection = getToolInjection();
+      const ctx: Record<string, unknown> = { input };
+
+      if (hasContext) {
+        ctx.context = injection.context;
+      }
 
       if (isSuspendable) {
-        const resumeData = getResumeData();
+        const resumeData = injection.resumeData;
 
-        const suspend = (data: unknown) => {
+        ctx.suspend = (data: unknown) => {
           options.suspendSchema.parse(data);
           return suspendFn(data);
         };
@@ -97,10 +156,10 @@ export function createTool(options: any): ZaikitTool<any, any> {
           options.resumeSchema.parse(resumeData);
         }
 
-        result = await execute({ input, suspend, resumeData });
-      } else {
-        result = await execute({ input });
+        ctx.resumeData = resumeData;
       }
+
+      const result = await execute(ctx);
 
       // Validate output against outputSchema, but skip for SuspendResult
       if (outputSchema && !isSuspendResult(result)) {
@@ -111,7 +170,7 @@ export function createTool(options: any): ZaikitTool<any, any> {
     },
   }) as ZaikitTool<any, any>;
 
-  if (meta) {
+  if (Object.keys(meta).length > 0) {
     (t as any).__meta = meta;
   }
 

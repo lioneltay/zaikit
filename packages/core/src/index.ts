@@ -23,4 +23,3 @@ export type { CollectedStream } from "./stream-utils";
 export { collectStream, mapChunks, toStream } from "./stream-utils";
 export type { SuspendResult } from "./suspend";
 export { isSuspendResult } from "./suspend";
-export { getResumeData, runWithSuspendContext } from "./suspend-context";
