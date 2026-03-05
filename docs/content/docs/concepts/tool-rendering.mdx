@@ -48,6 +48,7 @@ type ToolRenderProps<
   args: TArgs;
   suspendPayload: TSuspend | undefined;
   result: unknown;
+  error: string | undefined;
   resume: (data: TResume) => void;
 };
 ```
@@ -56,16 +57,17 @@ type ToolRenderProps<
 |---|---|
 | `toolCallId` | Unique identifier for this specific tool invocation. |
 | `toolName` | The name of the tool (matches the key in your `tools` object). |
-| `state` | Current lifecycle state: `"call"`, `"suspended"`, or `"result"`. |
+| `state` | Current lifecycle state: `"call"`, `"suspended"`, `"result"`, or `"error"`. |
 | `args` | The input arguments the LLM provided to the tool. |
 | `suspendPayload` | The data passed to `suspend()` by the tool. Only present when `state` is `"suspended"`. |
 | `result` | The tool's return value. Only present when `state` is `"result"`. |
+| `error` | Error message from the tool execution. Only present when `state` is `"error"`. |
 | `resume` | Call this to resume a suspended tool with data from the user. |
 
 ## `ToolRenderState`
 
 ```ts
-type ToolRenderState = "call" | "suspended" | "result";
+type ToolRenderState = "call" | "suspended" | "result" | "error";
 ```
 
 A tool part transitions through these states:
@@ -82,14 +84,19 @@ The tool called `suspend(payload)` and is waiting for user input. The `suspendPa
 
 The tool has completed. The `result` field contains the return value. Display the final output.
 
+### `"error"`
+
+The tool execution failed. The `error` field contains the error message. Use this to show an error indicator.
+
 ### State Transitions
 
 ```
 call  --->  result       (normal tool)
+call  --->  error        (tool threw an exception)
 call  --->  suspended  --->  result   (suspendable tool)
 ```
 
-A tool part always starts at `"call"`. For normal tools, it transitions directly to `"result"` when the tool finishes executing. For suspendable tools, it moves to `"suspended"` when the tool calls `suspend()`, and then to `"result"` after the user resumes and the tool returns a value.
+A tool part always starts at `"call"`. For normal tools, it transitions to `"result"` when the tool finishes executing, or to `"error"` if the tool throws. For suspendable tools, it moves to `"suspended"` when the tool calls `suspend()`, and then to `"result"` after the user resumes and the tool returns a value.
 
 ## Wildcard Renderer
 
@@ -185,3 +192,9 @@ Then mount it inside your `AgentProvider`:
 ```
 
 The `ToolRenderers` component renders no DOM — it only registers render functions. All registrations are available to any component in the `AgentProvider` subtree that calls `renderToolPart()`.
+
+## What's Next
+
+- **[Human-in-the-Loop](/guides/human-in-the-loop)** — Build interactive tool UIs with suspend/resume
+- **[Type-Safe Tools](/guides/type-safe-tools)** — Generate typed props for your tool renderers with codegen
+- **[`useToolRenderer` Reference](/reference/react/use-tool-renderer)** — Full API reference for the renderer hook

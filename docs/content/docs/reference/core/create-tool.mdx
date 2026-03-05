@@ -45,7 +45,31 @@ function createTool<INPUT, OUTPUT>(
 | `description` | `string` | Yes | Description shown to the LLM so it knows when to use this tool. |
 | `inputSchema` | `z.ZodType<INPUT>` | Yes | Zod schema that validates and types the tool input. |
 | `outputSchema` | `z.ZodType<OUTPUT>` | No | Zod schema that validates the tool output at runtime. |
-| `execute` | `(ctx: { input: INPUT }) => Promise<OUTPUT>` | Yes | The function that runs when the LLM calls this tool. |
+| `context` | `z.ZodType<CONTEXT>` | No | Zod schema for request-scoped context. When set, the execute function receives a typed `context` parameter. See [Context](/concepts/context). |
+| `execute` | `(ctx: { input: INPUT }) => Promise<OUTPUT>` or `(ctx: { input: INPUT; context: CONTEXT }) => Promise<OUTPUT>` | Yes | The function that runs when the LLM calls this tool. When a `context` schema is defined, the execute function receives a required `context` parameter. |
+
+## Tool with Context
+
+A tool with context receives request-scoped data (user IDs, permissions, etc.) from the agent without it passing through the LLM:
+
+```ts
+import { createTool } from "@zaikit/core";
+import { z } from "zod";
+
+const get_user_settings = createTool({
+  description: "Get settings for the current user",
+  inputSchema: z.object({}),
+  context: z.object({
+    userId: z.string(),
+    orgId: z.string(),
+  }),
+  execute: async ({ input, context }) => {
+    return await db.settings.findByUser(context.userId, context.orgId);
+  },
+});
+```
+
+Context flows from `agent.chat({ context })` to the tool's execute function via `AsyncLocalStorage`. The LLM never sees context values. See [Context](/concepts/context) for the full guide.
 
 ## Suspendable Tool
 
@@ -103,9 +127,10 @@ function createTool<INPUT, OUTPUT, SUSPEND, RESUME>(
 | `description` | `string` | Yes | Description shown to the LLM. |
 | `inputSchema` | `z.ZodType<INPUT>` | Yes | Zod schema for the tool input. |
 | `outputSchema` | `z.ZodType<OUTPUT>` | No | Zod schema for the tool output (excludes `SuspendResult`). |
+| `context` | `z.ZodType<CONTEXT>` | No | Zod schema for request-scoped context. When set, the execute function receives a typed `context` parameter. |
 | `suspendSchema` | `z.ZodType<SUSPEND>` | Yes | Zod schema for the payload passed to `suspend()`. Validated at runtime. |
 | `resumeSchema` | `z.ZodType<RESUME>` | Yes | Zod schema for the data the user sends back. Validated at runtime. |
-| `execute` | `(ctx: { input: INPUT; suspend: (data: SUSPEND) => SuspendResult<SUSPEND>; resumeData: RESUME \| undefined }) => Promise<OUTPUT \| SuspendResult<SUSPEND>>` | Yes | The function that runs on both the initial call and the resume call. |
+| `execute` | See below | Yes | The function that runs on both the initial call and the resume call. When a `context` schema is defined, the execute function receives a required `context` parameter. |
 
 ### Execute Context
 
@@ -125,13 +150,16 @@ type ZaikitTool<
   OUTPUT = any,
   SUSPEND = never,
   RESUME = never,
+  CONTEXT = undefined,
 > = Tool<INPUT, OUTPUT> & {
   readonly __toolTypes: {
     readonly input: INPUT;
     readonly output: Exclude<OUTPUT, SuspendResult<any>>;
     readonly suspend: SUSPEND;
     readonly resume: RESUME;
+    readonly context: CONTEXT;
   };
+  readonly __meta?: ToolMeta;
 };
 ```
 

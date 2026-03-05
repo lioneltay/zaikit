@@ -103,7 +103,7 @@ The AI SDK's `tool.execute` signature is `(input, { toolCallId, messages })` —
 
 ```ts
 // agent.ts — when resuming
-const output = await runWithSuspendContext(
+const output = await runWithToolInjection(
   { resumeData: resume.data },
   () => toolDef.execute!(toolInput, { toolCallId, messages }),
 );
@@ -111,7 +111,7 @@ const output = await runWithSuspendContext(
 
 ```ts
 // create-tool.ts — inside the execute wrapper
-const resumeData = getResumeData(); // reads from AsyncLocalStorage
+const { resumeData } = getToolInjection(); // reads from AsyncLocalStorage
 result = await execute({ input, suspend, resumeData });
 ```
 
@@ -129,3 +129,8 @@ When the user resolves one suspension:
 4. If all are resolved, the LLM continues with the full conversation.
 
 This means suspensions are resolved one at a time. Each resolution updates the stored message in place until all tools have been addressed.
+
+## What's Next
+
+- **[Human-in-the-Loop Guide](/guides/human-in-the-loop)** — Step-by-step walkthrough of building interactive tool UIs
+- **[`createTool` Reference](/reference/core/create-tool)** — Full API for suspendable tool options

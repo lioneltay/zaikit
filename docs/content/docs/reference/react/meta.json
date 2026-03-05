@@ -5,6 +5,7 @@
     "agent-provider",
     "use-agent",
     "use-agent-chat",
-    "use-tool-renderer"
+    "use-tool-renderer",
+    "use-tool"
   ]
 }

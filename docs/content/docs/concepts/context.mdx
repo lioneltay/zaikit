@@ -1,0 +1,197 @@
+---
+title: Context
+description: How request-scoped data like user IDs and tenant info flows from your server to tool execute functions.
+---
+
+Context lets you pass request-scoped data (user IDs, tenant info, permissions) from your server into tool execute functions without threading it through the LLM. The LLM never sees context values -- they flow directly from your application layer to your tools.
+
+## Why Context?
+
+Tools often need data that comes from the request (the authenticated user, their organization, feature flags) rather than from the LLM. Without context, you'd have to close over these values when creating tools, making it hard to share tool definitions across requests.
+
+Context solves this by giving tools a typed second input channel:
+
+```
+Server request → agent.chat({ context }) → tool.execute({ input, context })
+```
+
+The LLM provides `input`. Your server provides `context`.
+
+## Defining Context on a Tool
+
+Add a `context` option with a Zod schema. The execute function then receives `context` alongside `input`:
+
+```ts
+import { createTool } from "@zaikit/core";
+import { z } from "zod";
+
+const get_user_settings = createTool({
+  description: "Get the current user's settings",
+  inputSchema: z.object({}),
+  context: z.object({
+    userId: z.string(),
+    orgId: z.string(),
+  }),
+  execute: async ({ input, context }) => {
+    // context.userId and context.orgId are typed and available
+    return await db.settings.findByUser(context.userId, context.orgId);
+  },
+});
+```
+
+## Defining Context on an Agent
+
+When your agent has tools that need context, define a `context` schema on the agent. This becomes the shape that `agent.chat()` expects:
+
+```ts
+import { createAgent } from "@zaikit/core";
+import { z } from "zod";
+
+const agent = createAgent({
+  model: openai("gpt-4o"),
+  context: z.object({
+    userId: z.string(),
+    orgId: z.string(),
+  }),
+  tools: { get_user_settings, get_user_activity },
+  memory,
+});
+```
+
+Now `agent.chat()` requires a `context` field:
+
+```ts
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json();
+  const session = getSession(c);
+
+  return agent.chat({
+    ...body,
+    context: {
+      userId: session.userId,
+      orgId: session.orgId,
+    },
+  });
+});
+```
+
+## How Context Flows
+
+Context uses `AsyncLocalStorage` under the hood. When you call `agent.chat({ context })`, the agent wraps the entire tool execution in a context scope. Tools created with `createTool({ context })` read from this scope automatically.
+
+```
+agent.chat({ context: { userId: "u1", orgId: "o1" } })
+  └── AsyncLocalStorage.run({ context: { userId: "u1", orgId: "o1" } })
+        ├── get_user_settings.execute({ input, context })  ← reads context
+        └── get_user_activity.execute({ input, context })  ← reads context
+```
+
+This means:
+- Context is request-scoped -- each request gets its own values
+- Context is invisible to the LLM -- it never appears in prompts or messages
+- Tools can be defined once and shared across requests -- they read context at execution time
+
+## Mapping Context Per-Tool
+
+Sometimes different tools need different context shapes. Use `mapContext` to transform the agent's context for a specific tool:
+
+```ts
+const audit_tool = createTool({
+  description: "Log an audit event",
+  inputSchema: z.object({ action: z.string() }),
+  context: z.object({
+    actorId: z.string(),
+    actorName: z.string(),
+  }),
+  execute: async ({ input, context }) => {
+    await auditLog.write({
+      action: input.action,
+      actor: context.actorId,
+      name: context.actorName,
+    });
+    return { logged: true };
+  },
+});
+
+const agent = createAgent({
+  model: openai("gpt-4o"),
+  context: z.object({
+    userId: z.string(),
+    orgId: z.string(),
+    userName: z.string(),
+  }),
+  tools: {
+    get_user_settings,  // Plain tool -- receives full agent context
+    audit_tool: {       // Mapped tool -- receives transformed context
+      tool: audit_tool,
+      mapContext: (ctx) => ({
+        actorId: ctx.userId,
+        actorName: ctx.userName,
+      }),
+    },
+  },
+  memory,
+});
+```
+
+The `mapContext` function is type-checked: it must accept the agent's context type and return the tool's declared context type.
+
+## Context with Suspendable Tools
+
+Context works with suspendable tools too. The execute function receives `context` alongside `suspend` and `resumeData`:
+
+```ts
+const approve_expense = createTool({
+  description: "Submit an expense for approval",
+  inputSchema: z.object({ amount: z.number(), description: z.string() }),
+  context: z.object({ userId: z.string(), orgId: z.string() }),
+  suspendSchema: z.object({ amount: z.number(), description: z.string() }),
+  resumeSchema: z.object({ approved: z.boolean() }),
+  execute: async ({ input, context, suspend, resumeData }) => {
+    if (!resumeData) {
+      return suspend({ amount: input.amount, description: input.description });
+    }
+    if (resumeData.approved) {
+      await expenses.create({
+        ...input,
+        submittedBy: context.userId,
+        org: context.orgId,
+      });
+      return { status: "approved" };
+    }
+    return { status: "rejected" };
+  },
+});
+```
+
+## Context in the Sandbox
+
+The sandbox supports configuring runtime context per agent:
+
+```ts
+import { createSandbox } from "@zaikit/sandbox";
+
+const sandbox = createSandbox({
+  agents: {
+    assistant: {
+      agent,
+      context: {
+        userId: "dev-user",
+        orgId: "dev-org",
+      },
+    },
+  },
+});
+```
+
+The sandbox UI reads the agent's `contextSchema` and renders an editable form, letting you change context values during development without restarting the server. See the [Sandbox guide](/guides/sandbox) for details.
+
+## Summary
+
+| Concept | Description |
+|---|---|
+| `createTool({ context })` | Zod schema that types the context parameter in execute |
+| `createAgent({ context })` | Zod schema for the agent-level context shape |
+| `agent.chat({ context })` | Pass request-scoped values when calling the agent |
+| `mapContext` | Transform agent context to a tool's expected shape |
+| AsyncLocalStorage | Internal mechanism -- context is request-scoped and invisible to the LLM |

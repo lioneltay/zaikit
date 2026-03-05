@@ -279,3 +279,9 @@ app.use("*", cors({ origin: "https://myapp.example.com" }));
 ```
 
 The `/api/chat` endpoint streams responses using `ReadableStream`, so the CORS middleware must handle both the preflight `OPTIONS` request and the actual `POST` with streaming.
+
+## What's Next
+
+- **[Sandbox](/guides/sandbox)** — Try your agent with the built-in dev UI before building a custom frontend
+- **[Postgres Memory](/guides/postgres-memory)** — Production database setup
+- **[Context](/concepts/context)** — Pass request-scoped data like user IDs to tools

@@ -1,0 +1,151 @@
+---
+title: useTool
+description: Register a frontend tool that the LLM can call, with execution handled on the client.
+---
+
+Register a frontend tool — a tool definition that is sent to the LLM but whose execution happens in the browser rather than on the server.
+
+```ts
+import { useTool } from "@zaikit/react";
+```
+
+## Usage
+
+```tsx
+import { useTool } from "@zaikit/react";
+import { z } from "zod";
+
+function FrontendTools() {
+  useTool({
+    name: "get_location",
+    description: "Get the user's current location",
+    inputSchema: z.object({}),
+    execute: async () => {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject)
+      );
+      return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+    },
+  });
+
+  return null;
+}
+```
+
+Mount this component inside an `AgentProvider`. The tool definition is sent to the backend and made available to the LLM. When the model calls the tool, execution happens client-side.
+
+## Options
+
+```ts
+type UseToolOptions<INPUT> = {
+  name: string;
+  description: string;
+  inputSchema: ZodType<INPUT>;
+  execute?: (args: INPUT) => unknown | Promise<unknown>;
+  render?: (props: UseToolRenderProps<INPUT>) => React.ReactNode;
+};
+```
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `name` | `string` | Yes | Tool name visible to the LLM. |
+| `description` | `string` | Yes | Description that tells the LLM when to use this tool. |
+| `inputSchema` | `ZodType<INPUT>` | Yes | Zod schema for the tool's input. Converted to JSON Schema and sent to the LLM. |
+| `execute` | `(args: INPUT) => unknown \| Promise<unknown>` | No | Function that runs on the client when the LLM calls this tool. The return value is sent back as the tool output. |
+| `render` | `(props: UseToolRenderProps<INPUT>) => ReactNode` | No | Render function for showing UI during and after tool execution. |
+
+## Render Props
+
+When `render` is provided, it receives:
+
+```ts
+type UseToolRenderProps<INPUT> = {
+  args: INPUT;
+  state: ToolRenderState;
+  result: unknown;
+  resume: (data: unknown) => void;
+};
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `args` | `INPUT` | The input arguments from the LLM. |
+| `state` | `ToolRenderState` | `"call"` while executing, `"result"` when complete. |
+| `result` | `unknown` | The return value of `execute`, available when `state === "result"`. |
+| `resume` | `(data: unknown) => void` | Submit the tool output. Used for render-only tools (no `execute`). |
+
+## Execution Modes
+
+### Execute-only
+
+Provide `execute` without `render`. The tool runs silently and sends the result back to the LLM. No UI is shown.
+
+```tsx
+useTool({
+  name: "get_location",
+  description: "Get the user's current location",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject)
+    );
+    return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  },
+});
+```
+
+### Render-only (interactive)
+
+Provide `render` without `execute`. The tool shows a UI and waits for the user to call `resume()` with the output.
+
+```tsx
+useTool({
+  name: "select_color",
+  description: "Let the user pick a color",
+  inputSchema: z.object({
+    options: z.array(z.string()),
+  }),
+  render: (props) => (
+    <div>
+      {props.args.options.map((color) => (
+        <button key={color} onClick={() => props.resume({ color })}>
+          {color}
+        </button>
+      ))}
+    </div>
+  ),
+});
+```
+
+### Execute + Render
+
+Provide both. The `execute` function runs automatically, and `render` shows UI for the result.
+
+```tsx
+useTool({
+  name: "get_location",
+  description: "Get the user's current location",
+  inputSchema: z.object({}),
+  execute: async () => {
+    const pos = await new Promise<GeolocationPosition>((resolve, reject) =>
+      navigator.geolocation.getCurrentPosition(resolve, reject)
+    );
+    return { lat: pos.coords.latitude, lng: pos.coords.longitude };
+  },
+  render: (props) => {
+    if (props.state === "result") {
+      return <p>Location: {JSON.stringify(props.result)}</p>;
+    }
+    return <p>Getting location...</p>;
+  },
+});
+```
+
+## How It Works
+
+1. `useTool` calls `registerFrontendTool` to send the tool definition (name, description, JSON Schema parameters) to the backend
+2. The backend registers it as a dynamic tool for the LLM
+3. When the LLM calls the tool, the client receives the tool call
+4. If `execute` is provided, it runs automatically and sends the result via `addToolOutput`
+5. If only `render` is provided, the UI is shown and the user calls `resume()` to submit the output
+6. The agent continues the LLM loop with the tool output

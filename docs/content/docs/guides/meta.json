@@ -2,11 +2,11 @@
   "title": "Guides",
   "defaultOpen": true,
   "pages": [
-    "full-stack-setup",
     "creating-tools",
+    "sandbox",
     "human-in-the-loop",
+    "full-stack-setup",
     "postgres-memory",
-    "type-safe-tools",
-    "sandbox"
+    "type-safe-tools"
   ]
 }

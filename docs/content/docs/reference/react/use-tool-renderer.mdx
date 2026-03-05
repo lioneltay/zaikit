@@ -101,6 +101,7 @@ type ToolRenderProps<
   args: TArgs;
   suspendPayload: TSuspend | undefined;
   result: unknown;
+  error: string | undefined;
   resume: (data: TResume) => void;
 };
 ```
@@ -113,12 +114,13 @@ type ToolRenderProps<
 | `args` | `TArgs` | The input arguments the LLM provided to the tool. Defaults to `Record<string, unknown>`. |
 | `suspendPayload` | `TSuspend \| undefined` | The payload from `suspend()`. Only present when `state === "suspended"`. |
 | `result` | `unknown` | The tool's return value. Only meaningful when `state === "result"`. |
+| `error` | `string \| undefined` | Error message from the tool execution. Only present when `state === "error"`. |
 | `resume` | `(data: TResume) => void` | Call this to resume a suspended tool with the user's response. Routes to `resumeTool` internally. |
 
 ## ToolRenderState
 
 ```ts
-type ToolRenderState = "call" | "suspended" | "result";
+type ToolRenderState = "call" | "suspended" | "result" | "error";
 ```
 
 | State | Description |
@@ -126,6 +128,7 @@ type ToolRenderState = "call" | "suspended" | "result";
 | `"call"` | The tool has been called by the LLM but has not yet produced output. The tool is executing or waiting. |
 | `"suspended"` | The tool has suspended and is waiting for user input. `suspendPayload` is available. |
 | `"result"` | The tool has completed. `result` is available. |
+| `"error"` | The tool execution failed. `error` contains the error message. |
 
 ## Lifecycle
 

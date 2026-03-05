@@ -72,15 +72,12 @@ The `tools` object uses the key as the tool name. The LLM sees `get_weather` as 
 ```ts title="server.ts"
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { createPostgresMemory } from "@zaikit/memory-postgres";
+import { createInMemoryMemory } from "@zaikit/memory-inmemory";
 import { createAgent } from "@zaikit/core";
 import { openai } from "@ai-sdk/openai";
 import { get_weather } from "./tools";
 
-const memory = createPostgresMemory({
-  connectionString: process.env.DATABASE_URL!,
-});
-await memory.initialize();
+const memory = createInMemoryMemory();
 
 const agent = createAgent({
   model: openai("gpt-4o"),
@@ -100,7 +97,7 @@ app.post("/api/chat", async (c) => {
 export default app;
 ```
 
-`agent.chat()` requires memory to be configured. It handles both normal messages and resume requests automatically based on the request body shape.
+`agent.chat()` requires memory to be configured. Here we use the in-memory adapter for simplicity — for production, switch to `@zaikit/memory-postgres` (see the [Postgres Memory](/guides/postgres-memory) guide). The agent handles both normal messages and resume requests automatically based on the request body shape.
 
 The body is either:
 - `{ threadId, message }` — a new user message
@@ -163,6 +160,7 @@ export default function App() {
 
 - **[Concepts: How It Works](/concepts/how-it-works)** — Understand the architecture and data flow
 - **[Guide: Creating Tools](/guides/creating-tools)** — Build tools with structured output and error handling
+- **[Guide: Sandbox](/guides/sandbox)** — Try your agent instantly with the built-in dev UI
 - **[Guide: Human-in-the-Loop](/guides/human-in-the-loop)** — Add suspend/resume for user approval flows
 - **[Guide: Full-Stack Setup](/guides/full-stack-setup)** — Thread management, CORS, and production wiring
 - **[Reference](/reference/core/create-agent)** — Complete API reference for all packages

@@ -69,6 +69,7 @@ type AgentContextValue = {
     render: ToolRenderFn;
   }) => () => void;
   registerFrontendTool: (tool: FrontendToolRegistration) => () => void;
+  getRegisteredRenderers: () => Array<{ name: string; render: ToolRenderFn }>;
 };
 ```
 
@@ -87,6 +88,7 @@ type AgentContextValue = {
 | `renderToolPart` | `(part: unknown) => React.ReactNode \| null` | Look up the registered tool renderer for a message part and return the rendered output. Returns `null` if no renderer is registered. |
 | `registerToolRenderer` | `(entry: { toolName: string; render: ToolRenderFn }) => () => void` | Register a render function for a tool name. Returns a cleanup function. Prefer [`useToolRenderer`](/reference/react/use-tool-renderer) over calling this directly. |
 | `registerFrontendTool` | `(tool: FrontendToolRegistration) => () => void` | Register a frontend tool definition. The tool becomes available for the LLM to call, with execution handled client-side. Used internally by `useTool`. Returns a cleanup function. |
+| `getRegisteredRenderers` | `() => Array<{ name: string; render: ToolRenderFn }>` | Returns all currently registered tool renderers. Used internally by the sandbox DevTools panel. |
 
 ## Rendering Tool Parts
 

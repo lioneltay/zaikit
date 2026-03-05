@@ -41,6 +41,7 @@ type AgentProviderProps = {
   initialMessages: UIMessage[];
   fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
+  body?: Record<string, unknown>;
   children: React.ReactNode;
 };
 ```
@@ -52,7 +53,33 @@ type AgentProviderProps = {
 | `initialMessages` | `UIMessage[]` | Yes | Messages to hydrate on mount. Pass `[]` for a new thread, or pre-fetched messages for an existing thread. |
 | `fetchMessages` | `(threadId: string) => Promise<UIMessage[]>` | No | Called after resume to re-fetch the latest messages from the server. Required if you use suspend/resume. |
 | `onFinish` | `() => void` | No | Called when a streaming response completes. Useful for refreshing thread lists or triggering side effects. |
+| `body` | `Record<string, unknown>` | No | Extra fields merged into every request body sent to the backend. Use this to pass data like context, session tokens, or feature flags that the server needs but the LLM doesn't. |
 | `children` | `React.ReactNode` | Yes | Child components that can access agent state via `useAgent()`. |
+
+## Sending Extra Data with `body`
+
+Use the `body` prop to include additional fields in every request to the backend. This is how you pass [context](/concepts/context), session tokens, or other server-side data:
+
+```tsx
+<AgentProvider
+  api="/api/chat"
+  threadId={threadId}
+  initialMessages={[]}
+  body={{ context: { userId: session.userId, orgId: session.orgId } }}
+>
+  <Chat />
+</AgentProvider>
+```
+
+The `body` object is spread into the POST body alongside `threadId`, `message`, and other fields. On the server, access it from the request body:
+
+```ts
+app.post("/api/chat", async (c) => {
+  const body = await c.req.json();
+  // body.context is available here
+  return agent.chat({ ...body, context: body.context });
+});
+```
 
 ## Key Prop Pattern
 

@@ -5,7 +5,7 @@ description: How the agent loops through model calls, tool execution, and stop c
 
 At the core of every agent is a loop: the model generates a response, optionally calls tools, the tool results are fed back, and the model generates again. This continues until the model stops or a tool suspends.
 
-ZAIKit owns this loop directly rather than delegating it to the AI SDK. Each iteration makes a single-step `streamText()` call, giving the agent full control between steps for [middleware and hooks](/docs/concepts/middleware-and-hooks).
+ZAIKit owns this loop directly rather than delegating it to the AI SDK. Each iteration makes a single-step `streamText()` call, giving the agent full control between steps for [middleware and hooks](/concepts/middleware-and-hooks).
 
 ## The Loop
 
@@ -104,7 +104,7 @@ The persisted message reflects the final state of the stream, including any `dat
 
 ## Interception Points
 
-The manual loop exposes three levels of interception. See [Middleware & Hooks](/docs/concepts/middleware-and-hooks) for full details:
+The manual loop exposes three levels of interception. See [Middleware & Hooks](/concepts/middleware-and-hooks) for full details:
 
 - **Middleware** — wraps the entire response (mutate context, transform stream, short-circuit)
 - **Step hooks** — fire between LLM calls (`prepareStep`, `onAfterStep`)

@@ -105,13 +105,42 @@ Each tool can be tested in isolation from the agent info panel. The sandbox read
 
 Tools that use `suspend()` are fully supported. When a tool suspends, the sandbox renders the suspend payload and provides a form (generated from your `resumeSchema`) to submit resume data. This makes it easy to test human-in-the-loop flows.
 
+## Agent Context
+
+If your agent uses [context](/concepts/context), you can provide default context values when registering it with the sandbox. The sandbox UI will render an editable form based on your agent's `contextSchema`:
+
+```ts
+const sandbox = createSandbox({
+  agents: {
+    assistant: {
+      agent,
+      context: {
+        userId: "dev-user",
+        orgId: "dev-org",
+        orgName: "Dev Organization",
+      },
+    },
+  },
+});
+```
+
+The context values flow through three levels:
+
+1. **Runtime context** -- the defaults you set here in code
+2. **Agent-level UI override** -- editable form in the agent info panel, applies to all chat and tool requests
+3. **Per-tool override** -- override context for a single tool execution in the tool test panel
+
+Each level merges into the one below it, so you can set defaults in code and tweak individual values from the UI during development.
+
+Tools that declare a `context` schema show a "context" badge in the tools list. When testing them, a "Context" button lets you override the agent-level values for that specific execution.
+
 ## Configuration
 
 ### `createSandbox(config)`
 
 | Option | Type | Description |
 |---|---|---|
-| `agents` | `Record<string, Agent>` | Map of agent name to agent instance. Names appear in the sidebar. |
+| `agents` | `Record<string, Agent \| { agent: Agent; context?: unknown }>` | Map of agent name to agent instance (or `{ agent, context }` pair). Names appear in the sidebar. When context is provided, it serves as the runtime default for all requests. |
 | `basePath` | `string` | Optional mount prefix (e.g. `"/sandbox"`). Used when the sandbox is mounted under a subpath of a larger app. |
 
 ### `sandbox.listen(port?)`

@@ -20,6 +20,7 @@ type UseAgentChatOptions = {
   initialMessages: UIMessage[];
   fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
+  body?: Record<string, unknown>;
 };
 ```
 
@@ -30,6 +31,7 @@ type UseAgentChatOptions = {
 | `initialMessages` | `UIMessage[]` | Yes | Messages to hydrate on mount. |
 | `fetchMessages` | `(threadId: string) => Promise<UIMessage[]>` | No | Called after resume to re-fetch messages from the server. |
 | `onFinish` | `() => void` | No | Called when a streaming response completes. |
+| `body` | `Record<string, unknown>` | No | Extra fields merged into every request body. Spreads into the POST body alongside `threadId`, `message`, and `frontendTools`. Use for passing context, auth tokens, or other server-side data. |
 
 ## Return Value
 

@@ -3,7 +3,7 @@ title: How It Works
 description: Architecture overview — how the browser, server, agent loop, and memory layer fit together.
 ---
 
-ZAIKit is a thin orchestration layer on top of the [Vercel AI SDK](https://sdk.vercel.ai). It uses `streamText`, `UIMessage`, `ToolSet`, and `StopCondition` directly — there are no wrapper abstractions to learn. If you already know the AI SDK, you already know most of ZAIKit.
+ZAIKit is a thin orchestration layer on top of the [Vercel AI SDK](https://sdk.vercel.ai). It uses `streamText`, `UIMessage`, and `ToolSet` directly — there are no wrapper abstractions to learn. If you already know the AI SDK, you already know most of ZAIKit.
 
 ## Stack Overview
 
@@ -108,7 +108,6 @@ ZAIKit does not wrap or abstract over the AI SDK. It uses these AI SDK primitive
 | `streamText` | Runs the agent loop (model call + tool execution) |
 | `UIMessage` | Message format for both client and server |
 | `ToolSet` | Tools passed to `streamText` |
-| `StopCondition` | Controls when the agent loop ends |
 | `createUIMessageStream` | Creates the SSE response stream |
 | `convertToModelMessages` | Converts `UIMessage[]` to model-level messages |
 | `useChat` | Underlying hook in `useAgentChat` on the client |

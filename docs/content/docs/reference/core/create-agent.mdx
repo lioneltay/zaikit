@@ -31,15 +31,16 @@ const agent = createAgent({
 
 ## Options
 
-`createAgent<T extends ToolSet>(options: CreateAgentOptions<T>): Agent<T>`
+`createAgent<T, C>(options: CreateAgentOptions<T, C>): Agent<T, C>`
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
 | `model` | `LanguageModel` | Yes | Any AI SDK compatible language model. |
 | `system` | `string` | No | System prompt sent with every request. |
-| `tools` | `T extends ToolSet` | No | Object mapping tool names to tool definitions. Keys become the tool names visible to the LLM. |
+| `tools` | `T` | No | Object mapping tool names to tool definitions. Values can be plain tools or `{ tool, mapContext }` entries when the agent has a context schema. |
+| `context` | `z.ZodType<C>` | No | Zod schema defining the request-scoped context shape. When set, `agent.chat()` requires a `context` field, and tools with a matching `context` schema receive it in their execute function. See [Context](/concepts/context). |
 | `memory` | `Memory` | No | A memory adapter for persisting threads and messages. Required if you call `agent.chat()`. |
-| `middleware` | `Middleware[]` | No | Composable middleware that wraps the entire response. See [Middleware & Hooks](/docs/concepts/middleware-and-hooks). |
+| `middleware` | `Middleware[]` | No | Composable middleware that wraps the entire response. See [Middleware & Hooks](/concepts/middleware-and-hooks). |
 | `prepareStep` | `PrepareStepFunction<T>` | No | Hook that fires before each LLM call. Returns per-step overrides (`activeTools`, `toolChoice`, `system`, `model`, `messages`). Follows the [AI SDK `prepareStep` API](https://ai-sdk.dev/docs/reference/ai-sdk-core/stream-text#preparestep). |
 | `onAfterStep` | `(ctx: AfterStepContext) => void \| Promise<void>` | No | Hook that fires after each LLM call. Receives `{ step, steps }` with the full `StepResult`. Throw to abort. |
 | `onBeforeToolCall` | `(ctx: BeforeToolCallContext) => { input? } \| void \| Promise<...>` | No | Hook that fires before each tool execution. Return `{ input }` to override, throw to block. |
@@ -47,13 +48,16 @@ const agent = createAgent({
 
 ## Return Type
 
-`createAgent` returns an `Agent<T>` object:
+`createAgent` returns an `Agent<T, C>` object:
 
 ```ts
-type Agent<T extends ToolSet = ToolSet> = {
+type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   tools: T;
   memory: Memory | undefined;
-  chat(options: ChatOptions): Promise<Response>;
+  model: LanguageModel;
+  system: string | undefined;
+  contextSchema: Record<string, unknown> | undefined;
+  chat(options: ChatOptions<C>): Promise<Response>;
 };
 ```
 
@@ -61,17 +65,23 @@ type Agent<T extends ToolSet = ToolSet> = {
 | --- | --- | --- |
 | `tools` | `T` | The tools object passed to the agent. Useful for codegen to inspect tool types. |
 | `memory` | `Memory \| undefined` | The memory adapter, if one was provided. |
-| `chat` | `(options: ChatOptions) => Promise<Response>` | Stream a response. Accepts a message or a resume request. |
+| `model` | `LanguageModel` | The language model instance. |
+| `system` | `string \| undefined` | The system prompt, if one was provided. |
+| `contextSchema` | `Record<string, unknown> \| undefined` | JSON Schema representation of the context Zod type, if `context` was provided. Used by the sandbox UI to render context forms. |
+| `chat` | `(options: ChatOptions<C>) => Promise<Response>` | Stream a response. Accepts a message or a resume request. When the agent has a context schema, all variants require a `context` field. |
 
 ## ChatOptions
 
-`ChatOptions` is a discriminated union. The agent inspects the shape of the request body to determine the action:
+`ChatOptions<C>` is a discriminated union. The agent inspects the shape of the request body to determine the action. When the agent has a context schema (`C` is not `undefined`), all variants require a `context: C` field:
 
 ```ts
-type ChatOptions =
-  | { threadId: string; message: UIMessage; ownerId?: string; frontendTools?: FrontendToolDef[] }
-  | { threadId: string; resume: { toolCallId: string; data: unknown }; frontendTools?: FrontendToolDef[] }
-  | { threadId: string; toolOutputs: { toolCallId: string; output: unknown }[]; frontendTools?: FrontendToolDef[] };
+type ChatOptions<C = undefined> =
+  ([C] extends [undefined] ? { context?: never } : { context: C }) &
+  (
+    | { threadId: string; message: UIMessage; ownerId?: string; frontendTools?: FrontendToolDef[] }
+    | { threadId: string; resume: { toolCallId: string; data: unknown }; frontendTools?: FrontendToolDef[] }
+    | { threadId: string; toolOutputs: { toolCallId: string; output: unknown }[]; frontendTools?: FrontendToolDef[] }
+  );
 ```
 
 ### Message path
@@ -117,7 +127,7 @@ type FrontendToolDef = {
 
 ## Middleware & Hooks
 
-The agent supports three levels of interception. See [Middleware & Hooks](/docs/concepts/middleware-and-hooks) for full details and examples.
+The agent supports three levels of interception. See [Middleware & Hooks](/concepts/middleware-and-hooks) for full details and examples.
 
 ```ts
 import { createAgent, type Middleware } from "@zaikit/core";

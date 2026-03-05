@@ -11,10 +11,11 @@ When you use `useToolRenderer`, the render callback receives `ToolRenderProps` w
 type ToolRenderProps = {
   toolCallId: string;
   toolName: string;
-  state: "call" | "suspended" | "result";
+  state: "call" | "suspended" | "result" | "error";
   args: Record<string, unknown>;       // Not typed to your tool's input
   suspendPayload: unknown;              // Not typed to your suspend schema
   result: unknown;                      // Not typed
+  error: string | undefined;            // Not typed
   resume: (data: unknown) => void;      // Accepts anything
 };
 ```
@@ -233,13 +234,15 @@ export function ToolRenderers() {
 `createTool` returns a `ZaikitTool` type that carries a phantom `__toolTypes` property:
 
 ```ts
-type ZaikitTool<INPUT, OUTPUT, SUSPEND, RESUME> = Tool<INPUT, OUTPUT> & {
+type ZaikitTool<INPUT, OUTPUT, SUSPEND, RESUME, CONTEXT> = Tool<INPUT, OUTPUT> & {
   readonly __toolTypes: {
     readonly input: INPUT;
     readonly output: Exclude<OUTPUT, SuspendResult<any>>;
     readonly suspend: SUSPEND;
     readonly resume: RESUME;
+    readonly context: CONTEXT;
   };
+  readonly __meta?: ToolMeta;
 };
 ```
 
@@ -250,7 +253,7 @@ This property exists only in the type system -- it has no runtime cost and no ru
 1. `ts-morph` loads your project using the `tsconfig.json`
 2. It finds the named export (default: `agent`) in your agent file
 3. It reads the `tools` property on the agent's type
-4. For each tool, it reads the `__toolTypes` brand to extract `input`, `output`, `suspend`, and `resume` types
+4. For each tool, it reads the `__toolTypes` brand to extract `input`, `output`, `suspend`, `resume`, and `context` types
 5. These are rendered as TypeScript type aliases in the output file
 
 Tools that were not created with `createTool` (and thus lack the `__toolTypes` brand) are skipped with a warning.

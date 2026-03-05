@@ -79,11 +79,9 @@ These are re-exported from the `ai` package for convenience:
 
 | Export | Type | Description |
 | --- | --- | --- |
-| `hasSuspendedTool` | `StopCondition<any>` | Stop condition that halts the LLM loop when any tool returned a `SuspendResult`. Always composed into `createAgent`'s `stopWhen`. |
 | `isSuspendResult` | `(value: unknown) => value is SuspendResult<unknown>` | Type guard that checks if a value is a `SuspendResult`. |
 | `SuspendResult` | Type | The type returned by the `suspend()` function inside suspendable tools. |
-| `runWithSuspendContext` | `<T>(context: { resumeData?: unknown }, fn: () => T) => T` | Run a function with resume data available via `AsyncLocalStorage`. Used internally by the agent during resume. |
-| `getResumeData` | `<T>() => T \| undefined` | Read the current resume data from `AsyncLocalStorage`. Used internally by `createTool`. |
+| `runWithToolInjection` | `<T>(injection: ToolInjection, fn: () => T) => T` | Run a function with injection values (context, resumeData) available to tools via `AsyncLocalStorage`. Used internally by the agent. |
 
 ## All Exports
 
@@ -91,25 +89,40 @@ For reference, here is the complete export list from `@zaikit/core`:
 
 ```ts
 // AI SDK re-exports
+export type { PrepareStepFunction, PrepareStepResult, StepResult } from "ai";
 export { convertToModelMessages, streamText } from "ai";
 
 // Agent
-export type { Agent, ChatOptions, FrontendToolDef } from "./agent";
+export type {
+  AfterStepContext,
+  AfterToolCallContext,
+  Agent,
+  BeforeToolCallContext,
+  ChatOptions,
+  FrontendToolDef,
+} from "./agent";
 export { createAgent } from "./agent";
 
 // Tools
-export type { ZaikitTool } from "./create-tool";
+export type { ToolMeta, ZaikitTool } from "./create-tool";
 export { createTool } from "./create-tool";
 
-// Memory
-export type { Memory, Thread } from "./memory";
+// Memory (types only)
+export type { Memory, Thread } from "@zaikit/memory";
+
+// Middleware
+export type { Middleware, MiddlewareContext } from "./middleware/core";
+export { composeMiddleware } from "./middleware/core";
 
 // Models
 export { fastModel, model, proModel } from "./model";
 
+// Stream utilities
+export type { CollectedStream } from "./stream-utils";
+export { collectStream, mapChunks, toStream } from "./stream-utils";
+
 // Suspend
-export { hasSuspendedTool } from "./stop-conditions";
 export type { SuspendResult } from "./suspend";
 export { isSuspendResult } from "./suspend";
-export { getResumeData, runWithSuspendContext } from "./suspend-context";
+export { runWithToolInjection } from "./tool-injection";
 ```

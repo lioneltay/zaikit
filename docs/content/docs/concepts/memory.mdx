@@ -188,3 +188,7 @@ const agent = createAgent({ model, tools, memory });
 The most important detail is that `addMessage` and `updateMessage` must correctly serialize `UIMessage.parts` (an array of typed objects) and that `getMessages` must deserialize them back to the same structure. The Postgres adapter uses JSONB for this.
 
 `@zaikit/memory` also ships [conformance tests](/reference/memory/types#conformance-tests) you can run against your custom adapter to verify correctness.
+
+## What's Next
+
+- **[Postgres Memory Guide](/guides/postgres-memory)** — Production setup with PostgreSQL

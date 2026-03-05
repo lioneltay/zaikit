@@ -177,6 +177,28 @@ const delete_records = createTool({
 });
 ```
 
+## Tools with Context
+
+When a tool needs request-scoped data (user ID, permissions, tenant info) that comes from your server rather than the LLM, use the `context` option:
+
+```ts
+const get_user_settings = createTool({
+  description: "Get settings for the current user",
+  inputSchema: z.object({}),
+  context: z.object({
+    userId: z.string(),
+    orgId: z.string(),
+  }),
+  execute: async ({ input, context }) => {
+    // context.userId and context.orgId are fully typed
+    const settings = await db.settings.findByUser(context.userId, context.orgId);
+    return settings;
+  },
+});
+```
+
+Context flows from `agent.chat({ context })` through `AsyncLocalStorage` to the tool's execute function. The LLM never sees context values. See [Context](/concepts/context) for the full guide, including `mapContext` for per-tool context transformation.
+
 ## Multiple Tools on One Agent
 
 Pass all tools as properties of the `tools` object. The agent makes all of them available to the LLM simultaneously:
@@ -247,5 +269,6 @@ See the [Type-Safe Tools](/guides/type-safe-tools) guide for details.
 
 ## What's Next
 
+- **[Context](/concepts/context)** -- Pass request-scoped data like user IDs and permissions to tools
 - **[Human-in-the-Loop](/guides/human-in-the-loop)** -- Add `suspendSchema` and `resumeSchema` to pause tools for user approval
 - **[Type-Safe Tools](/guides/type-safe-tools)** -- Generate typed props for your tool renderer components

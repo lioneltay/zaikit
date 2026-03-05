@@ -133,7 +133,7 @@ export const agent = createAgent({
 
 ### 4. Create a React Component
 
-On the frontend, create a component that handles three states: `"call"` (tool is being invoked), `"suspended"` (waiting for user input), and `"result"` (tool has completed).
+On the frontend, create a component that handles four states: `"call"` (tool is being invoked), `"suspended"` (waiting for user input), `"result"` (tool has completed), and `"error"` (tool execution failed).
 
 ```tsx title="src/tools/BookFlightTool.tsx"
 import { useState } from "react";
@@ -272,10 +272,11 @@ The props object passed to your render function:
 |---|---|---|
 | `toolCallId` | `string` | Unique identifier for this tool invocation |
 | `toolName` | `string` | Name of the tool (e.g. `"book_flight"`) |
-| `state` | `"call" \| "suspended" \| "result"` | Current lifecycle state |
+| `state` | `"call" \| "suspended" \| "result" \| "error"` | Current lifecycle state |
 | `args` | `TArgs` | The input arguments the LLM passed to the tool |
 | `suspendPayload` | `TSuspend \| undefined` | Data from `suspend()` -- only set when `state === "suspended"` |
 | `result` | `unknown` | The tool's return value -- only set when `state === "result"` |
+| `error` | `string \| undefined` | Error message from the tool execution -- only set when `state === "error"` |
 | `resume` | `(data: TResume) => void` | Call this to resume the tool with user data |
 
 ## Complete Working Example

@@ -30,8 +30,32 @@ sandbox.listen(4000);
 
 | Property | Type | Required | Description |
 |---|---|---|---|
-| `agents` | `Record<string, Agent>` | Yes | Map of agent name to agent instance. Each agent appears as a separate entry in the sidebar. |
+| `agents` | `Record<string, SandboxAgentEntry>` | Yes | Map of agent name to agent instance or `{ agent, context }` pair. Each agent appears as a separate entry in the sidebar. |
 | `basePath` | `string` | No | Mount prefix for the sandbox (e.g. `"/sandbox"`). Injects a `<base>` tag so SPA routing works under subpaths. |
+
+### `SandboxAgentEntry`
+
+Each value in the `agents` record can be either a plain `Agent` or an object with runtime context:
+
+```ts
+type SandboxAgentEntry =
+  | Agent
+  | { agent: Agent; context?: unknown };
+```
+
+When `context` is provided, it serves as the default for all chat and tool-execute requests. The sandbox UI merges request-level context on top: `{ ...runtimeContext, ...requestContext }`.
+
+```ts
+const sandbox = createSandbox({
+  agents: {
+    weather: weatherAgent,                          // Plain agent
+    assistant: { agent: assistantAgent, context: {  // Agent with context
+      userId: "dev-user",
+      orgId: "dev-org",
+    }},
+  },
+});
+```
 
 ## Return value
 
@@ -91,3 +115,4 @@ The sandbox serves the following API routes (relative to the mount point):
 | `GET` | `/api/agents/:name/threads/:id/messages` | Get messages for a thread |
 | `DELETE` | `/api/agents/:name/threads/:id` | Delete a thread |
 | `POST` | `/api/agents/:name/tools/:tool/execute` | Execute a tool in isolation |
+| `GET` | `/api/agents/:name/schemas` | Get tool schemas (input, suspend, resume) for an agent |

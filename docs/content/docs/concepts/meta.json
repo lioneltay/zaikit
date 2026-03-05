@@ -5,8 +5,9 @@
     "how-it-works",
     "agent-loop",
     "middleware-and-hooks",
-    "suspend-resume",
     "memory",
-    "tool-rendering"
+    "tool-rendering",
+    "suspend-resume",
+    "context"
   ]
 }
