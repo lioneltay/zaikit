@@ -71,6 +71,7 @@ Integrations, advanced features, and exploratory ideas.
 
 ### Frontend
 
+- [ ] `AgentProvider` / `useAgentChat` `body` prop — pass extra fields (e.g. context) in every chat request
 - [ ] Web MCP
 
 ### Integrations

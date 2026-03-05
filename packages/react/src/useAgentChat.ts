@@ -20,9 +20,57 @@ export type UseAgentChatOptions = {
   initialMessages: UIMessage[];
   fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
+  body?: Record<string, unknown>;
   getFrontendTools: () => FrontendToolRegistration[];
   isFrontendTool: (name: string) => boolean;
 };
+
+export function buildSendBody(
+  messages: UIMessage[],
+  opts: {
+    extraBody?: Record<string, unknown>;
+    threadId: string;
+    getFrontendTools: () => FrontendToolRegistration[];
+    isFrontendTool: (name: string) => boolean;
+  },
+): { body: Record<string, unknown> } {
+  const lastMessage = messages[messages.length - 1];
+  const frontendTools = opts.getFrontendTools();
+
+  if (lastMessage.role === "assistant") {
+    const toolOutputs = lastMessage.parts
+      .filter((p) => {
+        const name = getToolName(p);
+        return (
+          "toolCallId" in p &&
+          name != null &&
+          opts.isFrontendTool(name) &&
+          (p as any).state === "output-available"
+        );
+      })
+      .map((p) => ({
+        toolCallId: (p as any).toolCallId,
+        output: (p as any).output,
+      }));
+    return {
+      body: {
+        ...opts.extraBody,
+        threadId: opts.threadId,
+        toolOutputs,
+        frontendTools,
+      },
+    };
+  }
+
+  return {
+    body: {
+      ...opts.extraBody,
+      threadId: opts.threadId,
+      message: lastMessage,
+      frontendTools,
+    },
+  };
+}
 
 export function useAgentChat({
   api,
@@ -30,6 +78,7 @@ export function useAgentChat({
   initialMessages,
   fetchMessages,
   onFinish,
+  body: extraBody,
   getFrontendTools,
   isFrontendTool,
 }: UseAgentChatOptions) {
@@ -37,33 +86,15 @@ export function useAgentChat({
     () =>
       new DefaultChatTransport({
         api,
-        prepareSendMessagesRequest: ({ messages }) => {
-          const lastMessage = messages[messages.length - 1];
-          const frontendTools = getFrontendTools();
-
-          if (lastMessage.role === "assistant") {
-            // Tool output continuation — collect frontend tool outputs
-            const toolOutputs = lastMessage.parts
-              .filter((p) => {
-                const name = getToolName(p);
-                return (
-                  "toolCallId" in p &&
-                  name != null &&
-                  isFrontendTool(name) &&
-                  (p as any).state === "output-available"
-                );
-              })
-              .map((p) => ({
-                toolCallId: (p as any).toolCallId,
-                output: (p as any).output,
-              }));
-            return { body: { threadId, toolOutputs, frontendTools } };
-          }
-
-          return { body: { threadId, message: lastMessage, frontendTools } };
-        },
+        prepareSendMessagesRequest: ({ messages }) =>
+          buildSendBody(messages, {
+            extraBody,
+            threadId,
+            getFrontendTools,
+            isFrontendTool,
+          }),
       }),
-    [api, threadId, getFrontendTools, isFrontendTool],
+    [api, threadId, extraBody, getFrontendTools, isFrontendTool],
   );
 
   const chat = useChat({
@@ -101,6 +132,7 @@ export function useAgentChat({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            ...extraBody,
             threadId,
             resume: { toolCallId, data },
             frontendTools,
@@ -129,7 +161,7 @@ export function useAgentChat({
         setIsResuming(false);
       }
     },
-    [chat, api, threadId, fetchMessages, getFrontendTools],
+    [chat, api, threadId, extraBody, fetchMessages, getFrontendTools],
   );
 
   return {

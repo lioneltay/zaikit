@@ -18,6 +18,7 @@ type AgentProviderProps = {
   initialMessages: UIMessage[];
   fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
+  body?: Record<string, unknown>;
   children: React.ReactNode;
 };
 
