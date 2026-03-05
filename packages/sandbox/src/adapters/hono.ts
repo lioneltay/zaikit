@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
-import { getAgentDetail, listAgents } from "../routes/agents";
+import {
+  getAgentDetail,
+  getAgentToolSchemas,
+  listAgents,
+} from "../routes/agents";
 import { executeTool } from "../routes/tools";
 import { serveIndexHtml, serveStaticFile } from "../static";
 import type { SandboxConfig } from "../types";
@@ -32,6 +36,13 @@ export function createSandboxHono(config: SandboxConfig) {
     const agent = getAgent(name);
     if (!agent) return c.json({ error: "Agent not found" }, 404);
     return c.json(getAgentDetail(name, agent));
+  });
+
+  app.get("/api/agents/:name/schemas", (c) => {
+    const name = c.req.param("name");
+    const agent = getAgent(name);
+    if (!agent) return c.json({ error: "Agent not found" }, 404);
+    return c.json(getAgentToolSchemas(agent));
   });
 
   app.post("/api/agents/:name/chat", async (c) => {

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check-types": "tsc -b",
-    "generate-types": "zaikit-codegen-react --agent ../assistant-backend/src/agent/index.ts --output ./src/tools/tools.generated.ts"
+    "generate-types": "zaikit-codegen-react --agent ../assistant-backend/src/agent/index.ts --output ./src/generated/generated.ts"
   },
   "dependencies": {
     "@ai-sdk/react": "^3",
@@ -27,6 +27,7 @@
     "zod": "^4"
   },
   "devDependencies": {
+    "@zaikit/sandbox": "workspace:*",
     "@zaikit/assistant-backend": "workspace:*",
     "@zaikit/codegen-react": "workspace:*",
     "@zaikit/typescript-config": "workspace:*",

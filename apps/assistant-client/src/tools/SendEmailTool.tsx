@@ -1,7 +1,7 @@
 import { Box, Button, TextField, Typography } from "@mui/material";
 import { useState } from "react";
 import { ResolvedBanner } from "../components/ResolvedBanner";
-import type { SendEmailToolProps } from "./tools.generated";
+import type { SendEmailToolProps } from "../generated/generated";
 
 export function SendEmailTool(props: SendEmailToolProps) {
   const preview = props.suspendPayload?.preview;

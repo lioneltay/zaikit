@@ -44,4 +44,5 @@ export type AgentContextValue = {
     render: ToolRenderFn;
   }) => () => void;
   registerFrontendTool: (tool: FrontendToolRegistration) => () => void;
+  getRegisteredRenderers: () => Array<{ name: string; render: ToolRenderFn }>;
 };

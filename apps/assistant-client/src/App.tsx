@@ -8,6 +8,7 @@ import {
   Typography,
 } from "@mui/material";
 import { AgentProvider } from "@zaikit/react";
+import { DevTools } from "@zaikit/sandbox/devtools";
 import type { UIMessage } from "ai";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AgentChat } from "./AgentChat";
@@ -146,6 +147,7 @@ export default function App() {
                 showDebug={showDebug}
                 onToggleDebug={() => setShowDebug((v) => !v)}
               />
+              <DevTools url="http://localhost:7301/sandbox" agent="assistant" />
             </AgentProvider>
           ) : (
             <Box

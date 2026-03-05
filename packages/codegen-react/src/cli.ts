@@ -53,7 +53,7 @@ function parseArgs(argv: string[]): {
   };
 }
 
-function main() {
+async function main() {
   const args = parseArgs(process.argv);
   const cwd = process.cwd();
 
@@ -103,4 +103,4 @@ function main() {
   console.log(`Generated ${tools.length} tool type(s) → ${outputPath}`);
 }
 
-main();
+main().then(() => process.exit(0));

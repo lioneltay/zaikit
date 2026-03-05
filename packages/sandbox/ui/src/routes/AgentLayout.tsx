@@ -16,7 +16,10 @@ export function AgentLayout() {
     from: "/$agentName/$threadId",
     shouldThrow: false,
   });
-  const hasThread = !!threadMatch;
+
+  if (threadMatch) {
+    return <Outlet />;
+  }
 
   const handleCreateThread = () => {
     navigate({
@@ -24,10 +27,6 @@ export function AgentLayout() {
       params: { agentName, threadId: crypto.randomUUID() },
     });
   };
-
-  if (hasThread) {
-    return <Outlet />;
-  }
 
   return (
     <Box

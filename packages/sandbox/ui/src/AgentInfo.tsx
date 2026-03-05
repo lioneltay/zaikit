@@ -13,8 +13,8 @@ import {
   Typography,
 } from "@mui/material";
 import { useState } from "react";
+import { jsonSchemaToTypeString } from "../../src/schema-utils";
 import type { AgentDetail } from "./api";
-import { jsonSchemaToTypeString } from "./schema-utils";
 import { ToolTestPanel } from "./ToolTestPanel";
 import { type Tokens, useTokens } from "./theme";
 

@@ -88,3 +88,20 @@ export async function executeTool(
   );
   return res.json();
 }
+
+export type ToolSchemaMap = Record<
+  string,
+  {
+    description?: string;
+    input?: Record<string, unknown>;
+    suspend?: Record<string, unknown>;
+    resume?: Record<string, unknown>;
+  }
+>;
+
+export async function fetchToolSchemas(
+  agentName: string,
+): Promise<ToolSchemaMap> {
+  const res = await fetch(`${BASE}/agents/${agentName}/schemas`);
+  return res.json();
+}

@@ -9,7 +9,7 @@ function getModelId(model: LanguageModel): string {
   return "unknown";
 }
 
-type ToolInfo = {
+export type ToolInfo = {
   name: string;
   description: string | undefined;
   parameters?: Record<string, unknown>;
@@ -17,7 +17,7 @@ type ToolInfo = {
   resumeSchema?: Record<string, unknown>;
 };
 
-function getToolInfo(name: string, t: ToolSet[string]): ToolInfo {
+export function getToolInfo(name: string, t: ToolSet[string]): ToolInfo {
   const meta = (t as unknown as { __meta?: ToolMeta }).__meta;
   let parameters: Record<string, unknown> | undefined;
   try {
@@ -55,4 +55,28 @@ export function getAgentDetail(name: string, agent: Agent) {
       getToolInfo(toolName, t),
     ),
   };
+}
+
+export type ToolSchemaMap = Record<
+  string,
+  {
+    description?: string;
+    input?: Record<string, unknown>;
+    suspend?: Record<string, unknown>;
+    resume?: Record<string, unknown>;
+  }
+>;
+
+export function getAgentToolSchemas(agent: Agent): ToolSchemaMap {
+  const result: ToolSchemaMap = {};
+  for (const [name, t] of Object.entries(agent.tools)) {
+    const info = getToolInfo(name, t);
+    result[name] = {
+      ...(info.description ? { description: info.description } : {}),
+      ...(info.parameters ? { input: info.parameters } : {}),
+      ...(info.suspendSchema ? { suspend: info.suspendSchema } : {}),
+      ...(info.resumeSchema ? { resume: info.resumeSchema } : {}),
+    };
+  }
+  return result;
 }

@@ -33,11 +33,11 @@
   },
   "devDependencies": {
     "@zaikit/core": "workspace:*",
+    "zod": "^4",
     "@zaikit/typescript-config": "workspace:*",
     "@types/node": "^22",
     "tsup": "^8",
     "typescript": "^5",
-    "vitest": "^3",
-    "zod": "^4"
+    "vitest": "^3"
   }
 }

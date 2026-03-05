@@ -1,10 +1,8 @@
 import SendIcon from "@mui/icons-material/Send";
 import { Box, Button, Tab, Tabs, TextField, Typography } from "@mui/material";
 import { useState } from "react";
+import { buildDefaultValues, type JsonSchema } from "../../src/schema-utils";
 import { SchemaField } from "./SchemaField";
-import { buildDefaultValues } from "./schema-utils";
-
-type JsonSchema = Record<string, unknown>;
 
 export function ResumeForm({
   onResume,
@@ -23,11 +21,11 @@ export function ResumeForm({
     hasSchema ? "form" : "json",
   );
   const [formValues, setFormValues] = useState<unknown>(() =>
-    hasSchema ? buildDefaultValues(resumeSchema!) : undefined,
+    hasSchema && resumeSchema ? buildDefaultValues(resumeSchema) : undefined,
   );
   const [jsonValue, setJsonValue] = useState(() =>
-    hasSchema
-      ? JSON.stringify(buildDefaultValues(resumeSchema!), null, 2)
+    hasSchema && resumeSchema
+      ? JSON.stringify(buildDefaultValues(resumeSchema), null, 2)
       : "{}",
   );
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +76,7 @@ export function ResumeForm({
       {mode === "form" && hasSchema ? (
         <SchemaField
           name=""
-          schema={resumeSchema!}
+          schema={resumeSchema as JsonSchema}
           value={formValues}
           onChange={setFormValues}
         />

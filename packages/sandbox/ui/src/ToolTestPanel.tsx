@@ -10,9 +10,9 @@ import {
   Typography,
 } from "@mui/material";
 import { useState } from "react";
+import { buildDefaultValues } from "../../src/schema-utils";
 import { executeTool, type ToolExecutionResult } from "./api";
 import { SchemaField } from "./SchemaField";
-import { buildDefaultValues } from "./schema-utils";
 import { useTokens } from "./theme";
 
 type ToolTestPanelProps = {
@@ -39,10 +39,12 @@ export function ToolTestPanel({
     hasSchema ? "form" : "json",
   );
   const [formValues, setFormValues] = useState<unknown>(() =>
-    hasSchema ? buildDefaultValues(parameters!) : {},
+    hasSchema && parameters ? buildDefaultValues(parameters) : {},
   );
   const [jsonValue, setJsonValue] = useState(() =>
-    hasSchema ? JSON.stringify(buildDefaultValues(parameters!), null, 2) : "{}",
+    hasSchema && parameters
+      ? JSON.stringify(buildDefaultValues(parameters), null, 2)
+      : "{}",
   );
   const [jsonError, setJsonError] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
@@ -138,7 +140,7 @@ export function ToolTestPanel({
           {mode === "form" && hasSchema ? (
             <SchemaField
               name=""
-              schema={parameters!}
+              schema={parameters as Record<string, unknown>}
               value={formValues}
               onChange={setFormValues}
             />

@@ -42,12 +42,14 @@ export function AgentProvider({
     isFrontendTool,
   });
 
-  const registryRef = useRef(new Map<string, ToolRenderFn>());
+  const registryRef = useRef(new Map<string, { render: ToolRenderFn }>());
   const [, setRegistryVersion] = useState(0);
 
   const registerToolRenderer = useCallback(
     (entry: { toolName: string; render: ToolRenderFn }) => {
-      registryRef.current.set(entry.toolName, entry.render);
+      registryRef.current.set(entry.toolName, {
+        render: entry.render,
+      });
       setRegistryVersion((v) => v + 1);
       return () => {
         registryRef.current.delete(entry.toolName);
@@ -73,9 +75,10 @@ export function AgentProvider({
           : "") ??
         "";
 
-      const renderer =
+      const entry =
         registryRef.current.get(toolName) ?? registryRef.current.get("*");
-      if (!renderer) return null;
+      if (!entry) return null;
+      const renderer = entry.render;
 
       const suspend = p.suspend as
         | { payload?: unknown; toolCallId?: string }
@@ -113,6 +116,15 @@ export function AgentProvider({
     [chat.resumeTool, chat.addToolOutput],
   );
 
+  const getRegisteredRenderers = useCallback(
+    () =>
+      Array.from(registryRef.current.entries()).map(([name, entry]) => ({
+        name,
+        render: entry.render,
+      })),
+    [],
+  );
+
   const registerFrontendTool = useCallback((tool: FrontendToolRegistration) => {
     frontendToolsRef.current.set(tool.name, tool);
     return () => {
@@ -133,6 +145,7 @@ export function AgentProvider({
       renderToolPart,
       registerToolRenderer,
       registerFrontendTool,
+      getRegisteredRenderers,
     }),
     [
       chat.messages,
@@ -146,6 +159,7 @@ export function AgentProvider({
       renderToolPart,
       registerToolRenderer,
       registerFrontendTool,
+      getRegisteredRenderers,
     ],
   );
 

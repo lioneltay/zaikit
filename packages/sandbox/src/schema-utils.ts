@@ -1,4 +1,44 @@
-type JsonSchema = Record<string, unknown>;
+export type JsonSchema = Record<string, unknown>;
+
+/**
+ * Build default form values from a JSON Schema.
+ *   boolean → false, string → "" (or first enum value), number → 0, object → recurse
+ */
+export function buildDefaultValues(schema: JsonSchema): unknown {
+  if (!schema || typeof schema !== "object") return undefined;
+
+  const enumValues = schema.enum as unknown[] | undefined;
+  if (Array.isArray(enumValues) && enumValues.length > 0) {
+    return enumValues[0];
+  }
+
+  const type = schema.type as string | undefined;
+
+  switch (type) {
+    case "boolean":
+      return false;
+    case "string":
+      return "";
+    case "number":
+    case "integer":
+      return 0;
+    case "array":
+      return [];
+    case "object": {
+      const properties = schema.properties as
+        | Record<string, JsonSchema>
+        | undefined;
+      if (!properties) return {};
+      const result: Record<string, unknown> = {};
+      for (const [key, prop] of Object.entries(properties)) {
+        result[key] = buildDefaultValues(prop);
+      }
+      return result;
+    }
+    default:
+      return undefined;
+  }
+}
 
 /**
  * Convert a JSON Schema to a multiline TypeScript-like type string with indentation.
@@ -64,45 +104,5 @@ export function jsonSchemaToTypeString(schema: JsonSchema, indent = 0): string {
     }
     default:
       return "unknown";
-  }
-}
-
-/**
- * Build default form values from a JSON Schema.
- *   boolean → false, string → "" (or first enum value), number → 0, object → recurse
- */
-export function buildDefaultValues(schema: JsonSchema): unknown {
-  if (!schema || typeof schema !== "object") return undefined;
-
-  const enumValues = schema.enum as unknown[] | undefined;
-  if (Array.isArray(enumValues) && enumValues.length > 0) {
-    return enumValues[0];
-  }
-
-  const type = schema.type as string | undefined;
-
-  switch (type) {
-    case "boolean":
-      return false;
-    case "string":
-      return "";
-    case "number":
-    case "integer":
-      return 0;
-    case "array":
-      return [];
-    case "object": {
-      const properties = schema.properties as
-        | Record<string, JsonSchema>
-        | undefined;
-      if (!properties) return {};
-      const result: Record<string, unknown> = {};
-      for (const [key, prop] of Object.entries(properties)) {
-        result[key] = buildDefaultValues(prop);
-      }
-      return result;
-    }
-    default:
-      return undefined;
   }
 }

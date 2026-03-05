@@ -1,6 +1,6 @@
 import { Box, Button, Typography } from "@mui/material";
 import { ResolvedBanner } from "../components/ResolvedBanner";
-import type { DeleteRecordsToolProps } from "./tools.generated";
+import type { DeleteRecordsToolProps } from "../generated/generated";
 
 export function ApprovalTool(props: DeleteRecordsToolProps) {
   const message = props.suspendPayload?.message ?? "Confirm?";
