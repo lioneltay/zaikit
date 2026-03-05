@@ -103,7 +103,7 @@ type CreateAgentOptions<
   ? { context?: never }
   : { context: z.ZodType<C> }) & {
   model: LanguageModel;
-  system?: string;
+  system?: string | ((context: C) => string | Promise<string>);
   tools?: T & ValidateMappedTools<T, C>;
   memory?: Memory;
   middleware?: Middleware[];
@@ -155,7 +155,7 @@ export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   tools: T;
   memory: Memory | undefined;
   model: LanguageModel;
-  system: string | undefined;
+  system: string | ((context: C) => string | Promise<string>) | undefined;
   contextSchema: Record<string, unknown> | undefined;
   chat(options: ChatOptions<C>): Promise<Response>;
 };
@@ -338,7 +338,7 @@ export function createAgent<
 
             const result = streamText({
               model: overrides.model ?? ctx.model,
-              system: overrides.system ?? system,
+              system: overrides.system ?? ctx.system,
               tools: wrapToolsWithHooks(stepTools, {
                 onBeforeToolCall,
                 onAfterToolCall,
@@ -458,9 +458,16 @@ export function createAgent<
     const stream = createUIMessageStream({
       originalMessages: messages,
       execute: async ({ writer }) => {
+        // Resolve system prompt once per request
+        const resolvedSystem =
+          typeof system === "function"
+            ? await system(options.context as C)
+            : system;
+
         const ctx: MiddlewareContext = {
           messages,
           model,
+          system: resolvedSystem,
           tools: mergedTools,
           threadId: options.threadId,
           abort: createAbort(),

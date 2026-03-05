@@ -36,7 +36,7 @@ const agent = createAgent({
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
 | `model` | `LanguageModel` | Yes | Any AI SDK compatible language model. |
-| `system` | `string` | No | System prompt sent with every request. |
+| `system` | `string \| ((context: C) => string \| Promise<string>)` | No | System prompt sent with every request. Can be a function that receives the agent's context and returns the prompt — resolved once per request before the agent loop runs. |
 | `tools` | `T` | No | Object mapping tool names to tool definitions. Values can be plain tools or `{ tool, mapContext }` entries when the agent has a context schema. |
 | `context` | `z.ZodType<C>` | No | Zod schema defining the request-scoped context shape. When set, `agent.chat()` requires a `context` field, and tools with a matching `context` schema receive it in their execute function. See [Context](/concepts/context). |
 | `memory` | `Memory` | No | A memory adapter for persisting threads and messages. Required if you call `agent.chat()`. |
@@ -55,7 +55,7 @@ type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   tools: T;
   memory: Memory | undefined;
   model: LanguageModel;
-  system: string | undefined;
+  system: string | ((context: C) => string | Promise<string>) | undefined;
   contextSchema: Record<string, unknown> | undefined;
   chat(options: ChatOptions<C>): Promise<Response>;
 };
@@ -66,7 +66,7 @@ type Agent<T extends ToolSet = ToolSet, C = undefined> = {
 | `tools` | `T` | The tools object passed to the agent. Useful for codegen to inspect tool types. |
 | `memory` | `Memory \| undefined` | The memory adapter, if one was provided. |
 | `model` | `LanguageModel` | The language model instance. |
-| `system` | `string \| undefined` | The system prompt, if one was provided. |
+| `system` | `string \| ((context: C) => string \| Promise<string>) \| undefined` | The system prompt or function, if one was provided. |
 | `contextSchema` | `Record<string, unknown> \| undefined` | JSON Schema representation of the context Zod type, if `context` was provided. Used by the sandbox UI to render context forms. |
 | `chat` | `(options: ChatOptions<C>) => Promise<Response>` | Stream a response. Accepts a message or a resume request. When the agent has a context schema, all variants require a `context` field. |
 

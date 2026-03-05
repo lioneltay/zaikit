@@ -5,6 +5,8 @@ export type MiddlewareContext = {
   messages: UIMessage[];
   /** Mutable: language model to use. */
   model: LanguageModel;
+  /** Mutable: system prompt. Resolved from the agent's `system` option before middleware runs. */
+  system: string | undefined;
   /** Mutable: tools available to the LLM. */
   tools: ToolSet;
   /** Read-only: thread identifier. */

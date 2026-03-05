@@ -1,4 +1,5 @@
 import { createInMemoryMemory } from "@zaikit/memory-inmemory";
+import type { MockLanguageModelV3 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import type {
@@ -1360,5 +1361,81 @@ describe("tool-call hooks", () => {
     expect(observed[0].toolName).toBe("weather");
     expect(observed[0].input).toEqual({ city: "Seattle" });
     expect(observed[0].output).toBe("Rainy in Seattle");
+  });
+});
+
+describe("dynamic system prompt", () => {
+  it("resolves a function system prompt using context", async () => {
+    const memory = createInMemoryMemory();
+    const model = mockModel([textResponse("Hi!")]);
+
+    const agent = createAgent({
+      model,
+      context: z.object({ language: z.string() }),
+      system: (ctx) => `Always respond in ${ctx.language}.`,
+      memory,
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hello"),
+      context: { language: "French" },
+    });
+
+    // Inspect the system prompt sent to the model
+    const mockLLM = model as MockLanguageModelV3;
+    const call = mockLLM.doStreamCalls[0];
+    const systemMessages = call.prompt.filter((m) => m.role === "system");
+    expect(systemMessages).toHaveLength(1);
+    expect(systemMessages[0].content).toBe("Always respond in French.");
+  });
+
+  it("resolves an async function system prompt", async () => {
+    const memory = createInMemoryMemory();
+    const model = mockModel([textResponse("Done.")]);
+
+    const agent = createAgent({
+      model,
+      context: z.object({ tenantId: z.string() }),
+      system: async (ctx) => {
+        // Simulate async lookup (e.g., fetching tenant-specific instructions)
+        return `You are an assistant for tenant ${ctx.tenantId}.`;
+      },
+      memory,
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hi"),
+      context: { tenantId: "acme" },
+    });
+
+    const mockLLM = model as MockLanguageModelV3;
+    const call = mockLLM.doStreamCalls[0];
+    const systemMessages = call.prompt.filter((m) => m.role === "system");
+    expect(systemMessages[0].content).toBe(
+      "You are an assistant for tenant acme.",
+    );
+  });
+
+  it("static string system prompt still works", async () => {
+    const memory = createInMemoryMemory();
+    const model = mockModel([textResponse("Hi!")]);
+
+    const agent = createAgent({
+      model,
+      system: "You are helpful.",
+      memory,
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hello"),
+    });
+
+    const mockLLM = model as MockLanguageModelV3;
+    const call = mockLLM.doStreamCalls[0];
+    const systemMessages = call.prompt.filter((m) => m.role === "system");
+    expect(systemMessages[0].content).toBe("You are helpful.");
   });
 });

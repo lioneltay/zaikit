@@ -105,6 +105,7 @@ The context object carries mutable fields that middleware can modify before call
 | --- | --- | --- | --- |
 | `messages` | `UIMessage[]` | Yes | Messages sent to the LLM. |
 | `model` | `LanguageModel` | Yes | Language model to use. |
+| `system` | `string \| undefined` | Yes | System prompt. Resolved from the agent's `system` option before middleware runs. |
 | `tools` | `ToolSet` | Yes | Tools available to the LLM. |
 | `threadId` | `string` | No | Thread identifier. |
 | `abort` | `(message: string) => never` | — | Abort the response with an error message. |

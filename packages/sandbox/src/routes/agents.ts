@@ -61,7 +61,7 @@ export function getAgentDetail(name: string, entry: NormalizedAgentEntry) {
   return {
     name,
     model: getModelId(agent.model),
-    system: agent.system,
+    system: typeof agent.system === "function" ? "(dynamic)" : agent.system,
     contextSchema: agent.contextSchema,
     context: entry.context,
     tools: Object.entries(agent.tools).map(([toolName, t]) =>

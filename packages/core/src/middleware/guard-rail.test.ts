@@ -18,6 +18,7 @@ function makeCtx(messages: UIMessage[]): MiddlewareContext {
   return {
     messages,
     model: {} as any,
+    system: undefined,
     tools: {},
     threadId: "t1",
     abort: createAbort(),
