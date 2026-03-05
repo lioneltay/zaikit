@@ -6,7 +6,8 @@ import {
   generateText,
   jsonSchema,
   type LanguageModel,
-  type PrepareStepFunction,
+  type ModelMessage,
+  type PrepareStepResult,
   type StepResult,
   streamText,
   type Tool,
@@ -82,6 +83,19 @@ type ValidateMappedTools<T, C> = {
     : T[K];
 };
 
+export type PrepareStep<
+  TOOLS extends ToolSet = ToolSet,
+  C = undefined,
+> = (options: {
+  steps: StepResult<ToolSet>[];
+  stepNumber: number;
+  model: LanguageModel;
+  messages: ModelMessage[];
+  context: C;
+}) =>
+  | PrepareStepResult<NoInfer<TOOLS>>
+  | PromiseLike<PrepareStepResult<NoInfer<TOOLS>>>;
+
 type CreateAgentOptions<
   T extends Record<string, ToolConfigValue<C>> = ToolSet,
   C = undefined,
@@ -93,7 +107,7 @@ type CreateAgentOptions<
   tools?: T & ValidateMappedTools<T, C>;
   memory?: Memory;
   middleware?: Middleware[];
-  prepareStep?: PrepareStepFunction<ResolveToolsConfig<T> & ToolSet>;
+  prepareStep?: PrepareStep<ResolveToolsConfig<T> & ToolSet, C>;
   onAfterStep?: (ctx: AfterStepContext) => Promise<void> | void;
   onBeforeToolCall?: (
     ctx: BeforeToolCallContext,
@@ -309,7 +323,8 @@ export function createAgent<
                 stepNumber,
                 model: ctx.model,
                 messages: currentModelMessages,
-              } as any)) ?? {};
+                context: getToolInjection().context as C,
+              })) ?? {};
 
             // Apply activeTools filter
             let stepTools = ctx.tools;

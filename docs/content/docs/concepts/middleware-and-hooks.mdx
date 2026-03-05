@@ -222,6 +222,7 @@ The function receives:
 | `stepNumber` | `number` | Current step (0-indexed). |
 | `model` | `LanguageModel` | The model being used. |
 | `messages` | `ModelMessage[]` | The messages about to be sent. |
+| `context` | `C` | The request-scoped context passed via `agent.chat({ context })`. Typed to the agent's context schema. `undefined` if the agent has no context. See [Context](/concepts/context). |
 
 It can return any of:
 
@@ -243,6 +244,29 @@ const agent = createAgent({
     // Remove the search tool after step 2 to force the LLM to stop searching
     if (stepNumber > 2) {
       return { activeTools: ["summarize"] };
+    }
+    return {};
+  },
+});
+```
+
+When the agent has a context schema, `prepareStep` receives the typed context — useful for filtering tools based on user permissions or application mode:
+
+```ts
+const agent = createAgent({
+  model,
+  context: z.object({
+    mode: z.enum(["copilot", "autonomous"]),
+    permissions: z.array(z.string()),
+  }),
+  tools: { search, update_summary, update_questions, delete_record },
+  memory,
+  prepareStep: ({ context }) => {
+    if (context.mode === "copilot") {
+      return { activeTools: ["update_summary", "update_questions"] };
+    }
+    if (!context.permissions.includes("delete")) {
+      return { activeTools: ["search", "update_summary", "update_questions"] };
     }
     return {};
   },

@@ -1,9 +1,5 @@
 export type { Memory, Thread } from "@zaikit/memory";
-export type {
-  PrepareStepFunction,
-  PrepareStepResult,
-  StepResult,
-} from "ai";
+export type { PrepareStepResult, StepResult } from "ai";
 export { convertToModelMessages, streamText } from "ai";
 export type {
   AfterStepContext,
@@ -12,6 +8,7 @@ export type {
   BeforeToolCallContext,
   ChatOptions,
   FrontendToolDef,
+  PrepareStep,
 } from "./agent";
 export { createAgent } from "./agent";
 export type { ToolMeta, ZaikitTool } from "./create-tool";

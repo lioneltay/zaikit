@@ -994,6 +994,98 @@ describe("step hooks", () => {
     // tool_b was filtered out via activeTools, so it should not have executed
     expect(toolBExecuted).toBe(false);
   });
+
+  it("prepareStep receives typed context from agent.chat()", async () => {
+    const memory = createInMemoryMemory();
+    const receivedContexts: { mode: string; permissions: string[] }[] = [];
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "noop", {}),
+        textResponse("Done."),
+      ]),
+      context: z.object({
+        mode: z.string(),
+        permissions: z.array(z.string()),
+      }),
+      tools: {
+        noop: createTool({
+          description: "No-op",
+          inputSchema: z.object({}),
+          execute: async () => "ok",
+        }),
+      },
+      memory,
+      prepareStep: ({ context }) => {
+        receivedContexts.push(context);
+        return {};
+      },
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hi"),
+      context: { mode: "copilot", permissions: ["read", "write"] },
+    });
+
+    // prepareStep fires for step 0 (tool call) and step 1 (text response)
+    expect(receivedContexts).toHaveLength(2);
+    expect(receivedContexts[0]).toEqual({
+      mode: "copilot",
+      permissions: ["read", "write"],
+    });
+    expect(receivedContexts[1]).toEqual({
+      mode: "copilot",
+      permissions: ["read", "write"],
+    });
+  });
+
+  it("prepareStep can use context to filter tools via activeTools", async () => {
+    const memory = createInMemoryMemory();
+    let toolBExecuted = false;
+
+    const toolA = createTool({
+      description: "Tool A",
+      inputSchema: z.object({}),
+      execute: async () => "a",
+    });
+
+    const toolB = createTool({
+      description: "Tool B",
+      inputSchema: z.object({}),
+      execute: async () => {
+        toolBExecuted = true;
+        return "b";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        multiToolCallResponse([
+          { toolCallId: "c1", toolName: "tool_a", args: {} },
+          { toolCallId: "c2", toolName: "tool_b", args: {} },
+        ]),
+        textResponse("Done."),
+      ]),
+      context: z.object({ mode: z.enum(["restricted", "full"]) }),
+      tools: { tool_a: toolA, tool_b: toolB },
+      memory,
+      prepareStep: ({ context }) => {
+        if (context.mode === "restricted") {
+          return { activeTools: ["tool_a"] };
+        }
+        return {};
+      },
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Hi"),
+      context: { mode: "restricted" },
+    });
+
+    expect(toolBExecuted).toBe(false);
+  });
 });
 
 describe("context injection", () => {

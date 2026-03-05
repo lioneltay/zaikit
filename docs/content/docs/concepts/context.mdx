@@ -12,10 +12,11 @@ Tools often need data that comes from the request (the authenticated user, their
 Context solves this by giving tools a typed second input channel:
 
 ```
-Server request → agent.chat({ context }) → tool.execute({ input, context })
+Server request → agent.chat({ context }) → prepareStep({ context, ... })
+                                          → tool.execute({ input, context })
 ```
 
-The LLM provides `input`. Your server provides `context`.
+The LLM provides `input`. Your server provides `context`. Both `prepareStep` and tool execute functions receive it.
 
 ## Defining Context on a Tool
 
@@ -82,6 +83,7 @@ Context uses `AsyncLocalStorage` under the hood. When you call `agent.chat({ con
 ```
 agent.chat({ context: { userId: "u1", orgId: "o1" } })
   └── AsyncLocalStorage.run({ context: { userId: "u1", orgId: "o1" } })
+        ├── prepareStep({ context, stepNumber, ... })      ← reads context
         ├── get_user_settings.execute({ input, context })  ← reads context
         └── get_user_activity.execute({ input, context })  ← reads context
 ```
@@ -135,6 +137,30 @@ const agent = createAgent({
 ```
 
 The `mapContext` function is type-checked: it must accept the agent's context type and return the tool's declared context type.
+
+## Context in prepareStep
+
+Context is also available in `prepareStep`, the hook that fires before each LLM call. This lets you filter tools or swap models based on request-scoped data like user permissions:
+
+```ts
+const agent = createAgent({
+  model,
+  context: z.object({
+    mode: z.enum(["copilot", "autonomous"]),
+  }),
+  tools: { search, update_summary, delete_record },
+  memory,
+  prepareStep: ({ context, stepNumber }) => {
+    // In copilot mode, only allow read-safe tools
+    if (context.mode === "copilot") {
+      return { activeTools: ["search", "update_summary"] };
+    }
+    return {};
+  },
+});
+```
+
+See [Middleware & Hooks](/concepts/middleware-and-hooks#preparestep-per-step-overrides) for the full `prepareStep` API.
 
 ## Context with Suspendable Tools
 
@@ -193,5 +219,6 @@ The sandbox UI reads the agent's `contextSchema` and renders an editable form, l
 | `createTool({ context })` | Zod schema that types the context parameter in execute |
 | `createAgent({ context })` | Zod schema for the agent-level context shape |
 | `agent.chat({ context })` | Pass request-scoped values when calling the agent |
+| `prepareStep({ context })` | Access typed context in the per-step hook to filter tools, swap models, etc. |
 | `mapContext` | Transform agent context to a tool's expected shape |
 | AsyncLocalStorage | Internal mechanism -- context is request-scoped and invisible to the LLM |
