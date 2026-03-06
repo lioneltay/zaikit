@@ -406,7 +406,8 @@ export function createAgent<
   }
 
   function mergeTools(frontendTools?: FrontendToolDef[]): ToolSet {
-    return { ...resolvedTools, ...buildDynamicTools(frontendTools ?? []) };
+    if (!frontendTools?.length) return resolvedTools;
+    return { ...resolvedTools, ...buildDynamicTools(frontendTools) };
   }
 
   /**
@@ -664,11 +665,8 @@ export function createAgent<
     const uiStream = createUIMessageStream({
       originalMessages: messages,
       execute: async ({ writer }) => {
-        const reader = agentStreamResult.stream.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          writer.write(value as any);
+        for await (const chunk of agentStreamResult.stream as any) {
+          writer.write(chunk as any);
         }
       },
       onFinish: async ({ responseMessage }) => {
@@ -1026,11 +1024,8 @@ export function createAgent<
       } as StreamOptions<C>);
 
       // Consume the stream — detect suspension (not supported in generate)
-      const reader = stream.getReader();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if ((value as any)?.type === "data-tool-suspend") {
+      for await (const chunk of stream as any) {
+        if (chunk?.type === "data-tool-suspend") {
           throw new Error(
             "Tool suspension is not supported in generate(). " +
               "Use chat() for tools that call suspend().",

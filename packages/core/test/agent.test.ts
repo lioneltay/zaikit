@@ -1714,3 +1714,218 @@ describe("generate() with output", () => {
     expect(result.output).toEqual({ name: "Override" });
   });
 });
+
+describe("stream() with output", () => {
+  it("returns parsed structured output via stream result", async () => {
+    const agent = createAgent({
+      model: mockModel([textResponse('{"city":"NYC","temp":72}')]),
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Weather?")],
+      output: z.object({ city: z.string(), temp: z.number() }),
+    });
+
+    // Consume the stream
+    for await (const _ of stream as any) {
+      // drain
+    }
+
+    const agentResult = await result;
+    expect(agentResult.output).toEqual({ city: "NYC", temp: 72 });
+  });
+});
+
+describe("maxSteps enforcement", () => {
+  it("stops the loop when maxSteps is reached via stream()", async () => {
+    const noopTool = createTool({
+      description: "No-op",
+      inputSchema: z.object({}),
+      execute: async () => "ok",
+    });
+
+    // Model calls the tool every time (never stops on its own)
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "noop", {}),
+        toolCallResponse("c2", "noop", {}),
+        toolCallResponse("c3", "noop", {}),
+        toolCallResponse("c4", "noop", {}),
+        toolCallResponse("c5", "noop", {}),
+      ]),
+      tools: { noop: noopTool },
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Go")],
+      maxSteps: 3,
+    });
+
+    for await (const _ of stream as any) {
+      // drain
+    }
+
+    const agentResult = await result;
+    // Should only have 3 steps despite 5 responses available
+    expect(agentResult.steps).toHaveLength(3);
+  });
+
+  it("stops the loop when maxSteps is reached via generate()", async () => {
+    const noopTool = createTool({
+      description: "No-op",
+      inputSchema: z.object({}),
+      execute: async () => "ok",
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "noop", {}),
+        toolCallResponse("c2", "noop", {}),
+        toolCallResponse("c3", "noop", {}),
+        toolCallResponse("c4", "noop", {}),
+      ]),
+      tools: { noop: noopTool },
+    });
+
+    const result = await agent.generate({ prompt: "Go", maxSteps: 2 });
+    expect(result.steps).toHaveLength(2);
+  });
+});
+
+describe("context validation", () => {
+  it("throws on invalid context", async () => {
+    const agent = createAgent({
+      model: mockModel([textResponse("ok")]),
+      context: z.object({ userId: z.string() }),
+    });
+
+    await expect(
+      agent.generate({
+        prompt: "Hi",
+        context: { userId: 123 } as any,
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("error propagation", () => {
+  it("rejects the result promise when coreAgentStream throws", async () => {
+    const agent = createAgent({
+      model: mockModel([textResponse("ok")]),
+      prepareStep: () => {
+        throw new Error("prepareStep exploded");
+      },
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Hi")],
+    });
+
+    // Consume the stream to trigger the error
+    const chunks: unknown[] = [];
+    try {
+      for await (const chunk of stream as any) {
+        chunks.push(chunk);
+      }
+    } catch {
+      // stream will error
+    }
+
+    await expect(result).rejects.toThrow("prepareStep exploded");
+  });
+});
+
+describe("handleToolOutputs 204 path", () => {
+  it("returns 204 when backend suspensions remain after frontend tool output", async () => {
+    const memory = createInMemoryMemory();
+
+    const backendSuspendTool = createTool({
+      description: "Backend suspend",
+      inputSchema: z.object({}),
+      suspendSchema: z.object({ msg: z.string() }),
+      resumeSchema: z.object({ ok: z.boolean() }),
+      execute: async ({ suspend, resumeData }) => {
+        if (!resumeData) return suspend({ msg: "Confirm?" });
+        return "done";
+      },
+    });
+
+    // Step 1: model calls both tools — backend suspends, frontend stays at input-available
+    const agent = createAgent({
+      model: mockModel([
+        multiToolCallResponse([
+          { toolCallId: "c1", toolName: "backend_suspend", args: {} },
+          { toolCallId: "c2", toolName: "chart", args: { data: [1, 2, 3] } },
+        ]),
+        textResponse("All done."),
+      ]),
+      tools: { backend_suspend: backendSuspendTool },
+      memory,
+    });
+
+    const frontendTools = [
+      {
+        name: "chart",
+        description: "Render a chart",
+        parameters: { type: "object", properties: { data: { type: "array" } } },
+      },
+    ];
+
+    // Initial chat — backend tool suspends
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Do both"),
+      frontendTools,
+    });
+
+    // Submit frontend tool output while backend suspension remains
+    const response = await agent.chat({
+      threadId: "t1",
+      toolOutputs: [{ toolCallId: "c2", output: "chart rendered" }],
+      frontendTools,
+    });
+
+    expect(response.status).toBe(204);
+  });
+});
+
+describe("generateThreadTitle", () => {
+  it("generates a title for new threads", async () => {
+    const memory = createInMemoryMemory();
+    const agent = createAgent({
+      model: mockModel([textResponse("Hello!")]),
+      memory,
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Tell me about TypeScript"),
+    });
+
+    // Title generation is fire-and-forget — wait for it to complete
+    await new Promise((r) => setTimeout(r, 100));
+
+    const thread = await memory.getThread("t1");
+    expect(thread?.title).toBe("Generated Title");
+  });
+
+  it("does not overwrite an existing title", async () => {
+    const memory = createInMemoryMemory();
+    await memory.createThread("t1", "My Custom Title");
+
+    const agent = createAgent({
+      model: mockModel([textResponse("Hello!")]),
+      memory,
+    });
+
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Tell me about TypeScript"),
+    });
+
+    await new Promise((r) => setTimeout(r, 100));
+
+    const thread = await memory.getThread("t1");
+    expect(thread?.title).toBe("My Custom Title");
+  });
+});
