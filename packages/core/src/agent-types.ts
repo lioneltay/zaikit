@@ -11,6 +11,7 @@ import type {
 } from "ai";
 import type { z } from "zod";
 import type { Middleware } from "./middleware/core";
+import type { WriteDataPart } from "./write-data";
 
 // --- Hook context types ---
 
@@ -162,6 +163,7 @@ export type StreamOptions<C = undefined> = ([C] extends [undefined]
   maxSteps?: number;
   output?: z.ZodType;
   frontendTools?: FrontendToolDef[];
+  onData?: (part: WriteDataPart) => void;
 };
 
 export type StreamResult = {
@@ -175,6 +177,7 @@ export type BaseGenerateOptions<C = undefined> = ([C] extends [undefined]
   model?: LanguageModel;
   maxSteps?: number;
   frontendTools?: FrontendToolDef[];
+  onData?: (part: WriteDataPart) => void;
 } & ({ prompt: string } | { messages: UIMessage[] });
 
 export type GenerateOptions<C = undefined> = BaseGenerateOptions<C> & {

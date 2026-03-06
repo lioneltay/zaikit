@@ -178,9 +178,7 @@ describe("useAgentChat", () => {
 
   describe("resumeTool", () => {
     it("includes body fields in the fetch request", async () => {
-      vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response("", { status: 204 }),
-      );
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(""));
 
       const { result } = renderHook(() =>
         useAgentChat({
@@ -203,9 +201,7 @@ describe("useAgentChat", () => {
     });
 
     it("works without body prop", async () => {
-      vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response("", { status: 204 }),
-      );
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(""));
 
       const { result } = renderHook(() => useAgentChat(defaultHookOpts));
 
@@ -219,9 +215,7 @@ describe("useAgentChat", () => {
     });
 
     it("core fields are not overridden by body prop", async () => {
-      vi.spyOn(globalThis, "fetch").mockResolvedValue(
-        new Response("", { status: 204 }),
-      );
+      vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(""));
 
       const { result } = renderHook(() =>
         useAgentChat({

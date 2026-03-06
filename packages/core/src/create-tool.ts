@@ -6,6 +6,7 @@ import {
   suspend as suspendFn,
 } from "./suspend";
 import { getToolInjection } from "./tool-injection";
+import type { InternalWriteDataFn, WriteDataFn } from "./write-data";
 
 export type ToolMeta = {
   suspendSchema?: Record<string, unknown>;
@@ -40,6 +41,12 @@ type BaseToolOptions<INPUT> = {
   inputSchema: z.ZodType<INPUT>;
 };
 
+// Base execute context shared by all tool variants
+type BaseExecuteContext<INPUT> = {
+  input: INPUT;
+  writeData: WriteDataFn;
+};
+
 // Regular tool options (no suspend/resume)
 
 type RegularToolOptions<
@@ -53,14 +60,16 @@ type RegularToolOptions<
         outputSchema?: z.ZodType<OUTPUT>;
         suspendSchema?: never;
         resumeSchema?: never;
-        execute: (ctx: { input: INPUT }) => Promise<OUTPUT>;
+        execute: (ctx: BaseExecuteContext<INPUT>) => Promise<OUTPUT>;
       }
     : {
         context: z.ZodType<CONTEXT>;
         outputSchema?: z.ZodType<OUTPUT>;
         suspendSchema?: never;
         resumeSchema?: never;
-        execute: (ctx: { input: INPUT; context: CONTEXT }) => Promise<OUTPUT>;
+        execute: (
+          ctx: BaseExecuteContext<INPUT> & { context: CONTEXT },
+        ) => Promise<OUTPUT>;
       });
 
 // Suspendable tool options (with suspend/resume schemas)
@@ -77,23 +86,25 @@ type SuspendableToolOptions<
         outputSchema?: z.ZodType<OUTPUT>;
         suspendSchema: z.ZodType<SUSPEND>;
         resumeSchema: z.ZodType<RESUME>;
-        execute: (ctx: {
-          input: INPUT;
-          suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
-          resumeData: RESUME | undefined;
-        }) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
+        execute: (
+          ctx: BaseExecuteContext<INPUT> & {
+            suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
+            resumeData: RESUME | undefined;
+          },
+        ) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
       }
     : {
         context: z.ZodType<CONTEXT>;
         outputSchema?: z.ZodType<OUTPUT>;
         suspendSchema: z.ZodType<SUSPEND>;
         resumeSchema: z.ZodType<RESUME>;
-        execute: (ctx: {
-          input: INPUT;
-          context: CONTEXT;
-          suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
-          resumeData: RESUME | undefined;
-        }) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
+        execute: (
+          ctx: BaseExecuteContext<INPUT> & {
+            context: CONTEXT;
+            suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
+            resumeData: RESUME | undefined;
+          },
+        ) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
       });
 
 // Overload: regular tool without context
@@ -136,9 +147,23 @@ export function createTool(options: any): ZaikitTool<any, any> {
   const t = tool({
     description,
     inputSchema,
-    execute: async (input) => {
+    execute: async (input, { toolCallId }) => {
       const injection = getToolInjection();
-      const ctx: Record<string, unknown> = { input };
+      const rawWriteData: InternalWriteDataFn =
+        injection.writeData ?? (() => {});
+      const writeData: WriteDataFn = (part) => {
+        const scope = part.scope ?? "tool";
+        if (scope === "tool") {
+          rawWriteData({ ...part, toolCallId });
+        } else if (scope === "message") {
+          rawWriteData(part);
+        } else {
+          throw new Error(
+            `Invalid writeData scope: "${scope}". Must be "tool" or "message".`,
+          );
+        }
+      };
+      const ctx: Record<string, unknown> = { input, writeData };
 
       if (hasContext) {
         ctx.context = injection.context;

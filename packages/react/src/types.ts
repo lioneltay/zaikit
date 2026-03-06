@@ -1,3 +1,4 @@
+import type { ToolDataPart } from "@zaikit/utils";
 import type { UIMessage } from "ai";
 import type React from "react";
 
@@ -16,6 +17,7 @@ export type ToolRenderProps<
   result: unknown;
   error: string | undefined;
   resume: (data: TResume) => void;
+  data: ToolDataPart[];
 };
 
 export type ToolRenderFn = (props: ToolRenderProps) => React.ReactNode;

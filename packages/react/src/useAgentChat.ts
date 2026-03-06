@@ -2,17 +2,18 @@ import { useChat } from "@ai-sdk/react";
 import {
   hasPendingFrontendTools as _hasPendingFrontendTools,
   hasSuspendedTools as _hasSuspendedTools,
-  enrichToolPartsWithSuspendData,
   getToolName,
-  mergeConsecutiveAssistantMessages,
+  processMessages,
 } from "@zaikit/utils";
 import type { UIMessage } from "ai";
-import {
-  DefaultChatTransport,
-  lastAssistantMessageIsCompleteWithToolCalls,
-} from "ai";
-import { useCallback, useMemo, useState } from "react";
+import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
+import { useCallback, useMemo } from "react";
+import { AgentChatTransport } from "./agent-chat-transport";
 import type { FrontendToolRegistration } from "./types";
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export type UseAgentChatOptions = {
   api: string;
@@ -84,7 +85,7 @@ export function useAgentChat({
 }: UseAgentChatOptions) {
   const transport = useMemo(
     () =>
-      new DefaultChatTransport({
+      new AgentChatTransport({
         api,
         prepareSendMessagesRequest: ({ messages }) =>
           buildSendBody(messages, {
@@ -104,13 +105,10 @@ export function useAgentChat({
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });
 
-  const [isResuming, setIsResuming] = useState(false);
-
-  const messages = useMemo(() => {
-    return enrichToolPartsWithSuspendData(
-      mergeConsecutiveAssistantMessages(chat.messages),
-    );
-  }, [chat.messages]);
+  const messages = useMemo(
+    () => processMessages(chat.messages),
+    [chat.messages],
+  );
 
   const hasSuspendedTools = useMemo(
     () => _hasSuspendedTools(messages),
@@ -124,44 +122,21 @@ export function useAgentChat({
 
   const resumeTool = useCallback(
     async (toolCallId: string, data: unknown) => {
-      setIsResuming(true);
-
-      try {
-        const frontendTools = getFrontendTools();
-        const response = await fetch(api, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...extraBody,
-            threadId,
-            resume: { toolCallId, data },
-            frontendTools,
-          }),
-        });
-
-        if (response.status === 204) {
-          // More suspensions remain — re-fetch messages from server
-          if (fetchMessages) {
-            const msgs = await fetchMessages(threadId);
-            chat.setMessages(msgs);
-          }
-          return;
-        }
-
-        // All suspensions resolved — LLM follow-up was streamed back.
-        // Consume the stream body so the server's onFinish fires and persists the message.
-        await response.text();
-
-        // Re-fetch messages from server to get the final state
-        if (fetchMessages) {
-          const msgs = await fetchMessages(threadId);
-          chat.setMessages(msgs);
-        }
-      } finally {
-        setIsResuming(false);
+      const frontendTools = getFrontendTools();
+      await chat.resumeStream({
+        body: {
+          ...extraBody,
+          threadId,
+          resume: { toolCallId, data },
+          frontendTools,
+        },
+      });
+      if (fetchMessages) {
+        const msgs = await fetchMessages(threadId);
+        chat.setMessages(msgs);
       }
     },
-    [chat, api, threadId, extraBody, fetchMessages, getFrontendTools],
+    [chat, threadId, extraBody, fetchMessages, getFrontendTools],
   );
 
   return {
@@ -171,7 +146,7 @@ export function useAgentChat({
       hasSuspendedTools || hasPendingFrontendTools
         ? undefined
         : chat.sendMessage,
-    status: isResuming ? ("streaming" as const) : chat.status,
+    status: chat.status,
     resumeTool,
     addToolOutput: chat.addToolOutput,
     hasSuspendedTools,

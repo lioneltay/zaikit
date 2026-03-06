@@ -95,6 +95,35 @@ export type SendEmailResume = {
   body?: string | undefined;
 };
 
+export type DeployServiceInput = {
+  service: string;
+  environment: "staging" | "production";
+};
+export type DeployServiceOutput =
+  | {
+      deployed: boolean;
+      reason: string;
+      service?: undefined;
+      environment?: undefined;
+      version?: undefined;
+      url?: undefined;
+    }
+  | {
+      deployed: boolean;
+      service: string;
+      environment: "staging" | "production";
+      version: string;
+      url: string;
+      reason?: undefined;
+    };
+export type DeployServiceSuspend = {
+  service: string;
+  environment: string;
+  version: string;
+  checksCompleted: number;
+};
+export type DeployServiceResume = { approved: boolean };
+
 export type GetMyProfileInput = Record<string, never>;
 export type GetMyProfileOutput =
   | {
@@ -147,6 +176,12 @@ export type SendEmailToolProps = ToolRenderProps<
   SendEmailResume
 >;
 
+export type DeployServiceToolProps = ToolRenderProps<
+  DeployServiceInput,
+  DeployServiceSuspend,
+  DeployServiceResume
+>;
+
 export type GetMyProfileToolProps = ToolRenderProps<GetMyProfileInput>;
 
 export type GetRecentActivityToolProps =
@@ -159,6 +194,7 @@ type ToolPropsMap = {
   submit_expense: SubmitExpenseToolProps;
   book_flight: BookFlightToolProps;
   send_email: SendEmailToolProps;
+  deploy_service: DeployServiceToolProps;
   get_my_profile: GetMyProfileToolProps;
   get_recent_activity: GetRecentActivityToolProps;
 };
@@ -179,5 +215,6 @@ export type ToolName =
   | "submit_expense"
   | "book_flight"
   | "send_email"
+  | "deploy_service"
   | "get_my_profile"
   | "get_recent_activity";

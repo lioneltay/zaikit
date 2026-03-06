@@ -35,6 +35,7 @@
   },
   "dependencies": {
     "@zaikit/memory": "workspace:*",
+    "@zaikit/utils": "workspace:*",
     "ai": "^6",
     "@ai-sdk/google-vertex": "^4",
     "@ai-sdk/provider": "^3",

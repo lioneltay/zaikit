@@ -4,6 +4,7 @@ import { useTool } from "@zaikit/react";
 import { z } from "zod";
 import { useToolRenderer } from "../generated/generated";
 import { BookFlightTool } from "./BookFlightTool";
+import { DeployServiceTool } from "./deploy-service/DeployServiceTool";
 import { ProfileTool } from "./ProfileTool";
 import { RecentActivityTool } from "./RecentActivityTool";
 import { SendEmailTool } from "./SendEmailTool";
@@ -77,6 +78,9 @@ export function ToolRenderers() {
   ));
   useToolRenderer("book_flight", (props) => <BookFlightTool {...props} />);
   useToolRenderer("send_email", (props) => <SendEmailTool {...props} />);
+  useToolRenderer("deploy_service", (props) => (
+    <DeployServiceTool {...props} />
+  ));
   useToolRenderer("get_my_profile", (props) => <ProfileTool {...props} />);
   useToolRenderer("get_recent_activity", (props) => (
     <RecentActivityTool {...props} />

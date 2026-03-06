@@ -182,6 +182,7 @@ export function ToolStory({ name, render, schema }: ToolStoryProps) {
       suspendPayload: state === "suspended" ? suspendPayload : undefined,
       result: state === "result" ? result : undefined,
       error: state === "error" ? errorText : undefined,
+      data: [],
       resume: (data: unknown) => {
         setCapturedResume(data);
       },

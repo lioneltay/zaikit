@@ -1,5 +1,13 @@
 import type { Memory } from "@zaikit/memory";
 import {
+  DATA_TOOL_SUSPEND,
+  getToolName,
+  hasToolCallId,
+  isCustomDataPart,
+  isSuspendPart,
+  isToolPart,
+} from "@zaikit/utils";
+import {
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
@@ -38,6 +46,7 @@ import {
 } from "./middleware/core";
 import { isSuspendResult } from "./suspend";
 import { getToolInjection, runWithToolInjection } from "./tool-injection";
+import { createWriteData, type WriteDataPart } from "./write-data";
 
 /** Extract context from options — needed because conditional context types prevent direct access */
 function optContext(opts: object): unknown {
@@ -45,33 +54,9 @@ function optContext(opts: object): unknown {
 }
 
 // --- Message part type helpers ---
-// UIMessage parts include our custom "data-tool-suspend" type which the AI SDK
-// doesn't know about. These helpers provide safe access without scattering casts.
-
-type SuspendPartData = {
-  toolCallId: string;
-  toolName: string;
-  payload: unknown;
-  resolved?: boolean;
-};
-
-function isSuspendPart(
-  p: object,
-): p is { type: "data-tool-suspend"; data: SuspendPartData } {
-  return (p as { type: string }).type === "data-tool-suspend";
-}
-
-function hasToolCallId(p: object): p is {
-  toolCallId: string;
-  type: string;
-  input: unknown;
-  toolName?: string;
-} {
-  return "toolCallId" in p;
-}
 
 function hasUnresolvedSuspensions(parts: readonly object[]): boolean {
-  return parts.some((p) => isSuspendPart(p) && !p.data?.resolved);
+  return parts.some((p) => isSuspendPart(p) && !p.data.resolved);
 }
 
 // --- createAgent ---
@@ -136,6 +121,7 @@ export function createAgent<
       output?: Output.Output;
       onResult?: (result: AgentResult) => void;
       onError?: (err: unknown) => void;
+      onData?: (part: WriteDataPart) => void;
     },
   ): ReadableStream<unknown> {
     // toolName isn't available on tool-output-available chunks, so we track
@@ -145,140 +131,153 @@ export function createAgent<
     return new ReadableStream({
       async start(controller) {
         try {
-          let currentModelMessages = await convertToModelMessages(ctx.messages);
-          let isFirstStep = true;
-          let stepNumber = 0;
-          const allSteps: StepResult<ToolSet>[] = [];
+          // Create writeData that enqueues data parts on this stream's controller
+          const writeDataImpl = createWriteData(
+            (chunk) => controller.enqueue(chunk),
+            callbacks?.onData,
+          );
 
-          while (true) {
-            // Per-step overrides via prepareStep (ephemeral — starts from base each time)
-            const overrides =
-              (await prepareStep?.({
-                steps: allSteps,
-                stepNumber,
-                model: ctx.model,
-                messages: currentModelMessages,
-                context: getToolInjection().context as C,
-              })) ?? {};
+          // Wrap loop in ALS so tools can access writeData (merges with outer context scope)
+          await runWithToolInjection({ writeData: writeDataImpl }, async () => {
+            let currentModelMessages = await convertToModelMessages(
+              ctx.messages,
+            );
+            let isFirstStep = true;
+            let stepNumber = 0;
+            const allSteps: StepResult<ToolSet>[] = [];
 
-            // Apply activeTools filter
-            let stepTools = ctx.tools;
-            if (overrides.activeTools) {
-              stepTools = Object.fromEntries(
-                Object.entries(ctx.tools).filter(([name]) =>
-                  (overrides.activeTools as string[]).includes(name),
-                ),
+            while (true) {
+              // Per-step overrides via prepareStep (ephemeral — starts from base each time)
+              const overrides =
+                (await prepareStep?.({
+                  steps: allSteps,
+                  stepNumber,
+                  model: ctx.model,
+                  messages: currentModelMessages,
+                  context: getToolInjection().context as C,
+                })) ?? {};
+
+              // Apply activeTools filter
+              let stepTools = ctx.tools;
+              if (overrides.activeTools) {
+                stepTools = Object.fromEntries(
+                  Object.entries(ctx.tools).filter(([name]) =>
+                    (overrides.activeTools as string[]).includes(name),
+                  ),
+                );
+              }
+
+              const result = streamText({
+                model: overrides.model ?? ctx.model,
+                system: overrides.system ?? ctx.system,
+                tools: stepTools,
+                messages: overrides.messages ?? currentModelMessages,
+                toolChoice: overrides.toolChoice,
+                providerOptions: overrides.providerOptions,
+                output: callbacks?.output,
+              });
+
+              const uiStream = result.toUIMessageStream({
+                sendStart: isFirstStep,
+                sendFinish: false,
+              });
+              isFirstStep = false;
+
+              let hasSuspension = false;
+
+              // Consume the stream chunk-by-chunk. This replaces SuspendResult
+              // tool outputs with data-tool-suspend parts and detects suspension.
+              for await (const chunk of uiStream) {
+                if (
+                  (chunk.type === "tool-input-start" ||
+                    chunk.type === "tool-input-available") &&
+                  "toolName" in chunk
+                ) {
+                  toolNameMap.set(chunk.toolCallId, chunk.toolName as string);
+                }
+
+                if (
+                  chunk.type === "tool-output-available" &&
+                  isSuspendResult(chunk.output)
+                ) {
+                  hasSuspension = true;
+                  controller.enqueue({
+                    type: DATA_TOOL_SUSPEND,
+                    id: chunk.toolCallId,
+                    data: {
+                      toolCallId: chunk.toolCallId,
+                      toolName: toolNameMap.get(chunk.toolCallId) ?? "unknown",
+                      payload: chunk.output.payload,
+                    },
+                  });
+                  continue;
+                }
+
+                controller.enqueue(chunk);
+              }
+
+              // Stream consumed — check stop conditions
+              if (hasSuspension) break;
+
+              // Accumulate step results
+              const resultSteps = await result.steps;
+              allSteps.push(
+                ...(resultSteps as unknown as StepResult<ToolSet>[]),
+              );
+
+              const finishReason = await result.finishReason;
+
+              // Step-level after hook — receives current step and all steps
+              if (onAfterStep) {
+                const currentStep = allSteps[allSteps.length - 1];
+                await onAfterStep({
+                  step: currentStep,
+                  steps: [...allSteps],
+                });
+              }
+
+              if (finishReason === "stop") break;
+
+              // Check maxSteps before continuing to next step
+              if (
+                callbacks?.maxSteps !== undefined &&
+                stepNumber + 1 >= callbacks.maxSteps
+              ) {
+                break;
+              }
+
+              // Chain: append response messages for the next step
+              const response = await result.response;
+              currentModelMessages = [
+                ...currentModelMessages,
+                ...response.messages,
+              ];
+              stepNumber++;
+            }
+
+            // Emit structured result before closing the stream
+            const lastStep = allSteps[allSteps.length - 1];
+
+            // Parse structured output from the last step's text
+            let parsedOutput: unknown;
+            if (callbacks?.output && lastStep?.finishReason === "stop") {
+              parsedOutput = await callbacks.output.parseCompleteOutput(
+                { text: lastStep.text },
+                {
+                  response: lastStep.response,
+                  usage: lastStep.usage,
+                  finishReason: lastStep.finishReason,
+                },
               );
             }
 
-            const result = streamText({
-              model: overrides.model ?? ctx.model,
-              system: overrides.system ?? ctx.system,
-              tools: stepTools,
-              messages: overrides.messages ?? currentModelMessages,
-              toolChoice: overrides.toolChoice,
-              providerOptions: overrides.providerOptions,
-              output: callbacks?.output,
+            callbacks?.onResult?.({
+              text: lastStep?.text ?? "",
+              output: parsedOutput,
+              steps: allSteps,
+              finishReason: lastStep?.finishReason ?? "stop",
+              usage: sumUsage(allSteps),
             });
-
-            const uiStream = result.toUIMessageStream({
-              sendStart: isFirstStep,
-              sendFinish: false,
-            });
-            isFirstStep = false;
-
-            let hasSuspension = false;
-
-            // Consume the stream chunk-by-chunk. This replaces SuspendResult
-            // tool outputs with data-tool-suspend parts and detects suspension.
-            for await (const chunk of uiStream) {
-              if (
-                (chunk.type === "tool-input-start" ||
-                  chunk.type === "tool-input-available") &&
-                "toolName" in chunk
-              ) {
-                toolNameMap.set(chunk.toolCallId, chunk.toolName as string);
-              }
-
-              if (
-                chunk.type === "tool-output-available" &&
-                isSuspendResult(chunk.output)
-              ) {
-                hasSuspension = true;
-                controller.enqueue({
-                  type: "data-tool-suspend",
-                  id: chunk.toolCallId,
-                  data: {
-                    toolCallId: chunk.toolCallId,
-                    toolName: toolNameMap.get(chunk.toolCallId) ?? "unknown",
-                    payload: chunk.output.payload,
-                  },
-                });
-                continue;
-              }
-
-              controller.enqueue(chunk);
-            }
-
-            // Stream consumed — check stop conditions
-            if (hasSuspension) break;
-
-            // Accumulate step results
-            const resultSteps = await result.steps;
-            allSteps.push(...(resultSteps as unknown as StepResult<ToolSet>[]));
-
-            const finishReason = await result.finishReason;
-
-            // Step-level after hook — receives current step and all steps
-            if (onAfterStep) {
-              const currentStep = allSteps[allSteps.length - 1];
-              await onAfterStep({
-                step: currentStep,
-                steps: [...allSteps],
-              });
-            }
-
-            if (finishReason === "stop") break;
-
-            // Check maxSteps before continuing to next step
-            if (
-              callbacks?.maxSteps !== undefined &&
-              stepNumber + 1 >= callbacks.maxSteps
-            ) {
-              break;
-            }
-
-            // Chain: append response messages for the next step
-            const response = await result.response;
-            currentModelMessages = [
-              ...currentModelMessages,
-              ...response.messages,
-            ];
-            stepNumber++;
-          }
-
-          // Emit structured result before closing the stream
-          const lastStep = allSteps[allSteps.length - 1];
-
-          // Parse structured output from the last step's text
-          let parsedOutput: unknown;
-          if (callbacks?.output && lastStep?.finishReason === "stop") {
-            parsedOutput = await callbacks.output.parseCompleteOutput(
-              { text: lastStep.text },
-              {
-                response: lastStep.response,
-                usage: lastStep.usage,
-                finishReason: lastStep.finishReason,
-              },
-            );
-          }
-
-          callbacks?.onResult?.({
-            text: lastStep?.text ?? "",
-            output: parsedOutput,
-            steps: allSteps,
-            finishReason: lastStep?.finishReason ?? "stop",
-            usage: sumUsage(allSteps),
           });
 
           controller.enqueue({ type: "finish" });
@@ -333,6 +332,7 @@ export function createAgent<
         output: outputSpec,
         onResult: resolveResult,
         onError: rejectResult,
+        onData: opts.onData,
       }),
     );
 
@@ -480,12 +480,8 @@ export function createAgent<
       );
     }
 
-    const toolName =
-      toolPart.toolName ??
-      (toolPart.type.startsWith("tool-")
-        ? toolPart.type.slice("tool-".length)
-        : undefined);
-    const toolInput = toolPart.input;
+    const toolName = getToolName(toolPart);
+    const toolInput = (toolPart as any).input;
 
     if (!toolName) {
       throw new Error(
@@ -499,63 +495,130 @@ export function createAgent<
       throw new Error(`Tool not found or has no execute: ${toolName}`);
     }
 
-    // 3. Re-execute the tool with resumeData and agent context via AsyncLocalStorage
+    // 3. Build a single streaming response that:
+    //    a) Re-executes the tool (writeData streams live via ALS)
+    //    b) Updates memory with the result
+    //    c) If all suspensions resolved, continues the LLM
     const modelMessages = await convertToModelMessages(messages);
-    const output = await runWithToolInjection(
-      { context, resumeData: resume.data },
-      () =>
-        execute(toolInput, {
-          toolCallId: resume.toolCallId,
-          messages: modelMessages,
-        }),
-    );
+    const originalPartCount = suspendedMsg.parts.length;
 
-    // 4. Update the message — fill in the tool output for the resolved tool
-    //    and mark the corresponding data-tool-suspend part as resolved.
-    const updatedParts = suspendedMsg.parts
-      .map((p) => {
-        // Mark the matching suspend part as resolved
-        if (isSuspendPart(p) && p.data.toolCallId === resume.toolCallId) {
-          return { ...p, data: { ...p.data, resolved: true } };
-        }
-        return p;
-      })
-      .map((p): UIMessage["parts"][number] => {
-        // Fill in the tool output for the matching tool part
-        const part = p as { toolCallId?: string; type: string };
-        if (
-          part.toolCallId === resume.toolCallId &&
-          (part.type === "dynamic-tool" || part.type.startsWith("tool-"))
-        ) {
-          return { ...(p as any), state: "output-available", output };
-        }
-        return p;
-      });
+    const uiStream = createUIMessageStream({
+      originalMessages: messages,
+      execute: async ({ writer }) => {
+        // Immediately mark the suspend as resolved in the stream so the
+        // client hides the confirmation UI before the tool re-executes.
+        // The suspend is resolved the moment the user provides resumeData.
+        writer.write({
+          type: DATA_TOOL_SUSPEND,
+          id: resume.toolCallId,
+          data: {
+            toolCallId: resume.toolCallId,
+            toolName,
+            resolved: true,
+          },
+        } as any);
 
-    await memory.updateMessage(threadId, suspendedMsg.id, {
-      parts: updatedParts,
+        // Create writeData that writes directly to this stream's writer
+        const writeDataImpl = createWriteData((chunk) =>
+          writer.write(chunk as any),
+        );
+
+        // Re-execute tool with writeData available
+        const output = await runWithToolInjection(
+          { context, resumeData: resume.data, writeData: writeDataImpl },
+          () =>
+            execute(toolInput, {
+              toolCallId: resume.toolCallId,
+              messages: modelMessages,
+            }),
+        );
+
+        if (isSuspendResult(output)) {
+          throw new Error(
+            `Tool "${toolName}" re-suspended during resume. Re-suspension is not supported.`,
+          );
+        }
+
+        // Update the message — fill in tool output, mark suspend as resolved
+        const updatedParts = suspendedMsg.parts.map(
+          (p): UIMessage["parts"][number] => {
+            if (isSuspendPart(p) && p.data.toolCallId === resume.toolCallId) {
+              return { ...p, data: { ...p.data, resolved: true } };
+            }
+            if (isToolPart(p) && p.toolCallId === resume.toolCallId) {
+              return { ...(p as any), state: "output-available", output };
+            }
+            return p;
+          },
+        );
+
+        await memory.updateMessage(threadId, suspendedMsg.id, {
+          parts: updatedParts,
+        });
+
+        // If other tools are still suspended, stop here — the client
+        // will re-fetch messages and show remaining suspend UIs.
+        if (hasUnresolvedSuspensions(updatedParts)) {
+          return;
+        }
+
+        // All suspensions resolved — continue the LLM
+        const allMessages = await memory.getMessages(threadId);
+        const sr = await agentStream({
+          messages: allMessages,
+          threadId,
+          frontendTools,
+          context,
+        } as StreamOptions<C>);
+
+        // Pipe the continuation stream through the same writer
+        writer.merge(sr.stream as any);
+      },
+      onFinish: async ({ responseMessage }) => {
+        // responseMessage.parts is built from the ORIGINAL message (cloned at
+        // stream creation) plus any new stream chunks. Our tool output updates
+        // were written directly to memory, not as stream chunks, so they're NOT
+        // in responseMessage.parts.
+        //
+        // Strategy: re-read the message from memory (which has our tool output
+        // updates), apply data part updates from the stream (same-id dedup
+        // updates existing parts in place), and append new parts.
+        const currentMessages = await memory.getMessages(threadId);
+        const currentMsg = currentMessages.find(
+          (m) => m.id === suspendedMsg.id,
+        );
+        if (!currentMsg) return;
+
+        // Data parts in responseMessage reflect stream dedup updates (same
+        // type+id = updated in place). Index them so we can apply updates.
+        // Exclude data-tool-suspend — those are managed by direct memory writes
+        // above and the responseMessage has stale (unresolved) versions.
+        const streamDataParts = new Map<string, UIMessage["parts"][number]>();
+        for (const p of responseMessage.parts) {
+          if (isCustomDataPart(p)) {
+            streamDataParts.set(`${p.type}:${p.id}`, p);
+          }
+        }
+
+        // currentMsg has tool output updates; replace any custom data parts
+        // that the stream updated via dedup.
+        const parts = currentMsg.parts.map((p) => {
+          if (isCustomDataPart(p)) {
+            const key = `${p.type}:${p.id}`;
+            return streamDataParts.get(key) ?? p;
+          }
+          return p;
+        });
+
+        // Append truly new parts from the stream (beyond original count)
+        const newStreamParts = responseMessage.parts.slice(originalPartCount);
+        parts.push(...newStreamParts);
+
+        await memory.updateMessage(threadId, suspendedMsg.id, { parts });
+      },
     });
 
-    // 5. Check for remaining unresolved suspensions (supports multiple
-    //    suspendable tools called in a single LLM step)
-    if (hasUnresolvedSuspensions(updatedParts)) {
-      // Client should re-fetch messages and show remaining suspend prompts
-      return new Response(null, { status: 204 });
-    }
-
-    // 6. All suspensions resolved — continue the LLM
-    const allMessages = await memory.getMessages(threadId);
-    const sr = await agentStream({
-      messages: allMessages,
-      threadId,
-      frontendTools,
-      context,
-    } as StreamOptions<C>);
-    return streamToResponse(sr, allMessages, {
-      memory,
-      threadId,
-      messageId: suspendedMsg.id,
-    });
+    return createUIMessageStreamResponse({ stream: uiStream });
   }
 
   /**
@@ -710,6 +773,7 @@ export function createAgent<
         output: opts.output,
         frontendTools: opts.frontendTools,
         context: optContext(opts),
+        onData: opts.onData,
       } as StreamOptions<C>);
 
       // Consume the stream — detect suspension (not supported in generate)

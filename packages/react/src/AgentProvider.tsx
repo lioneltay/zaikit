@@ -1,3 +1,4 @@
+import { getToolName } from "@zaikit/utils";
 import type { UIMessage } from "ai";
 import type React from "react";
 import { createContext, useCallback, useMemo, useRef, useState } from "react";
@@ -65,16 +66,7 @@ export function AgentProvider({
       const p = part as Record<string, unknown>;
       const toolCallId = (p.toolCallId as string) ?? "";
 
-      // toolName can live at p.toolName, inside p.suspend.toolName,
-      // or encoded in the part type as "tool-<name>"
-      const toolName =
-        (p.toolName as string) ??
-        ((p.suspend as Record<string, unknown> | undefined)
-          ?.toolName as string) ??
-        ((p.type as string)?.startsWith("tool-")
-          ? (p.type as string).slice(5)
-          : "") ??
-        "";
+      const toolName = getToolName(p) ?? "";
 
       const entry =
         registryRef.current.get(toolName) ?? registryRef.current.get("*");
@@ -109,6 +101,7 @@ export function AgentProvider({
           state === "error"
             ? ((p.errorText as string) ?? "Unknown error")
             : undefined,
+        data: (p.data as ToolRenderProps["data"]) ?? [],
         resume: (data: unknown) => {
           if (frontendToolsRef.current.has(toolName)) {
             chat.addToolOutput({ tool: toolName, toolCallId, output: data });

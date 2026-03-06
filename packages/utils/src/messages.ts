@@ -1,4 +1,10 @@
 import type { UIMessage } from "ai";
+import {
+  hasToolCallId,
+  isCustomDataPart,
+  isSuspendPart,
+  isToolDataEnvelope,
+} from "./parts";
 
 /** Extract tool name from a UIMessage part (handles both toolName prop and type prefix). */
 export function getToolName(p: unknown): string | undefined {
@@ -38,32 +44,81 @@ export function enrichToolPartsWithSuspendData(
   return messages.map((m) => {
     const suspendMap = new Map<string, unknown>();
     for (const p of m.parts) {
-      if (p.type === "data-tool-suspend" && !(p as any).data?.resolved) {
-        const data = (p as any).data;
-        suspendMap.set(data.toolCallId, data);
+      if (isSuspendPart(p) && !p.data.resolved) {
+        suspendMap.set(p.data.toolCallId, p.data);
       }
     }
     if (suspendMap.size === 0) {
       // Still strip resolved data-tool-suspend parts
-      const hasDataToolSuspend = m.parts.some(
-        (p) => p.type === "data-tool-suspend",
-      );
-      if (!hasDataToolSuspend) return m;
+      const hasSuspendParts = m.parts.some((p) => isSuspendPart(p));
+      if (!hasSuspendParts) return m;
       return {
         ...m,
-        parts: m.parts.filter((p) => p.type !== "data-tool-suspend"),
+        parts: m.parts.filter((p) => !isSuspendPart(p)),
       };
     }
 
     const parts = m.parts
-      .filter((p) => p.type !== "data-tool-suspend")
+      .filter((p) => !isSuspendPart(p))
       .map((p) => {
-        if ("toolCallId" in p) {
-          const suspendData = suspendMap.get(
-            (p as { toolCallId: string }).toolCallId,
-          );
+        if (hasToolCallId(p)) {
+          const suspendData = suspendMap.get(p.toolCallId);
           if (suspendData) {
             return { ...p, suspend: suspendData };
+          }
+        }
+        return p;
+      });
+
+    return { ...m, parts };
+  });
+}
+
+export type ToolDataPart = {
+  type: string;
+  id: string;
+  data: unknown;
+};
+
+/**
+ * Collect tool-scoped data parts (those with `data.toolCallId`) and attach
+ * them to their corresponding tool part as `data`. Strip the collected
+ * data parts from the message parts array. `toolCallId` is removed from each
+ * data part's data before attaching.
+ */
+export function enrichToolPartsWithDataParts(
+  messages: UIMessage[],
+): UIMessage[] {
+  return messages.map((m) => {
+    // Build a map: toolCallId → array of data parts
+    const dataMap = new Map<string, ToolDataPart[]>();
+    for (const p of m.parts) {
+      if (isCustomDataPart(p) && isToolDataEnvelope(p.data)) {
+        const { toolCallId, payload } = p.data;
+        const list = dataMap.get(toolCallId) ?? [];
+        list.push({
+          type: p.type.slice(5), // strip "data-" prefix
+          id: p.id,
+          data: payload,
+        });
+        dataMap.set(toolCallId, list);
+      }
+    }
+    if (dataMap.size === 0) return m;
+
+    const toolCallIds = new Set(dataMap.keys());
+    const parts = m.parts
+      .filter((p) => {
+        if (!isCustomDataPart(p)) return true;
+        return (
+          !isToolDataEnvelope(p.data) || !toolCallIds.has(p.data.toolCallId)
+        );
+      })
+      .map((p) => {
+        if (hasToolCallId(p)) {
+          const data = dataMap.get(p.toolCallId);
+          if (data) {
+            return { ...p, data };
           }
         }
         return p;
@@ -100,9 +155,10 @@ export function hasPendingFrontendTools(
  * Apply all message transforms in sequence:
  * 1. Merge consecutive assistant messages
  * 2. Enrich tool parts with suspend data and strip data-tool-suspend parts
+ * 3. Collect tool-scoped data parts onto their tool parts
  */
 export function processMessages(messages: UIMessage[]): UIMessage[] {
-  return enrichToolPartsWithSuspendData(
-    mergeConsecutiveAssistantMessages(messages),
+  return enrichToolPartsWithDataParts(
+    enrichToolPartsWithSuspendData(mergeConsecutiveAssistantMessages(messages)),
   );
 }

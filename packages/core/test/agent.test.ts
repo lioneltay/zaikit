@@ -410,7 +410,7 @@ describe("agent integration tests", () => {
     expect(thread?.ownerId).toBe("user-42");
   });
 
-  it("returns 204 when resuming one of multiple suspended tools", async () => {
+  it("resumes one of multiple suspended tools without continuing LLM", async () => {
     const memory = createInMemoryMemory();
 
     const confirmTool = createTool({
@@ -465,12 +465,12 @@ describe("agent integration tests", () => {
     );
     expect(suspendParts).toHaveLength(2);
 
-    // Resume first tool → should return 204 (remaining suspension)
+    // Resume first tool → still has remaining suspensions, returns stream
     const firstResume = await agent.chat({
       threadId: "t1",
       resume: { toolCallId: "c1", data: { ok: true } },
     });
-    expect(firstResume.status).toBe(204);
+    await firstResume.text();
 
     // Resume second tool → all resolved, LLM continues
     const secondResume = await agent.chat({
@@ -533,12 +533,12 @@ describe("agent integration tests", () => {
       message: userMessage("Deploy and approve budget"),
     });
 
-    // Resume only the first tool
+    // Resume only the first tool — returns stream (remaining suspensions)
     const firstResume = await agent.chat({
       threadId: "t1",
       resume: { toolCallId: "c1", data: { ok: true } },
     });
-    expect(firstResume.status).toBe(204);
+    await firstResume.text();
 
     // Check memory state between resumes
     const midMessages = await memory.getMessages("t1");
@@ -1886,6 +1886,460 @@ describe("handleToolOutputs 204 path", () => {
     });
 
     expect(response.status).toBe(204);
+  });
+});
+
+describe("writeData", () => {
+  it("tool writeData emits data chunks in stream()", async () => {
+    const progressTool = createTool({
+      description: "Do work with progress",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "progress", data: { step: 1, total: 2 } });
+        writeData({ type: "progress", data: { step: 2, total: 2 } });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "work", {}),
+        textResponse("Work complete."),
+      ]),
+      tools: { work: progressTool },
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Do work")],
+    });
+
+    const chunks: any[] = [];
+    for await (const chunk of stream as any) {
+      chunks.push(chunk);
+    }
+
+    const dataChunks = chunks.filter((c) => c.type === "data-progress");
+    expect(dataChunks).toHaveLength(2);
+    // Wire data uses { toolCallId, payload } envelope for tool-part association
+    expect(dataChunks[0].data).toEqual({
+      toolCallId: "c1",
+      payload: { step: 1, total: 2 },
+    });
+    expect(dataChunks[1].data).toEqual({
+      toolCallId: "c1",
+      payload: { step: 2, total: 2 },
+    });
+
+    const agentResult = await result;
+    expect(agentResult.text).toBe("Work complete.");
+  });
+
+  it("writeData auto-generates id when not provided", async () => {
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "status", data: "ok" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+    });
+
+    const { stream } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+
+    const chunks: any[] = [];
+    for await (const chunk of stream as any) {
+      chunks.push(chunk);
+    }
+
+    const dataChunk = chunks.find((c) => c.type === "data-status");
+    expect(dataChunk).toBeDefined();
+    expect(dataChunk.id).toBeDefined();
+    expect(typeof dataChunk.id).toBe("string");
+  });
+
+  it("writeData preserves user-provided id", async () => {
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "status", data: "ok", id: "my-id" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+    });
+
+    const { stream } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+
+    const chunks: any[] = [];
+    for await (const chunk of stream as any) {
+      chunks.push(chunk);
+    }
+
+    const dataChunk = chunks.find((c) => c.type === "data-status");
+    expect(dataChunk).toBeDefined();
+    expect(dataChunk.id).toBe("my-id");
+  });
+
+  it("writeData with transient flag passes through", async () => {
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({
+          type: "progress",
+          data: { pct: 50 },
+          transient: true,
+        });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+    });
+
+    const { stream } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+
+    const chunks: any[] = [];
+    for await (const chunk of stream as any) {
+      chunks.push(chunk);
+    }
+
+    const dataChunk = chunks.find((c) => c.type === "data-progress");
+    expect(dataChunk).toBeDefined();
+    expect(dataChunk.transient).toBe(true);
+  });
+
+  it("onData callback fires on stream()", async () => {
+    const receivedParts: any[] = [];
+
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "status", data: "working" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Go")],
+      onData: (part) => receivedParts.push(part),
+    });
+
+    for await (const _ of stream as any) {
+      // drain
+    }
+    await result;
+
+    expect(receivedParts).toHaveLength(1);
+    expect(receivedParts[0].type).toBe("status");
+    expect(receivedParts[0].data).toBe("working");
+  });
+
+  it("onData callback fires on generate()", async () => {
+    const receivedParts: any[] = [];
+
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "artifact", data: { content: "hello" } });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+    });
+
+    await agent.generate({
+      prompt: "Go",
+      onData: (part) => receivedParts.push(part),
+    });
+
+    expect(receivedParts).toHaveLength(1);
+    expect(receivedParts[0].type).toBe("artifact");
+    expect(receivedParts[0].data).toEqual({ content: "hello" });
+  });
+
+  it("writeData no-ops gracefully outside agent context", async () => {
+    const tool = createTool({
+      description: "Standalone tool",
+      inputSchema: z.object({ x: z.number() }),
+      execute: async ({ input, writeData }) => {
+        // Should not throw even without agent context
+        writeData({ type: "test", data: "hello" });
+        return input.x * 2;
+      },
+    });
+
+    // Direct execution via AI SDK tool.execute (no agent wrapping)
+    const result = await tool.execute?.({ x: 5 }, {
+      toolCallId: "direct",
+      messages: [],
+    } as any);
+    expect(result).toBe(10);
+  });
+
+  it("auto-prefixes data- on the wire", async () => {
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "custom-type", data: "value" });
+        // Already prefixed — should not double-prefix
+        writeData({ type: "data-already-prefixed", data: "value2" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+    });
+
+    const { stream } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+
+    const chunks: any[] = [];
+    for await (const chunk of stream as any) {
+      chunks.push(chunk);
+    }
+
+    const dataChunks = chunks.filter(
+      (c) => typeof c.type === "string" && c.type.startsWith("data-"),
+    );
+    const types = dataChunks.map((c) => c.type);
+    expect(types).toContain("data-custom-type");
+    expect(types).toContain("data-already-prefixed");
+    // Should NOT have data-data-already-prefixed
+    expect(types).not.toContain("data-data-already-prefixed");
+  });
+
+  it("writeData works during resume", async () => {
+    const memory = createInMemoryMemory();
+
+    const confirmTool = createTool({
+      description: "Confirm with progress",
+      inputSchema: z.object({ action: z.string() }),
+      suspendSchema: z.object({ prompt: z.string() }),
+      resumeSchema: z.object({ confirmed: z.boolean() }),
+      execute: async ({ input, suspend, resumeData, writeData }) => {
+        if (!resumeData) {
+          return suspend({ prompt: `Confirm: ${input.action}?` });
+        }
+        writeData({ type: "progress", data: { status: "processing" } });
+        return resumeData.confirmed ? "Confirmed" : "Cancelled";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("call-1", "confirm", { action: "deploy" }),
+        textResponse("Done."),
+      ]),
+      tools: { confirm: confirmTool },
+      memory,
+    });
+
+    // First chat: tool suspends
+    await (
+      await agent.chat({
+        threadId: "t1",
+        message: userMessage("Deploy"),
+      })
+    ).text();
+
+    // Resume — writeData should not crash and data part should be persisted
+    const resumeResponse = await agent.chat({
+      threadId: "t1",
+      resume: { toolCallId: "call-1", data: { confirmed: true } },
+    });
+    await resumeResponse.text();
+
+    const messages = await memory.getMessages("t1");
+    const assistantParts = messages[1].parts;
+
+    // The data part from writeData during resume should be persisted
+    // Wire data uses { toolCallId, payload } envelope
+    const dataPart = assistantParts.find((p) => p.type === "data-progress");
+    expect(dataPart).toBeDefined();
+    expect((dataPart as any).data).toEqual({
+      toolCallId: "call-1",
+      payload: { status: "processing" },
+    });
+  });
+
+  it("writeData with scope 'message' produces no toolCallId envelope", async () => {
+    const tool = createTool({
+      description: "Emit message-scoped data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({
+          type: "notification",
+          data: { msg: "hello" },
+          scope: "message",
+        });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "notify", {}),
+        textResponse("Done."),
+      ]),
+      tools: { notify: tool },
+    });
+
+    const { stream } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+
+    const chunks: any[] = [];
+    for await (const chunk of stream as any) {
+      chunks.push(chunk);
+    }
+
+    const dataChunk = chunks.find((c) => c.type === "data-notification");
+    expect(dataChunk).toBeDefined();
+    // Message-scoped: data should be the raw payload, no { toolCallId, payload } envelope
+    expect(dataChunk.data).toEqual({ msg: "hello" });
+    expect(dataChunk.data.toolCallId).toBeUndefined();
+  });
+
+  it("invalid writeData scope throws", async () => {
+    const tool = createTool({
+      description: "Bad scope",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "test", data: "x", scope: "invalid" as any });
+        return "done";
+      },
+    });
+
+    // Test at the tool level — the throw happens synchronously in writeData
+    await expect(
+      tool.execute?.({}, { toolCallId: "tc-1", messages: [] } as any),
+    ).rejects.toThrow("Invalid writeData scope");
+  });
+
+  it("resume stream sends resolved data-tool-suspend before tool re-execution", async () => {
+    const memory = createInMemoryMemory();
+
+    const slowTool = createTool({
+      description: "Slow tool with suspend",
+      inputSchema: z.object({}),
+      suspendSchema: z.object({ prompt: z.string() }),
+      resumeSchema: z.object({ ok: z.boolean() }),
+      execute: async ({ suspend, resumeData, writeData }) => {
+        if (!resumeData) {
+          return suspend({ prompt: "Continue?" });
+        }
+        // Emit data after resume — the resolved suspend should come BEFORE this
+        writeData({ type: "progress", data: "working" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("tc-1", "slow", {}),
+        textResponse("Done."),
+      ]),
+      tools: { slow: slowTool },
+      memory,
+    });
+
+    // First chat: tool suspends
+    await (
+      await agent.chat({
+        threadId: "t1",
+        message: userMessage("Go"),
+      })
+    ).text();
+
+    // Resume and collect raw stream chunks
+    const resumeResponse = await agent.chat({
+      threadId: "t1",
+      resume: { toolCallId: "tc-1", data: { ok: true } },
+    });
+
+    const chunks: any[] = [];
+    const reader = resumeResponse.body?.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      // Parse SSE events
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            chunks.push(JSON.parse(line.slice(6)));
+          } catch {
+            // skip non-JSON lines
+          }
+        }
+      }
+    }
+
+    // Find the resolved suspend and the first data-progress chunk
+    const suspendIdx = chunks.findIndex(
+      (c) => c.type === "data-tool-suspend" && c.data?.resolved === true,
+    );
+    const progressIdx = chunks.findIndex((c) => c.type === "data-progress");
+
+    expect(suspendIdx).toBeGreaterThanOrEqual(0);
+    // The resolved suspend should come before the progress data from tool re-execution
+    if (progressIdx >= 0) {
+      expect(suspendIdx).toBeLessThan(progressIdx);
+    }
   });
 });
 

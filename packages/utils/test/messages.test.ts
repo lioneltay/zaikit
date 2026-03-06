@@ -1,6 +1,7 @@
 import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
+  enrichToolPartsWithDataParts,
   enrichToolPartsWithSuspendData,
   getToolName,
   hasPendingFrontendTools,
@@ -202,6 +203,127 @@ describe("hasPendingFrontendTools", () => {
 
   it("returns false for empty array", () => {
     expect(hasPendingFrontendTools([], isFrontendTool)).toBe(false);
+  });
+});
+
+describe("enrichToolPartsWithDataParts", () => {
+  it("collects data parts with toolCallId onto the matching tool part", () => {
+    const messages: UIMessage[] = [
+      msg("assistant", [
+        {
+          type: "tool-deploy",
+          toolCallId: "tc-1",
+          state: "output-available",
+          output: "done",
+        } as any,
+        {
+          type: "data-progress",
+          id: "d1",
+          data: {
+            toolCallId: "tc-1",
+            payload: { step: "lint", status: "done" },
+          },
+        } as any,
+        {
+          type: "data-progress",
+          id: "d2",
+          data: {
+            toolCallId: "tc-1",
+            payload: { step: "build", status: "done" },
+          },
+        } as any,
+      ]),
+    ];
+
+    const result = enrichToolPartsWithDataParts(messages);
+    // Data parts should be stripped from message parts
+    expect(
+      result[0].parts.filter((p) => p.type === "data-progress"),
+    ).toHaveLength(0);
+    // Tool part should have dataParts
+    const toolPart = result[0].parts.find(
+      (p) => (p as any).toolCallId === "tc-1",
+    ) as any;
+    expect(toolPart.data).toHaveLength(2);
+    expect(toolPart.data[0]).toEqual({
+      type: "progress",
+      id: "d1",
+      data: { step: "lint", status: "done" },
+    });
+    expect(toolPart.data[1]).toEqual({
+      type: "progress",
+      id: "d2",
+      data: { step: "build", status: "done" },
+    });
+  });
+
+  it("unwraps payload for non-object data", () => {
+    const messages: UIMessage[] = [
+      msg("assistant", [
+        {
+          type: "tool-emit",
+          toolCallId: "tc-1",
+          state: "output-available",
+          output: "done",
+        } as any,
+        {
+          type: "data-status",
+          id: "d1",
+          data: { toolCallId: "tc-1", payload: "working" },
+        } as any,
+      ]),
+    ];
+
+    const result = enrichToolPartsWithDataParts(messages);
+    const toolPart = result[0].parts.find(
+      (p) => (p as any).toolCallId === "tc-1",
+    ) as any;
+    expect(toolPart.data).toHaveLength(1);
+    expect(toolPart.data[0].data).toBe("working");
+  });
+
+  it("leaves message-level data parts (no toolCallId) untouched", () => {
+    const messages: UIMessage[] = [
+      msg("assistant", [
+        { type: "text", text: "hello" },
+        {
+          type: "data-notification",
+          id: "n1",
+          data: { message: "heads up" },
+        } as any,
+      ]),
+    ];
+
+    const result = enrichToolPartsWithDataParts(messages);
+    // No toolCallId in data, so the data part stays
+    expect(
+      result[0].parts.find((p) => p.type === "data-notification"),
+    ).toBeDefined();
+  });
+
+  it("does not touch data-tool-suspend parts", () => {
+    const messages: UIMessage[] = [
+      msg("assistant", [
+        {
+          type: "data-tool-suspend",
+          id: "s1",
+          data: { toolCallId: "tc-1", payload: {} },
+        } as any,
+      ]),
+    ];
+
+    const result = enrichToolPartsWithDataParts(messages);
+    expect(
+      result[0].parts.find((p) => p.type === "data-tool-suspend"),
+    ).toBeDefined();
+  });
+
+  it("returns message unchanged when no tool-scoped data parts exist", () => {
+    const original: UIMessage[] = [
+      msg("assistant", [{ type: "text", text: "hello" }]),
+    ];
+    const result = enrichToolPartsWithDataParts(original);
+    expect(result[0]).toBe(original[0]); // same reference
   });
 });
 

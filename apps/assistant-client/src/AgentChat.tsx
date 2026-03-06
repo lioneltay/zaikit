@@ -107,8 +107,8 @@ const samplePrompts = [
     text: "Show me my profile information",
   },
   {
-    label: "Recent activity",
-    text: "What have I been working on recently?",
+    label: "Deploy a service",
+    text: "Deploy auth-service to production",
   },
 ];
 

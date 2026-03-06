@@ -10,12 +10,15 @@
  * This is an internal implementation detail — not exported from the package.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
+import type { InternalWriteDataFn } from "./write-data";
 
 type ToolInjection = {
   /** Request-scoped context provided via agent.chat({ context }) */
   context?: unknown;
   /** Resume data provided when resuming a suspended tool */
   resumeData?: unknown;
+  /** Callback to emit custom data parts to the stream */
+  writeData?: InternalWriteDataFn;
 };
 
 const store = new AsyncLocalStorage<ToolInjection>();

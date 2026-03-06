@@ -219,6 +219,9 @@ importers:
       '@zaikit/memory':
         specifier: workspace:*
         version: link:../memory
+      '@zaikit/utils':
+        specifier: workspace:*
+        version: link:../utils
       ai:
         specifier: ^6
         version: 6.0.103(zod@4.3.6)

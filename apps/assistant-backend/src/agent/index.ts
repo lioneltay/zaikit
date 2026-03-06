@@ -238,6 +238,95 @@ const send_email = createTool({
   },
 });
 
+// -- Deploy tool (writeData + suspend/resume demo) --
+
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function runStepsWithProgress(
+  items: { name: string; detail: string }[],
+  writeData: (part: { type: string; id: string; data: unknown }) => void,
+  id: string,
+) {
+  const steps: { step: string; detail: string; status: string }[] = [];
+  const emit = () =>
+    writeData({ type: "deploy-progress", id, data: [...steps] });
+
+  for (const item of items) {
+    steps.push({ step: item.name, detail: item.detail, status: "running" });
+    emit();
+    await delay(800 + Math.random() * 400);
+    steps[steps.length - 1].status = "done";
+    emit();
+  }
+}
+
+const deploy_service = createTool({
+  description:
+    "Deploy a service to a target environment. Runs pre-deploy checks, asks for confirmation, then deploys.",
+  inputSchema: z.object({
+    service: z.string().describe("Service name, e.g. 'auth-service'"),
+    environment: z
+      .enum(["staging", "production"])
+      .describe("Target environment"),
+  }),
+  suspendSchema: z.object({
+    service: z.string(),
+    environment: z.string(),
+    version: z.string(),
+    checksCompleted: z.number(),
+  }),
+  resumeSchema: z.object({
+    approved: z.boolean(),
+  }),
+  execute: async ({ input, writeData, suspend, resumeData }) => {
+    const version = `v${Math.floor(Math.random() * 5) + 1}.${Math.floor(Math.random() * 20)}.${Math.floor(Math.random() * 10)}`;
+
+    if (!resumeData) {
+      await runStepsWithProgress(
+        [
+          { name: "Linting", detail: "eslint + prettier" },
+          { name: "Unit tests", detail: "247 tests" },
+          { name: "Build", detail: `${input.service}:${version}` },
+        ],
+        writeData,
+        "pre-deploy",
+      );
+
+      return suspend({
+        service: input.service,
+        environment: input.environment,
+        version,
+        checksCompleted: 3,
+      });
+    }
+
+    if (!resumeData.approved) {
+      return { deployed: false, reason: "User cancelled" };
+    }
+
+    await runStepsWithProgress(
+      [
+        {
+          name: "Pushing image",
+          detail: `registry.acme.io/${input.service}:${version}`,
+        },
+        { name: "Rolling out pods", detail: `${input.environment} cluster` },
+        { name: "Health check", detail: "GET /healthz" },
+      ],
+      writeData,
+      "deploy",
+    );
+
+    return {
+      deployed: true,
+      service: input.service,
+      environment: input.environment,
+      version,
+      url: `https://${input.service}.${input.environment}.acme.io`,
+    };
+  },
+});
+
 // -- Context-aware tools --
 
 const get_my_profile = createTool({
@@ -311,6 +400,7 @@ Available tools:
 - book_flight: Search and book flights. Shows available options for the user to pick from.
 - submit_expense: Submit an expense claim. Shows a summary for user confirmation before submitting.
 - send_email: Draft and send emails. Shows a preview the user can edit before sending.
+- deploy_service: Deploy a service to staging or production. Runs checks, asks for confirmation, then deploys.
 - get_my_profile: Look up the current user's profile (name, department, role).
 - get_recent_activity: Show the user's recent activity log.
 
@@ -320,6 +410,7 @@ Be concise and helpful. For actions that have consequences (booking, sending, su
     submit_expense,
     book_flight,
     send_email,
+    deploy_service,
     get_my_profile,
     get_recent_activity: {
       tool: get_recent_activity,
