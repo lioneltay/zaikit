@@ -1,6 +1,12 @@
 import BugReportIcon from "@mui/icons-material/BugReport";
 import SendIcon from "@mui/icons-material/Send";
-import { Box, IconButton, TextField, Typography } from "@mui/material";
+import {
+  Box,
+  ButtonBase,
+  IconButton,
+  TextField,
+  Typography,
+} from "@mui/material";
 import { useAgent } from "@zaikit/react";
 import { Fragment, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -79,6 +85,33 @@ const thinkingDots = {
   "& span:nth-of-type(3)": { animationDelay: "0.4s" },
 } as const;
 
+const samplePrompts = [
+  {
+    label: "Book a flight",
+    text: "Find me flights to Tokyo on March 20th",
+  },
+  {
+    label: "Submit an expense",
+    text: "Submit a $42.50 expense for a team lunch",
+  },
+  {
+    label: "Check the weather",
+    text: "What's the weather like in Sydney?",
+  },
+  {
+    label: "Send an email",
+    text: "Draft an email to manager@acmecorp.com about the Q1 sprint review",
+  },
+  {
+    label: "View my profile",
+    text: "Show me my profile information",
+  },
+  {
+    label: "Recent activity",
+    text: "What have I been working on recently?",
+  },
+];
+
 export function AgentChat({
   showDebug,
   onToggleDebug,
@@ -130,8 +163,73 @@ export function AgentChat({
               display: "flex",
               flexDirection: "column",
               gap: 3,
+              flex: messages.length === 0 ? 1 : undefined,
             }}
           >
+            {messages.length === 0 && !isLoading && (
+              <Box
+                sx={{
+                  flex: 1,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 3,
+                  py: 4,
+                }}
+              >
+                <Typography variant="h5" fontWeight={600} color="text.primary">
+                  Acme Corp Assistant
+                </Typography>
+                <Typography color="text.secondary" sx={{ mb: 1 }}>
+                  How can I help you today?
+                </Typography>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+                    gridAutoRows: "1fr",
+                    gap: 1.5,
+                    width: "100%",
+                    maxWidth: 600,
+                  }}
+                >
+                  {samplePrompts.map((prompt) => (
+                    <ButtonBase
+                      key={prompt.label}
+                      onClick={() => {
+                        sendMessage?.({ text: prompt.text });
+                      }}
+                      sx={{
+                        p: 2,
+                        borderRadius: "12px",
+                        border: "1px solid",
+                        borderColor: "divider",
+                        textAlign: "left",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "flex-start",
+                        justifyContent: "flex-start",
+                        gap: 0.25,
+                        overflow: "hidden",
+                        transition: "all 0.15s",
+                        "&:hover": {
+                          borderColor: "primary.main",
+                          bgcolor: "action.hover",
+                        },
+                      }}
+                    >
+                      <Typography variant="body2" fontWeight={600}>
+                        {prompt.label}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {prompt.text}
+                      </Typography>
+                    </ButtonBase>
+                  ))}
+                </Box>
+              </Box>
+            )}
             {messages.map((message) => {
               const isUser = message.role === "user";
               return (

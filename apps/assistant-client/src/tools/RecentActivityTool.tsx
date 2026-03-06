@@ -1,14 +1,16 @@
 import { Box, Typography } from "@mui/material";
-import type { GetUserActivityToolProps } from "../generated/generated";
+import type { GetRecentActivityToolProps } from "../generated/generated";
 
 const ACTION_COLORS: Record<string, string> = {
-  viewed: "#1976D2",
-  edited: "#ED6C02",
-  created: "#2E7D32",
-  deleted: "#D32F2F",
+  commented: "#1976D2",
+  merged: "#2E7D32",
+  created: "#ED6C02",
+  reviewed: "#9C27B0",
+  deployed: "#00897B",
+  edited: "#F57C00",
 };
 
-export function UserActivityTool(props: GetUserActivityToolProps) {
+export function RecentActivityTool(props: GetRecentActivityToolProps) {
   if (props.state !== "result") return null;
 
   const result = props.result as {
@@ -34,7 +36,7 @@ export function UserActivityTool(props: GetUserActivityToolProps) {
       }}
     >
       <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
-        Recent Activity — {result.userId}
+        Recent Activity
       </Typography>
       <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
         {result.activities.map((a) => (

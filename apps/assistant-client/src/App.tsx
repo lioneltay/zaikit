@@ -49,13 +49,17 @@ export default function App() {
     history.replaceState(null, "", url.toString());
   }, [activeThreadId]);
 
-  // Load threads and auto-select from URL
+  // Load threads; restore from URL or start a fresh chat
   useEffect(() => {
     trpc.thread.list.query().then((loadedThreads) => {
       setThreads(loadedThreads);
       const urlThreadId = initialThreadId.current;
       if (urlThreadId && loadedThreads.some((t) => t.id === urlThreadId)) {
         handleSelectThread(urlThreadId);
+      } else {
+        // Always land on a fresh chat
+        setActiveThreadId(crypto.randomUUID());
+        setInitialMessages([]);
       }
     });
   }, [handleSelectThread]);

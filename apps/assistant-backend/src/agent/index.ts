@@ -9,15 +9,45 @@ const memory = createPostgresMemory({
 
 await memory.initialize();
 
-const mockDatabase = new Map([
-  ["users", 1284],
-  ["orders", 5621],
-  ["logs", 89432],
-  ["sessions", 3847],
-]);
+// ---------------------------------------------------------------------------
+// Mock data — replace with real APIs / DB queries for production use
+// ---------------------------------------------------------------------------
+
+const employees: Record<
+  string,
+  {
+    name: string;
+    email: string;
+    department: string;
+    role: string;
+    joinDate: string;
+  }
+> = {
+  "user-123": {
+    name: "Alice Chen",
+    email: "alice.chen@acmecorp.com",
+    department: "Engineering",
+    role: "Senior Software Engineer",
+    joinDate: "2023-04-15",
+  },
+};
+
+const activityLog = [
+  { action: "commented", target: "PR #482 — Add caching layer" },
+  { action: "merged", target: "PR #479 — Fix auth redirect" },
+  { action: "created", target: "Issue #501 — Investigate memory leak" },
+  { action: "reviewed", target: "PR #477 — Update onboarding flow" },
+  { action: "deployed", target: "v2.14.1 to staging" },
+  { action: "edited", target: "Wiki — API rate-limit guidelines" },
+];
+
+// ---------------------------------------------------------------------------
+// Tools
+// ---------------------------------------------------------------------------
 
 const get_weather = createTool({
-  description: "Get the current weather for a location",
+  description:
+    "Get the current weather for a location. Useful for checking conditions at a travel destination.",
   inputSchema: z.object({
     location: z.string().describe("City name, e.g. 'Sydney'"),
   }),
@@ -41,40 +71,52 @@ const get_weather = createTool({
   },
 });
 
-const delete_records = createTool({
+const submit_expense = createTool({
   description:
-    "Delete records from a database table. Requires user approval before proceeding.",
+    "Submit an expense claim for manager approval. Requires user confirmation before submitting.",
   inputSchema: z.object({
-    table: z.string().describe("Table name to delete records from"),
-    count: z.number().describe("Number of records to delete"),
+    description: z.string().describe("What the expense is for"),
+    amount: z.number().describe("Amount in USD"),
+    category: z
+      .enum(["travel", "meals", "equipment", "software", "other"])
+      .describe("Expense category"),
   }),
   suspendSchema: z.object({
     message: z.string(),
+    summary: z.object({
+      description: z.string(),
+      amount: z.number(),
+      category: z.string(),
+    }),
   }),
   resumeSchema: z.object({
     approved: z.boolean(),
   }),
   execute: async ({ input, suspend, resumeData }) => {
-    const current = mockDatabase.get(input.table);
-    if (current === undefined) {
-      return {
-        error: `Table "${input.table}" not found. Available tables: ${[...mockDatabase.keys()].join(", ")}`,
-      };
-    }
-
     if (!resumeData) {
       return suspend({
-        message: `Delete ${input.count} records from "${input.table}" (${current} total)?`,
+        message: `Submit expense claim for $${input.amount.toFixed(2)}?`,
+        summary: {
+          description: input.description,
+          amount: input.amount,
+          category: input.category,
+        },
       });
     }
 
     if (!resumeData.approved) {
-      return { deleted: 0, reason: "User declined" };
+      return { submitted: false, reason: "User cancelled" };
     }
 
-    const toDelete = Math.min(input.count, current);
-    mockDatabase.set(input.table, current - toDelete);
-    return { deleted: toDelete, remaining: current - toDelete };
+    const claimId = `EXP-${Date.now().toString(36).toUpperCase()}`;
+    return {
+      submitted: true,
+      claimId,
+      description: input.description,
+      amount: input.amount,
+      category: input.category,
+      status: "pending_approval",
+    };
   },
 });
 
@@ -147,50 +189,6 @@ const book_flight = createTool({
   },
 });
 
-// -- Context-aware tools --
-
-// Tool that uses the same context shape as the agent (direct match)
-const get_user_settings = createTool({
-  description: "Get settings for the current user in their organization.",
-  inputSchema: z.object({}),
-  context: z.object({
-    userId: z.string(),
-    orgId: z.string(),
-    orgName: z.string(),
-  }),
-  execute: async ({ context }) => {
-    return {
-      userId: context.userId,
-      orgId: context.orgId,
-      orgName: context.orgName,
-      theme: "dark",
-      language: "en",
-      notifications: true,
-    };
-  },
-});
-
-// Tool with a narrower context — only needs userId
-const get_user_activity = createTool({
-  description: "Get recent activity for a user.",
-  inputSchema: z.object({
-    limit: z.number().optional().describe("Max items to return (default 5)"),
-  }),
-  context: z.object({ userId: z.string() }),
-  execute: async ({ input, context }) => {
-    const limit = input.limit ?? 5;
-    return {
-      userId: context.userId,
-      activities: Array.from({ length: limit }, (_, i) => ({
-        id: `act-${i + 1}`,
-        action: ["viewed", "edited", "created", "deleted"][i % 4],
-        target: `document-${i + 1}`,
-        timestamp: new Date(Date.now() - i * 3600_000).toISOString(),
-      })),
-    };
-  },
-});
-
 const send_email = createTool({
   description:
     "Send an email. Shows a preview for the user to review and optionally edit before sending.",
@@ -240,6 +238,58 @@ const send_email = createTool({
   },
 });
 
+// -- Context-aware tools --
+
+const get_my_profile = createTool({
+  description: "Get the current user's profile information.",
+  inputSchema: z.object({}),
+  context: z.object({
+    userId: z.string(),
+    orgId: z.string(),
+    orgName: z.string(),
+  }),
+  execute: async ({ context }) => {
+    const employee = employees[context.userId];
+    if (!employee) {
+      return {
+        userId: context.userId,
+        orgName: context.orgName,
+        name: "Unknown User",
+        department: "Unknown",
+        role: "Unknown",
+      };
+    }
+    return {
+      userId: context.userId,
+      orgName: context.orgName,
+      ...employee,
+    };
+  },
+});
+
+const get_recent_activity = createTool({
+  description: "Get the current user's recent activity.",
+  inputSchema: z.object({
+    limit: z.number().optional().describe("Max items to return (default 5)"),
+  }),
+  context: z.object({ userId: z.string() }),
+  execute: async ({ input, context }) => {
+    const limit = input.limit ?? 5;
+    return {
+      userId: context.userId,
+      activities: activityLog.slice(0, limit).map((entry, i) => ({
+        id: `act-${i + 1}`,
+        ...entry,
+        timestamp: new Date(Date.now() - i * 3600_000).toISOString(),
+      })),
+    };
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Agent
+// ---------------------------------------------------------------------------
+
 export const agent = createAgent({
   model,
   context: z.object({
@@ -253,24 +303,26 @@ export const agent = createAgent({
       ignoreCodeBlocks: true,
     }),
   ],
-  system: `You are a helpful assistant with the following tools:
+  system: (ctx) =>
+    `You are a workplace assistant for ${ctx.orgName}. You help employees with travel planning, expenses, communications, and day-to-day tasks.
 
-- get_weather: Get current weather for a city.
-- delete_records: Delete records from a database table. Always use this tool when the user asks to delete data — it will ask for their approval.
-- book_flight: Search for and book flights. Use when the user wants to travel somewhere — it will show available flights for them to choose from.
-- send_email: Send an email. Use when the user asks you to email someone — it shows a preview they can edit before sending.
-- get_user_settings: Get the current user's settings.
-- get_user_activity: Get the current user's recent activity.
+Available tools:
+- get_weather: Check weather at a location — useful for travel planning.
+- book_flight: Search and book flights. Shows available options for the user to pick from.
+- submit_expense: Submit an expense claim. Shows a summary for user confirmation before submitting.
+- send_email: Draft and send emails. Shows a preview the user can edit before sending.
+- get_my_profile: Look up the current user's profile (name, department, role).
+- get_recent_activity: Show the user's recent activity log.
 
-Use the appropriate tool for each request. For destructive or important actions, always use the tool so the user can confirm.`,
+Be concise and helpful. For actions that have consequences (booking, sending, submitting), always use the appropriate tool so the user can review and confirm.`,
   tools: {
     get_weather,
-    delete_records,
+    submit_expense,
     book_flight,
     send_email,
-    get_user_settings,
-    get_user_activity: {
-      tool: get_user_activity,
+    get_my_profile,
+    get_recent_activity: {
+      tool: get_recent_activity,
       mapContext: (agentCtx) => ({ userId: agentCtx.userId }),
     },
   },

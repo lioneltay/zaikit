@@ -15,28 +15,35 @@ export type GetWeatherOutput = {
   windSpeed: number;
 };
 
-export type DeleteRecordsInput = { table: string; count: number };
-export type DeleteRecordsOutput =
+export type SubmitExpenseInput = {
+  description: string;
+  amount: number;
+  category: "travel" | "meals" | "equipment" | "software" | "other";
+};
+export type SubmitExpenseOutput =
   | {
-      error: string;
-      deleted?: undefined;
-      reason?: undefined;
-      remaining?: undefined;
-    }
-  | {
-      deleted: number;
+      submitted: boolean;
       reason: string;
-      error?: undefined;
-      remaining?: undefined;
+      claimId?: undefined;
+      description?: undefined;
+      amount?: undefined;
+      category?: undefined;
+      status?: undefined;
     }
   | {
-      deleted: number;
-      remaining: number;
-      error?: undefined;
+      submitted: boolean;
+      claimId: string;
+      description: string;
+      amount: number;
+      category: "travel" | "meals" | "equipment" | "software" | "other";
+      status: string;
       reason?: undefined;
     };
-export type DeleteRecordsSuspend = { message: string };
-export type DeleteRecordsResume = { approved: boolean };
+export type SubmitExpenseSuspend = {
+  message: string;
+  summary: { description: string; amount: number; category: string };
+};
+export type SubmitExpenseResume = { approved: boolean };
 
 export type BookFlightInput = { destination: string; date: string };
 export type BookFlightOutput =
@@ -88,24 +95,33 @@ export type SendEmailResume = {
   body?: string | undefined;
 };
 
-export type GetUserSettingsInput = Record<string, never>;
-export type GetUserSettingsOutput = {
-  userId: string;
-  orgId: string;
-  orgName: string;
-  theme: string;
-  language: string;
-  notifications: boolean;
-};
+export type GetMyProfileInput = Record<string, never>;
+export type GetMyProfileOutput =
+  | {
+      userId: string;
+      orgName: string;
+      name: string;
+      department: string;
+      role: string;
+    }
+  | {
+      name: string;
+      email: string;
+      department: string;
+      role: string;
+      joinDate: string;
+      userId: string;
+      orgName: string;
+    };
 
-export type GetUserActivityInput = { limit?: number | undefined };
-export type GetUserActivityOutput = {
+export type GetRecentActivityInput = { limit?: number | undefined };
+export type GetRecentActivityOutput = {
   userId: string;
   activities: {
-    id: string;
+    timestamp: string;
     action: string;
     target: string;
-    timestamp: string;
+    id: string;
   }[];
 };
 
@@ -113,10 +129,10 @@ export type GetUserActivityOutput = {
 
 export type GetWeatherToolProps = ToolRenderProps<GetWeatherInput>;
 
-export type DeleteRecordsToolProps = ToolRenderProps<
-  DeleteRecordsInput,
-  DeleteRecordsSuspend,
-  DeleteRecordsResume
+export type SubmitExpenseToolProps = ToolRenderProps<
+  SubmitExpenseInput,
+  SubmitExpenseSuspend,
+  SubmitExpenseResume
 >;
 
 export type BookFlightToolProps = ToolRenderProps<
@@ -131,19 +147,20 @@ export type SendEmailToolProps = ToolRenderProps<
   SendEmailResume
 >;
 
-export type GetUserSettingsToolProps = ToolRenderProps<GetUserSettingsInput>;
+export type GetMyProfileToolProps = ToolRenderProps<GetMyProfileInput>;
 
-export type GetUserActivityToolProps = ToolRenderProps<GetUserActivityInput>;
+export type GetRecentActivityToolProps =
+  ToolRenderProps<GetRecentActivityInput>;
 
 // ─── Typed useToolRenderer ───
 
 type ToolPropsMap = {
   get_weather: GetWeatherToolProps;
-  delete_records: DeleteRecordsToolProps;
+  submit_expense: SubmitExpenseToolProps;
   book_flight: BookFlightToolProps;
   send_email: SendEmailToolProps;
-  get_user_settings: GetUserSettingsToolProps;
-  get_user_activity: GetUserActivityToolProps;
+  get_my_profile: GetMyProfileToolProps;
+  get_recent_activity: GetRecentActivityToolProps;
 };
 
 export function useToolRenderer<T extends keyof ToolPropsMap>(
@@ -159,8 +176,8 @@ export function useToolRenderer(name: string, render: ToolRenderFn): void {
 
 export type ToolName =
   | "get_weather"
-  | "delete_records"
+  | "submit_expense"
   | "book_flight"
   | "send_email"
-  | "get_user_settings"
-  | "get_user_activity";
+  | "get_my_profile"
+  | "get_recent_activity";

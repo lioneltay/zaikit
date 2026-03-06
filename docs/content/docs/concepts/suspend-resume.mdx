@@ -33,6 +33,8 @@ Here is the complete lifecycle of a suspended tool call, from LLM invocation to 
 
 12. **Remaining suspensions check** — If other tools in the same message are still suspended, the server returns `204 No Content`. The client re-fetches messages and shows the remaining suspension UIs. Otherwise, the LLM continues with the updated conversation.
 
+![Flight booking tool suspended — waiting for the user to select a flight](../guides/demo-flight-booking.png)
+
 ## Defining a Suspendable Tool
 
 A suspendable tool declares `suspendSchema` and `resumeSchema` alongside the regular `inputSchema`. The `execute` function receives `{ input, suspend, resumeData }`:

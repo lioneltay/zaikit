@@ -1,17 +1,26 @@
 import { Box, Button, TextField, Typography } from "@mui/material";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ResolvedBanner } from "../components/ResolvedBanner";
 import type { SendEmailToolProps } from "../generated/generated";
 
 export function SendEmailTool(props: SendEmailToolProps) {
   const preview = props.suspendPayload?.preview;
-  // Fall back to tool args when suspend payload isn't available (e.g. after message refetch)
   const args = props.args;
-  const [to, setTo] = useState(preview?.to ?? args.to ?? "");
-  const [subject, setSubject] = useState(
-    preview?.subject ?? args.subject ?? "",
-  );
-  const [body, setBody] = useState(preview?.body ?? args.body ?? "");
+  const defaults = {
+    to: preview?.to ?? args.to ?? "",
+    subject: preview?.subject ?? args.subject ?? "",
+    body: preview?.body ?? args.body ?? "",
+  };
+  const [to, setTo] = useState(defaults.to);
+  const [subject, setSubject] = useState(defaults.subject);
+  const [body, setBody] = useState(defaults.body);
+
+  // Sync state when suspend payload arrives (useState initializer only runs once)
+  useEffect(() => {
+    if (defaults.to) setTo(defaults.to);
+    if (defaults.subject) setSubject(defaults.subject);
+    if (defaults.body) setBody(defaults.body);
+  }, [defaults.to, defaults.subject, defaults.body]);
 
   if (props.state === "result") {
     const resolvedTo = preview?.to ?? args.to;

@@ -3,11 +3,11 @@ import { Box, Button, Paper, Typography } from "@mui/material";
 import { useTool } from "@zaikit/react";
 import { z } from "zod";
 import { useToolRenderer } from "../generated/generated";
-import { ApprovalTool } from "./ApprovalTool";
 import { BookFlightTool } from "./BookFlightTool";
+import { ProfileTool } from "./ProfileTool";
+import { RecentActivityTool } from "./RecentActivityTool";
 import { SendEmailTool } from "./SendEmailTool";
-import { UserActivityTool } from "./UserActivityTool";
-import { UserSettingsTool } from "./UserSettingsTool";
+import { SubmitExpenseTool } from "./SubmitExpenseTool";
 
 function FrontendTools() {
   // Handler-only: runs automatically, no UI
@@ -72,14 +72,14 @@ function FrontendTools() {
 }
 
 export function ToolRenderers() {
-  useToolRenderer("delete_records", (props) => <ApprovalTool {...props} />);
+  useToolRenderer("submit_expense", (props) => (
+    <SubmitExpenseTool {...props} />
+  ));
   useToolRenderer("book_flight", (props) => <BookFlightTool {...props} />);
   useToolRenderer("send_email", (props) => <SendEmailTool {...props} />);
-  useToolRenderer("get_user_settings", (props) => (
-    <UserSettingsTool {...props} />
-  ));
-  useToolRenderer("get_user_activity", (props) => (
-    <UserActivityTool {...props} />
+  useToolRenderer("get_my_profile", (props) => <ProfileTool {...props} />);
+  useToolRenderer("get_recent_activity", (props) => (
+    <RecentActivityTool {...props} />
   ));
   return <FrontendTools />;
 }

@@ -31,12 +31,11 @@ app.all("/trpc/*", async (c) => {
 app.post("/api/chat", async (c) => {
   const body = await c.req.json();
   // In a real app, context would come from auth middleware / session.
-  // Here we hardcode example values for demonstration.
   return agent.chat({
     ...body,
     context: {
       userId: "user-123",
-      orgId: "org-456",
+      orgId: "acme",
       orgName: "Acme Corp",
     },
   });
@@ -48,9 +47,9 @@ const sandbox = createSandboxHono({
     assistant: {
       agent,
       context: {
-        userId: "dev-user",
-        orgId: "dev-org",
-        orgName: "Dev Organization",
+        userId: "user-123",
+        orgId: "acme",
+        orgName: "Acme Corp",
       },
     },
   },

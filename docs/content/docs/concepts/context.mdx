@@ -212,6 +212,12 @@ const sandbox = createSandbox({
 
 The sandbox UI reads the agent's `contextSchema` and renders an editable form, letting you change context values during development without restarting the server. See the [Sandbox guide](/guides/sandbox) for details.
 
+## In Action
+
+Here's the demo app showing two context-aware tools. The profile tool receives the full agent context (`userId`, `orgId`, `orgName`) and returns the employee's details. The activity tool receives only `userId` via `mapContext`.
+
+![Profile and activity tools using typed context](./demo-context-tools.png)
+
 ## Summary
 
 | Concept | Description |
