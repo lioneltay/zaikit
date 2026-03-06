@@ -5,367 +5,73 @@ import {
   createUIMessageStreamResponse,
   generateText,
   jsonSchema,
-  type LanguageModel,
-  type LanguageModelUsage,
-  type ModelMessage,
   Output,
-  type PrepareStepResult,
   type StepResult,
   streamText,
-  type Tool,
   type ToolSet,
   tool,
   type UIMessage,
 } from "ai";
 import { toJSONSchema, type z } from "zod";
 import {
+  resolveToolEntries,
+  sumUsage,
+  wrapToolsWithHooks,
+} from "./agent-helpers";
+import type {
+  Agent,
+  AgentResult,
+  BaseGenerateOptions,
+  ChatOptions,
+  CreateAgentOptions,
+  FrontendToolDef,
+  GenerateResult,
+  ResolveToolsConfig,
+  StreamOptions,
+  StreamResult,
+  ToolConfigValue,
+} from "./agent-types";
+import {
   composeMiddleware,
   createAbort,
-  type Middleware,
   type MiddlewareContext,
 } from "./middleware/core";
 import { isSuspendResult } from "./suspend";
 import { getToolInjection, runWithToolInjection } from "./tool-injection";
 
-// --- Hook context types ---
+/** Extract context from options — needed because conditional context types prevent direct access */
+function optContext(opts: object): unknown {
+  return (opts as { context?: unknown }).context;
+}
 
-export type AfterStepContext = {
-  /** The step that just completed. */
-  step: StepResult<ToolSet>;
-  /** All steps completed so far, including this one. */
-  steps: StepResult<ToolSet>[];
-};
+// --- Message part type helpers ---
+// UIMessage parts include our custom "data-tool-suspend" type which the AI SDK
+// doesn't know about. These helpers provide safe access without scattering casts.
 
-export type BeforeToolCallContext = {
-  toolName: string;
+type SuspendPartData = {
   toolCallId: string;
-  input: unknown;
-};
-
-export type AfterToolCallContext = {
   toolName: string;
+  payload: unknown;
+  resolved?: boolean;
+};
+
+function isSuspendPart(
+  p: object,
+): p is { type: "data-tool-suspend"; data: SuspendPartData } {
+  return (p as { type: string }).type === "data-tool-suspend";
+}
+
+function hasToolCallId(p: object): p is {
   toolCallId: string;
+  type: string;
   input: unknown;
-  output: unknown;
-};
-
-// --- Tool config types ---
-
-type MappedToolEntry<C> = {
-  tool: Tool<any, any>;
-  mapContext: (ctx: C) => unknown;
-};
-
-type ToolConfigValue<C = undefined> = [C] extends [undefined]
-  ? Tool<any, any>
-  : Tool<any, any> | MappedToolEntry<C>;
-
-type ResolveToolEntry<E> = E extends { tool: infer T extends Tool<any, any> }
-  ? T
-  : E;
-
-type ResolveToolsConfig<T> = {
-  [K in keyof T]: ResolveToolEntry<T[K]>;
-};
-
-type ValidateMappedTools<T, C> = {
-  [K in keyof T]: T[K] extends {
-    tool: { readonly __toolTypes: { readonly context: infer TC } };
-    mapContext: any;
-  }
-    ? {
-        tool: T[K] extends { tool: infer U } ? U : never;
-        mapContext: (ctx: C) => TC;
-      }
-    : T[K];
-};
-
-// --- PrepareStep ---
-
-export type PrepareStep<
-  TOOLS extends ToolSet = ToolSet,
-  C = undefined,
-> = (options: {
-  steps: StepResult<ToolSet>[];
-  stepNumber: number;
-  model: LanguageModel;
-  messages: ModelMessage[];
-  context: C;
-}) =>
-  | PrepareStepResult<NoInfer<TOOLS>>
-  | PromiseLike<PrepareStepResult<NoInfer<TOOLS>>>;
-
-// --- CreateAgentOptions ---
-
-type CreateAgentOptions<
-  T extends Record<string, ToolConfigValue<C>> = ToolSet,
-  C = undefined,
-> = ([C] extends [undefined]
-  ? { context?: never }
-  : { context: z.ZodType<C> }) & {
-  model: LanguageModel;
-  system?: string | ((context: C) => string | Promise<string>);
-  tools?: T & ValidateMappedTools<T, C>;
-  memory?: Memory;
-  middleware?: Middleware[];
-  prepareStep?: PrepareStep<ResolveToolsConfig<T> & ToolSet, C>;
-  onAfterStep?: (ctx: AfterStepContext) => Promise<void> | void;
-  onBeforeToolCall?: (
-    ctx: BeforeToolCallContext,
-  ) =>
-    | Promise<{ input?: unknown } | undefined>
-    | { input?: unknown }
-    | undefined;
-  onAfterToolCall?: (
-    ctx: AfterToolCallContext,
-  ) =>
-    | Promise<{ output?: unknown } | undefined>
-    | { output?: unknown }
-    | undefined;
-};
-
-// --- Frontend tool types ---
-
-export type FrontendToolDef = {
-  name: string;
-  description: string;
-  parameters: Record<string, unknown>;
-};
-
-// --- ChatOptions ---
-
-export type ChatOptions<C = undefined> = ([C] extends [undefined]
-  ? { context?: never }
-  : { context: C }) &
-  (
-    | {
-        threadId: string;
-        message: UIMessage;
-        ownerId?: string;
-        frontendTools?: FrontendToolDef[];
-      }
-    | {
-        threadId: string;
-        resume: { toolCallId: string; data: unknown };
-        frontendTools?: FrontendToolDef[];
-      }
-    | {
-        threadId: string;
-        toolOutputs: { toolCallId: string; output: unknown }[];
-        frontendTools?: FrontendToolDef[];
-      }
-  );
-
-// --- Stream / Generate types ---
-
-export type AgentResult = {
-  text: string;
-  output: unknown;
-  steps: StepResult<ToolSet>[];
-  finishReason: string;
-  usage: LanguageModelUsage;
-};
-
-export type StreamOptions<C = undefined> = ([C] extends [undefined]
-  ? { context?: never }
-  : { context: C }) & {
-  messages: UIMessage[];
-  model?: LanguageModel;
-  threadId?: string;
-  maxSteps?: number;
-  output?: z.ZodType;
-  frontendTools?: FrontendToolDef[];
-};
-
-export type StreamResult = {
-  stream: ReadableStream<unknown>;
-  result: Promise<AgentResult>;
-};
-
-type BaseGenerateOptions<C = undefined> = ([C] extends [undefined]
-  ? { context?: never }
-  : { context: C }) & {
-  model?: LanguageModel;
-  maxSteps?: number;
-  frontendTools?: FrontendToolDef[];
-} & ({ prompt: string } | { messages: UIMessage[] });
-
-export type GenerateOptions<C = undefined> = BaseGenerateOptions<C> & {
-  output?: z.ZodType;
-};
-
-export type GenerateResult<OUTPUT extends z.ZodType = never> = AgentResult & {
-  output: [OUTPUT] extends [never] ? undefined : z.infer<OUTPUT>;
-};
-
-// --- Agent type ---
-
-export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
-  tools: T;
-  memory: Memory | undefined;
-  model: LanguageModel;
-  system: string | ((context: C) => string | Promise<string>) | undefined;
-  contextSchema: Record<string, unknown> | undefined;
-  stream(options: StreamOptions<C>): Promise<StreamResult>;
-  chat(options: ChatOptions<C>): Promise<Response>;
-  generate<OUTPUT extends z.ZodType = never>(
-    options: BaseGenerateOptions<C> & { output?: OUTPUT },
-  ): Promise<GenerateResult<OUTPUT>>;
-};
-
-// --- Helpers ---
-
-function addTokenCounts(
-  a: number | undefined,
-  b: number | undefined,
-): number | undefined {
-  return a == null && b == null ? undefined : (a ?? 0) + (b ?? 0);
+  toolName?: string;
+} {
+  return "toolCallId" in p;
 }
 
-function sumUsage(steps: StepResult<ToolSet>[]): LanguageModelUsage {
-  return steps.reduce<LanguageModelUsage>(
-    (acc, step) => ({
-      inputTokens: addTokenCounts(acc.inputTokens, step.usage?.inputTokens),
-      inputTokenDetails: {
-        noCacheTokens: addTokenCounts(
-          acc.inputTokenDetails?.noCacheTokens,
-          step.usage?.inputTokenDetails?.noCacheTokens,
-        ),
-        cacheReadTokens: addTokenCounts(
-          acc.inputTokenDetails?.cacheReadTokens,
-          step.usage?.inputTokenDetails?.cacheReadTokens,
-        ),
-        cacheWriteTokens: addTokenCounts(
-          acc.inputTokenDetails?.cacheWriteTokens,
-          step.usage?.inputTokenDetails?.cacheWriteTokens,
-        ),
-      },
-      outputTokens: addTokenCounts(acc.outputTokens, step.usage?.outputTokens),
-      outputTokenDetails: {
-        textTokens: addTokenCounts(
-          acc.outputTokenDetails?.textTokens,
-          step.usage?.outputTokenDetails?.textTokens,
-        ),
-        reasoningTokens: addTokenCounts(
-          acc.outputTokenDetails?.reasoningTokens,
-          step.usage?.outputTokenDetails?.reasoningTokens,
-        ),
-      },
-      totalTokens: addTokenCounts(acc.totalTokens, step.usage?.totalTokens),
-    }),
-    {
-      inputTokens: undefined,
-      inputTokenDetails: {
-        noCacheTokens: undefined,
-        cacheReadTokens: undefined,
-        cacheWriteTokens: undefined,
-      },
-      outputTokens: undefined,
-      outputTokenDetails: {
-        textTokens: undefined,
-        reasoningTokens: undefined,
-      },
-      totalTokens: undefined,
-    },
-  );
-}
-
-/**
- * Wrap each tool's execute function with onBeforeToolCall/onAfterToolCall hooks.
- */
-function wrapToolsWithHooks(
-  tools: ToolSet,
-  hooks: {
-    onBeforeToolCall?: CreateAgentOptions["onBeforeToolCall"];
-    onAfterToolCall?: CreateAgentOptions["onAfterToolCall"];
-  },
-): ToolSet {
-  if (!hooks.onBeforeToolCall && !hooks.onAfterToolCall) return tools;
-
-  return Object.fromEntries(
-    Object.entries(tools).map(([name, t]) => {
-      if (!t.execute) return [name, t];
-      const originalExecute = t.execute;
-      return [
-        name,
-        {
-          ...t,
-          execute: async (input: unknown, context: any) => {
-            let finalInput = input;
-            if (hooks.onBeforeToolCall) {
-              const beforeResult = await hooks.onBeforeToolCall({
-                toolName: name,
-                input,
-                toolCallId: context.toolCallId,
-              });
-              if (beforeResult?.input !== undefined) {
-                finalInput = beforeResult.input;
-              }
-            }
-
-            const output = await originalExecute(finalInput, context);
-
-            if (hooks.onAfterToolCall) {
-              const afterResult = await hooks.onAfterToolCall({
-                toolName: name,
-                input: finalInput,
-                output,
-                toolCallId: context.toolCallId,
-              });
-              if (afterResult?.output !== undefined) {
-                return afterResult.output;
-              }
-            }
-
-            return output;
-          },
-        },
-      ];
-    }),
-  );
-}
-
-function isMappedToolEntry(
-  v: unknown,
-): v is { tool: Tool<any, any>; mapContext: Function } {
-  return (
-    typeof v === "object" && v !== null && "mapContext" in v && "tool" in v
-  );
-}
-
-/**
- * Resolve a tools config record to a plain ToolSet.
- * Entries with `{ tool, mapContext }` get their execute wrapped to
- * intercept the agent context from ALS, transform it via the mapper,
- * and re-inject the tool-specific context before calling the original execute.
- */
-function resolveToolEntries(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  entries: Record<string, any>,
-): ToolSet {
-  return Object.fromEntries(
-    Object.entries(entries).map(([name, entry]) => {
-      if (!isMappedToolEntry(entry)) return [name, entry];
-
-      const { tool: sourceTool, mapContext } = entry;
-      const originalExecute = sourceTool.execute;
-      if (!originalExecute) return [name, sourceTool];
-
-      return [
-        name,
-        {
-          ...sourceTool,
-          execute: async (input: unknown, sdkOptions: any) => {
-            const { context: agentCtx } = getToolInjection();
-            const toolCtx = mapContext(agentCtx);
-            return runWithToolInjection({ context: toolCtx }, () =>
-              originalExecute(input, sdkOptions),
-            );
-          },
-        },
-      ];
-    }),
-  );
+function hasUnresolvedSuspensions(parts: readonly object[]): boolean {
+  return parts.some((p) => isSuspendPart(p) && !p.data?.resolved);
 }
 
 // --- createAgent ---
@@ -386,8 +92,12 @@ export function createAgent<
     onBeforeToolCall,
     onAfterToolCall,
   } = options;
-  const contextSchema = (options as any).context as z.ZodType | undefined;
+  const contextSchema = optContext(options) as z.ZodType | undefined;
   const resolvedTools = resolveToolEntries(options.tools ?? {});
+  const hookedTools = wrapToolsWithHooks(resolvedTools, {
+    onBeforeToolCall,
+    onAfterToolCall,
+  });
 
   function buildDynamicTools(defs: FrontendToolDef[]): ToolSet {
     const result: ToolSet = {};
@@ -406,8 +116,8 @@ export function createAgent<
   }
 
   function mergeTools(frontendTools?: FrontendToolDef[]): ToolSet {
-    if (!frontendTools?.length) return resolvedTools;
-    return { ...resolvedTools, ...buildDynamicTools(frontendTools) };
+    if (!frontendTools?.length) return hookedTools;
+    return { ...hookedTools, ...buildDynamicTools(frontendTools) };
   }
 
   /**
@@ -464,10 +174,7 @@ export function createAgent<
             const result = streamText({
               model: overrides.model ?? ctx.model,
               system: overrides.system ?? ctx.system,
-              tools: wrapToolsWithHooks(stepTools, {
-                onBeforeToolCall,
-                onAfterToolCall,
-              }),
+              tools: stepTools,
               messages: overrides.messages ?? currentModelMessages,
               toolChoice: overrides.toolChoice,
               providerOptions: overrides.providerOptions,
@@ -594,13 +301,13 @@ export function createAgent<
   async function agentStream(opts: StreamOptions<C>): Promise<StreamResult> {
     // Validate context against schema if provided
     if (contextSchema) {
-      contextSchema.parse((opts as any).context);
+      contextSchema.parse(optContext(opts));
     }
 
     // Resolve system prompt once per request
     const resolvedSystem =
       typeof system === "function"
-        ? await system((opts as any).context as C)
+        ? await system(optContext(opts) as C)
         : system;
 
     // Deferred result — resolve on success, reject on error.
@@ -642,7 +349,7 @@ export function createAgent<
 
     // Run under ALS so tools can access context
     const resultStream = runWithToolInjection(
-      { context: (opts as any).context },
+      { context: optContext(opts) },
       () => chain(ctx),
     );
 
@@ -750,10 +457,7 @@ export function createAgent<
     const messages = await memory.getMessages(threadId);
     const suspendedMsg = messages.find((m) =>
       m.parts.some(
-        (p) =>
-          p.type === "data-tool-suspend" &&
-          (p as { data: { toolCallId: string } }).data.toolCallId ===
-            resume.toolCallId,
+        (p) => isSuspendPart(p) && p.data.toolCallId === resume.toolCallId,
       ),
     );
 
@@ -767,12 +471,10 @@ export function createAgent<
     //    Static tools use part type "tool-{name}"; dynamic tools use "dynamic-tool"
     //    with a separate toolName field.
     const toolPart = suspendedMsg.parts.find(
-      (p) =>
-        "toolCallId" in p &&
-        (p as { toolCallId: string }).toolCallId === resume.toolCallId,
-    ) as { type: string; toolName?: string; input: unknown } | undefined;
+      (p) => hasToolCallId(p) && p.toolCallId === resume.toolCallId,
+    );
 
-    if (!toolPart) {
+    if (!toolPart || !hasToolCallId(toolPart)) {
       throw new Error(
         `No tool part found with toolCallId: ${resume.toolCallId}`,
       );
@@ -812,20 +514,18 @@ export function createAgent<
     //    and mark the corresponding data-tool-suspend part as resolved.
     const updatedParts = suspendedMsg.parts
       .map((p) => {
-        if (
-          p.type === "data-tool-suspend" &&
-          (p as { data: { toolCallId: string } }).data.toolCallId ===
-            resume.toolCallId
-        ) {
-          return { ...p, data: { ...(p as any).data, resolved: true } };
+        // Mark the matching suspend part as resolved
+        if (isSuspendPart(p) && p.data.toolCallId === resume.toolCallId) {
+          return { ...p, data: { ...p.data, resolved: true } };
         }
         return p;
       })
       .map((p): UIMessage["parts"][number] => {
+        // Fill in the tool output for the matching tool part
+        const part = p as { toolCallId?: string; type: string };
         if (
-          "toolCallId" in p &&
-          (p as { toolCallId: string }).toolCallId === resume.toolCallId &&
-          (p.type === "dynamic-tool" || p.type.startsWith("tool-"))
+          part.toolCallId === resume.toolCallId &&
+          (part.type === "dynamic-tool" || part.type.startsWith("tool-"))
         ) {
           return { ...(p as any), state: "output-available", output };
         }
@@ -838,11 +538,7 @@ export function createAgent<
 
     // 5. Check for remaining unresolved suspensions (supports multiple
     //    suspendable tools called in a single LLM step)
-    const hasRemainingSuspensions = updatedParts.some(
-      (p) => p.type === "data-tool-suspend" && !(p as any).data?.resolved,
-    );
-
-    if (hasRemainingSuspensions) {
+    if (hasUnresolvedSuspensions(updatedParts)) {
       // Client should re-fetch messages and show remaining suspend prompts
       return new Response(null, { status: 204 });
     }
@@ -901,14 +597,11 @@ export function createAgent<
     // Update matching tool parts: input-available → output-available
     const updatedParts = lastAssistantMsg.parts.map(
       (p): UIMessage["parts"][number] => {
-        if (
-          "toolCallId" in p &&
-          outputMap.has((p as { toolCallId: string }).toolCallId)
-        ) {
+        if (hasToolCallId(p) && outputMap.has(p.toolCallId)) {
           return {
             ...(p as any),
             state: "output-available",
-            output: outputMap.get((p as { toolCallId: string }).toolCallId),
+            output: outputMap.get(p.toolCallId),
           };
         }
         return p;
@@ -920,11 +613,7 @@ export function createAgent<
     });
 
     // Check for remaining backend suspensions (data-tool-suspend parts that aren't resolved)
-    const hasRemainingSuspensions = updatedParts.some(
-      (p) => p.type === "data-tool-suspend" && !(p as any).data?.resolved,
-    );
-
-    if (hasRemainingSuspensions) {
+    if (hasUnresolvedSuspensions(updatedParts)) {
       return new Response(null, { status: 204 });
     }
 
@@ -958,7 +647,7 @@ export function createAgent<
       }
 
       const frontendTools = options.frontendTools;
-      const context = (options as any).context;
+      const context = optContext(options);
 
       if ("resume" in options) {
         return handleResume(
@@ -1020,12 +709,12 @@ export function createAgent<
         maxSteps: opts.maxSteps ?? 10,
         output: opts.output,
         frontendTools: opts.frontendTools,
-        context: (opts as any).context,
+        context: optContext(opts),
       } as StreamOptions<C>);
 
       // Consume the stream — detect suspension (not supported in generate)
       for await (const chunk of stream as any) {
-        if (chunk?.type === "data-tool-suspend") {
+        if (isSuspendPart(chunk)) {
           throw new Error(
             "Tool suspension is not supported in generate(). " +
               "Use chat() for tools that call suspend().",

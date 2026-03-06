@@ -4,7 +4,7 @@ import type {
 } from "@ai-sdk/provider";
 import { simulateReadableStream, type UIMessage } from "ai";
 import { MockLanguageModelV3 } from "ai/test";
-import type { Agent, ChatOptions } from "../agent";
+import type { Agent, ChatOptions } from "../agent-types";
 
 type StreamResponseFactory = () => LanguageModelV3StreamResult;
 

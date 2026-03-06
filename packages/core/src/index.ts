@@ -1,21 +1,28 @@
 export type { Memory, Thread } from "@zaikit/memory";
 export type { PrepareStepResult, StepResult } from "ai";
 export { convertToModelMessages, streamText } from "ai";
+export { createAgent } from "./agent";
 export type {
   AfterStepContext,
   AfterToolCallContext,
   Agent,
   AgentResult,
+  BaseGenerateOptions,
   BeforeToolCallContext,
   ChatOptions,
+  CreateAgentOptions,
   FrontendToolDef,
   GenerateOptions,
   GenerateResult,
+  MappedToolEntry,
   PrepareStep,
+  ResolveToolEntry,
+  ResolveToolsConfig,
   StreamOptions,
   StreamResult,
-} from "./agent";
-export { createAgent } from "./agent";
+  ToolConfigValue,
+  ValidateMappedTools,
+} from "./agent-types";
 export type { ToolMeta, ZaikitTool } from "./create-tool";
 export { createTool } from "./create-tool";
 export type { Middleware, MiddlewareContext } from "./middleware/core";
