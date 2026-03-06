@@ -1673,3 +1673,44 @@ describe("generate()", () => {
     );
   });
 });
+
+describe("generate() with output", () => {
+  it("returns a typed object via output", async () => {
+    const agent = createAgent({
+      model: mockModel([textResponse('{"title":"Hello","score":42}')]),
+    });
+
+    const result = await agent.generate({
+      output: z.object({ title: z.string(), score: z.number() }),
+      prompt: "Rate this",
+    });
+
+    expect(result.output).toEqual({ title: "Hello", score: 42 });
+  });
+
+  it("returns undefined output when no output spec provided", async () => {
+    const agent = createAgent({
+      model: mockModel([textResponse("Hello world")]),
+    });
+
+    const result = await agent.generate({ prompt: "Hi" });
+
+    expect(result.output).toBeUndefined();
+    expect(result.text).toBe("Hello world");
+  });
+
+  it("accepts a per-call model override with output", async () => {
+    const defaultModel = mockModel([textResponse('{"name":"Default"}')]);
+    const overrideModel = mockModel([textResponse('{"name":"Override"}')]);
+
+    const agent = createAgent({ model: defaultModel });
+
+    const result = await agent.generate({
+      output: z.object({ name: z.string() }),
+      prompt: "Name something",
+      model: overrideModel,
+    });
+
+    expect(result.output).toEqual({ name: "Override" });
+  });
+});

@@ -59,7 +59,9 @@ type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   contextSchema: Record<string, unknown> | undefined;
   stream(options: StreamOptions<C>): Promise<StreamResult>;
   chat(options: ChatOptions<C>): Promise<Response>;
-  generate(options: GenerateOptions<C>): Promise<GenerateResult>;
+  generate<OUTPUT extends z.ZodType = never>(
+    options: GenerateOptions<C> & { output?: OUTPUT },
+  ): Promise<GenerateResult<OUTPUT>>;
 };
 ```
 
@@ -72,7 +74,7 @@ type Agent<T extends ToolSet = ToolSet, C = undefined> = {
 | `contextSchema` | `Record<string, unknown> \| undefined` | JSON Schema representation of the context Zod type, if `context` was provided. Used by the sandbox UI to render context forms. |
 | `stream` | `(options: StreamOptions<C>) => Promise<StreamResult>` | Pure agent execution. Returns a stream and a result promise. No memory or persistence -- the caller decides what to do with the output. |
 | `chat` | `(options: ChatOptions<C>) => Promise<Response>` | Stream a response with persistence. Wraps `stream()` with memory, thread management, and title generation. Returns an HTTP `Response`. |
-| `generate` | `(options: GenerateOptions<C>) => Promise<GenerateResult>` | Run the agent and return structured results. Consumes the stream internally. No memory required. |
+| `generate` | `<OUTPUT>(options) => Promise<GenerateResult<OUTPUT>>` | Run the agent and return structured results. Consumes the stream internally. No memory required. When `output` is provided, `result.output` is typed to match the schema. |
 
 ## `stream()`
 
@@ -109,6 +111,7 @@ type StreamOptions<C = undefined> = ([C] extends [undefined]
   model?: LanguageModel;
   threadId?: string;
   maxSteps?: number;
+  output?: z.ZodType;
   frontendTools?: FrontendToolDef[];
 };
 ```
@@ -119,6 +122,7 @@ type StreamOptions<C = undefined> = ([C] extends [undefined]
 | `model` | `LanguageModel` | No | Per-call model override. Defaults to the agent's model. |
 | `threadId` | `string` | No | Thread ID for middleware context. Auto-generated if not provided. |
 | `maxSteps` | `number` | No | Maximum number of loop iterations. |
+| `output` | `z.ZodType` | No | Zod schema for structured output. Parsed result is available on `AgentResult.output`. |
 | `frontendTools` | `FrontendToolDef[]` | No | Frontend tool definitions to register dynamically. |
 | `context` | `C` | When agent has `context` | Request-scoped context passed to tools and hooks. |
 
@@ -141,6 +145,7 @@ type StreamResult = {
 ```ts
 type AgentResult = {
   text: string;
+  output: unknown;
   steps: StepResult<ToolSet>[];
   finishReason: string;
   usage: LanguageModelUsage;
@@ -150,6 +155,7 @@ type AgentResult = {
 | Property | Type | Description |
 | --- | --- | --- |
 | `text` | `string` | The text from the final step. |
+| `output` | `unknown` | Parsed structured output when an `output` spec was provided. `undefined` otherwise. |
 | `steps` | `StepResult[]` | All step results from the agent loop (AI SDK type). |
 | `finishReason` | `string` | Why the model stopped (`"stop"`, `"tool-calls"`, etc.). |
 | `usage` | `LanguageModelUsage` | Aggregated token usage across all steps (AI SDK type). |
@@ -162,6 +168,13 @@ Run the agent and return structured results directly. Internally calls `stream()
 // Simple prompt
 const result = await agent.generate({ prompt: "What is 2 + 2?" });
 console.log(result.text); // "4"
+
+// Structured output — pass a Zod schema directly
+const result = await agent.generate({
+  prompt: "Rate this article",
+  output: z.object({ title: z.string(), score: z.number() }),
+});
+console.log(result.output); // { title: "...", score: 85 }  — fully typed
 
 // With messages
 const result = await agent.generate({
@@ -176,6 +189,10 @@ const result = await agent.generate({
 });
 ```
 
+The `output` option accepts a Zod schema. When provided, the model is constrained to JSON mode and the final step's text is parsed and validated against the schema. The result's `output` property is fully typed to match the schema.
+
+When `output` is combined with tools, the agent runs the full tool loop and produces structured output on the final step — the model calls tools as needed, then responds with a JSON object matching the schema.
+
 ### GenerateOptions
 
 ```ts
@@ -184,6 +201,7 @@ type GenerateOptions<C = undefined> = ([C] extends [undefined]
   : { context: C }) & {
   model?: LanguageModel;
   maxSteps?: number;
+  output?: z.ZodType;
   frontendTools?: FrontendToolDef[];
 } & ({ prompt: string } | { messages: UIMessage[] });
 ```
@@ -194,10 +212,21 @@ type GenerateOptions<C = undefined> = ([C] extends [undefined]
 | `messages` | `UIMessage[]` | One of `prompt` or `messages` | Full conversation messages. |
 | `model` | `LanguageModel` | No | Per-call model override. |
 | `maxSteps` | `number` | No | Maximum loop iterations. Defaults to `10`. |
+| `output` | `z.ZodType` | No | Zod schema for structured output. The model is constrained to JSON mode and the result is parsed and typed. |
 | `frontendTools` | `FrontendToolDef[]` | No | Frontend tool definitions. |
 | `context` | `C` | When agent has `context` | Request-scoped context. |
 
 `generate()` does not support tool suspension. If a tool calls `suspend()`, `generate()` throws an error. Use `chat()` for tools that require human-in-the-loop interaction.
+
+### GenerateResult
+
+`GenerateResult` extends `AgentResult` with a typed `output` field. When `output` is provided, the result's `output` property is inferred from the Zod schema. Without `output`, it is `undefined`.
+
+```ts
+type GenerateResult<OUTPUT extends z.ZodType = never> = AgentResult & {
+  output: [OUTPUT] extends [never] ? undefined : z.infer<OUTPUT>;
+};
+```
 
 ### Sub-agents
 

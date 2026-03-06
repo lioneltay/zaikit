@@ -8,6 +8,7 @@ import {
   type LanguageModel,
   type LanguageModelUsage,
   type ModelMessage,
+  Output,
   type PrepareStepResult,
   type StepResult,
   streamText,
@@ -159,6 +160,7 @@ export type ChatOptions<C = undefined> = ([C] extends [undefined]
 
 export type AgentResult = {
   text: string;
+  output: unknown;
   steps: StepResult<ToolSet>[];
   finishReason: string;
   usage: LanguageModelUsage;
@@ -171,6 +173,7 @@ export type StreamOptions<C = undefined> = ([C] extends [undefined]
   model?: LanguageModel;
   threadId?: string;
   maxSteps?: number;
+  output?: z.ZodType;
   frontendTools?: FrontendToolDef[];
 };
 
@@ -179,7 +182,7 @@ export type StreamResult = {
   result: Promise<AgentResult>;
 };
 
-export type GenerateOptions<C = undefined> = ([C] extends [undefined]
+type BaseGenerateOptions<C = undefined> = ([C] extends [undefined]
   ? { context?: never }
   : { context: C }) & {
   model?: LanguageModel;
@@ -187,7 +190,13 @@ export type GenerateOptions<C = undefined> = ([C] extends [undefined]
   frontendTools?: FrontendToolDef[];
 } & ({ prompt: string } | { messages: UIMessage[] });
 
-export type GenerateResult = AgentResult;
+export type GenerateOptions<C = undefined> = BaseGenerateOptions<C> & {
+  output?: z.ZodType;
+};
+
+export type GenerateResult<OUTPUT extends z.ZodType = never> = AgentResult & {
+  output: [OUTPUT] extends [never] ? undefined : z.infer<OUTPUT>;
+};
 
 // --- Agent type ---
 
@@ -199,7 +208,9 @@ export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   contextSchema: Record<string, unknown> | undefined;
   stream(options: StreamOptions<C>): Promise<StreamResult>;
   chat(options: ChatOptions<C>): Promise<Response>;
-  generate(options: GenerateOptions<C>): Promise<GenerateResult>;
+  generate<OUTPUT extends z.ZodType = never>(
+    options: BaseGenerateOptions<C> & { output?: OUTPUT },
+  ): Promise<GenerateResult<OUTPUT>>;
 };
 
 // --- Helpers ---
@@ -411,6 +422,7 @@ export function createAgent<
     ctx: MiddlewareContext,
     callbacks?: {
       maxSteps?: number;
+      output?: Output.Output;
       onResult?: (result: AgentResult) => void;
       onError?: (err: unknown) => void;
     },
@@ -458,6 +470,7 @@ export function createAgent<
               messages: overrides.messages ?? currentModelMessages,
               toolChoice: overrides.toolChoice,
               providerOptions: overrides.providerOptions,
+              output: callbacks?.output,
             });
 
             const uiStream = result.toUIMessageStream({
@@ -538,8 +551,23 @@ export function createAgent<
 
           // Emit structured result before closing the stream
           const lastStep = allSteps[allSteps.length - 1];
+
+          // Parse structured output from the last step's text
+          let parsedOutput: unknown;
+          if (callbacks?.output && lastStep?.finishReason === "stop") {
+            parsedOutput = await callbacks.output.parseCompleteOutput(
+              { text: lastStep.text },
+              {
+                response: lastStep.response,
+                usage: lastStep.usage,
+                finishReason: lastStep.finishReason,
+              },
+            );
+          }
+
           callbacks?.onResult?.({
             text: lastStep?.text ?? "",
+            output: parsedOutput,
             steps: allSteps,
             finishReason: lastStep?.finishReason ?? "stop",
             usage: sumUsage(allSteps),
@@ -585,10 +613,16 @@ export function createAgent<
     });
     resultPromise.catch(() => {});
 
+    // Wrap Zod schema into AI SDK Output spec
+    const outputSpec = opts.output
+      ? Output.object({ schema: opts.output })
+      : undefined;
+
     // Compose middleware around core loop
     const chain = composeMiddleware(middleware, (ctx) =>
       coreAgentStream(ctx, {
         maxSteps: opts.maxSteps,
+        output: outputSpec,
         onResult: resolveResult,
         onError: rejectResult,
       }),
@@ -968,7 +1002,9 @@ export function createAgent<
       return streamToResponse(sr, messages, { memory, threadId });
     },
 
-    async generate(opts: GenerateOptions<C>): Promise<GenerateResult> {
+    async generate<OUTPUT extends z.ZodType = never>(
+      opts: BaseGenerateOptions<C> & { output?: OUTPUT },
+    ): Promise<GenerateResult<OUTPUT>> {
       const messages: UIMessage[] =
         "prompt" in opts
           ? [
@@ -984,6 +1020,7 @@ export function createAgent<
         messages,
         model: opts.model,
         maxSteps: opts.maxSteps ?? 10,
+        output: opts.output,
         frontendTools: opts.frontendTools,
         context: (opts as any).context,
       } as StreamOptions<C>);
@@ -1001,7 +1038,7 @@ export function createAgent<
         }
       }
 
-      return result;
+      return (await result) as GenerateResult<OUTPUT>;
     },
   };
 }
