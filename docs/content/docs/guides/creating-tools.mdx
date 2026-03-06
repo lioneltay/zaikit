@@ -35,7 +35,7 @@ const get_weather = createTool({
 
 ## The Execute Function
 
-The `execute` function receives a context object with `{ input }`, where `input` is the parsed and validated result of your Zod schema. The return value can be any serializable value -- it gets sent back to the LLM as the tool result.
+The `execute` function receives a context object with `{ input, writeData }`, where `input` is the parsed and validated result of your Zod schema. The return value can be any serializable value -- it gets sent back to the LLM as the tool result.
 
 ```ts
 const search_database = createTool({
@@ -57,10 +57,10 @@ const search_database = createTool({
 The full type signature is:
 
 ```ts
-execute: (ctx: { input: INPUT }) => Promise<OUTPUT>
+execute: (ctx: { input: INPUT; writeData: WriteDataFn }) => Promise<OUTPUT>
 ```
 
-`INPUT` is inferred from your `inputSchema`, so you get full type safety on `input` without manual annotations.
+`INPUT` is inferred from your `inputSchema`, so you get full type safety on `input` without manual annotations. The `writeData` function lets you emit custom data parts to the stream mid-execution -- see [Tool Data](/concepts/tool-data) for details.
 
 ## Naming Tools
 
@@ -267,8 +267,36 @@ A good `system` prompt that lists the available tools helps the model choose cor
 
 See the [Type-Safe Tools](/guides/type-safe-tools) guide for details.
 
+## Emitting Data During Execution
+
+Tools can push custom data parts to the stream mid-execution using `writeData`. This is useful for progress indicators, live previews, and other real-time UI updates that the client should see before the tool returns.
+
+```ts
+const process_document = createTool({
+  description: "Process a document through multiple analysis stages",
+  inputSchema: z.object({
+    documentId: z.string(),
+  }),
+  execute: async ({ input, writeData }) => {
+    writeData({ type: "progress", data: { stage: "parsing", percent: 0 } });
+    const doc = await parseDocument(input.documentId);
+
+    writeData({ type: "progress", data: { stage: "analyzing", percent: 50 } });
+    const analysis = await analyzeDocument(doc);
+
+    writeData({ type: "progress", data: { stage: "complete", percent: 100 } });
+    return { summary: analysis.summary, wordCount: doc.wordCount };
+  },
+});
+```
+
+Data parts with `scope: "tool"` (the default) are attached to the tool part's `data` array on the frontend, accessible via `ToolRenderProps`. Set `transient: true` for data that should only appear during streaming and not be persisted.
+
+See [Tool Data](/concepts/tool-data) for the full guide on scoping, deduplication, and frontend access.
+
 ## What's Next
 
 - **[Context](/concepts/context)** -- Pass request-scoped data like user IDs and permissions to tools
+- **[Tool Data](/concepts/tool-data)** -- Emit progress indicators, previews, and artifacts from tools
 - **[Human-in-the-Loop](/guides/human-in-the-loop)** -- Add `suspendSchema` and `resumeSchema` to pause tools for user approval
 - **[Type-Safe Tools](/guides/type-safe-tools)** -- Generate typed props for your tool renderer components

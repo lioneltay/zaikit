@@ -46,7 +46,23 @@ function createTool<INPUT, OUTPUT>(
 | `inputSchema` | `z.ZodType<INPUT>` | Yes | Zod schema that validates and types the tool input. |
 | `outputSchema` | `z.ZodType<OUTPUT>` | No | Zod schema that validates the tool output at runtime. |
 | `context` | `z.ZodType<CONTEXT>` | No | Zod schema for request-scoped context. When set, the execute function receives a typed `context` parameter. See [Context](/concepts/context). |
-| `execute` | `(ctx: { input: INPUT }) => Promise<OUTPUT>` or `(ctx: { input: INPUT; context: CONTEXT }) => Promise<OUTPUT>` | Yes | The function that runs when the LLM calls this tool. When a `context` schema is defined, the execute function receives a required `context` parameter. |
+| `execute` | `(ctx: BaseExecuteContext<INPUT>) => Promise<OUTPUT>` | Yes | The function that runs when the LLM calls this tool. `BaseExecuteContext` always includes `input` and `writeData`. When a `context` schema is defined, the execute function also receives a required `context` parameter. |
+
+### BaseExecuteContext
+
+All tool execute functions receive these fields:
+
+```ts
+type BaseExecuteContext<INPUT> = {
+  input: INPUT;
+  writeData: WriteDataFn;
+};
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `input` | `INPUT` | The validated tool input from the LLM. |
+| `writeData` | `WriteDataFn` | Emit custom data parts to the stream mid-execution. See [Tool Data](/concepts/tool-data). |
 
 ## Tool with Context
 
@@ -134,11 +150,12 @@ function createTool<INPUT, OUTPUT, SUSPEND, RESUME>(
 
 ### Execute Context
 
-The execute function for a suspendable tool receives:
+The execute function for a suspendable tool receives all fields from `BaseExecuteContext` plus suspend-specific fields:
 
 | Property | Type | Description |
 | --- | --- | --- |
 | `input` | `INPUT` | The validated tool input from the LLM. Same on both calls. |
+| `writeData` | `WriteDataFn` | Emit custom data parts to the stream mid-execution. See [Tool Data](/concepts/tool-data). |
 | `suspend` | `(data: SUSPEND) => SuspendResult<SUSPEND>` | Call this to pause and send data to the client. Return the result from your execute function. |
 | `resumeData` | `RESUME \| undefined` | `undefined` on the first call. Populated with the user's response on resume. |
 

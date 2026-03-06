@@ -50,6 +50,7 @@ type ToolRenderProps<
   result: unknown;
   error: string | undefined;
   resume: (data: TResume) => void;
+  data: ToolDataPart[];
 };
 ```
 
@@ -63,6 +64,7 @@ type ToolRenderProps<
 | `result` | The tool's return value. Only present when `state` is `"result"`. |
 | `error` | Error message from the tool execution. Only present when `state` is `"error"`. |
 | `resume` | Call this to resume a suspended tool with data from the user. |
+| `data` | Custom data parts emitted by this tool call via `writeData`. See [Tool Data](/concepts/tool-data). |
 
 ## `ToolRenderState`
 
@@ -195,6 +197,7 @@ The `ToolRenderers` component renders no DOM — it only registers render functi
 
 ## What's Next
 
+- **[Tool Data](/concepts/tool-data)** — Emit progress indicators, previews, and artifacts from tools via `writeData`
 - **[Human-in-the-Loop](/guides/human-in-the-loop)** — Build interactive tool UIs with suspend/resume
 - **[Type-Safe Tools](/guides/type-safe-tools)** — Generate typed props for your tool renderers with codegen
 - **[`useToolRenderer` Reference](/reference/react/use-tool-renderer)** — Full API reference for the renderer hook

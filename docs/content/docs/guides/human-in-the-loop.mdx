@@ -286,6 +286,7 @@ The props object passed to your render function:
 | `result` | `unknown` | The tool's return value -- only set when `state === "result"` |
 | `error` | `string \| undefined` | Error message from the tool execution -- only set when `state === "error"` |
 | `resume` | `(data: TResume) => void` | Call this to resume the tool with user data |
+| `data` | `ToolDataPart[]` | Custom data parts emitted by this tool call via `writeData`. See [Tool Data](/concepts/tool-data). |
 
 ## Complete Working Example
 

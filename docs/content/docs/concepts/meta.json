@@ -8,6 +8,7 @@
     "memory",
     "tool-rendering",
     "suspend-resume",
-    "context"
+    "context",
+    "tool-data"
   ]
 }

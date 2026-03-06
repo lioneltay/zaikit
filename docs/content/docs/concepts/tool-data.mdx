@@ -1,0 +1,207 @@
+---
+title: Tool Data
+description: How tools emit custom data parts to the stream for progress indicators, live previews, and real-time UI updates.
+---
+
+Tools can emit custom data parts to the stream mid-execution using `writeData`. This enables progress indicators, live previews, artifacts, and other real-time UI updates that go beyond the final tool result.
+
+## When to Use
+
+- **Progress indicators** -- Show step-by-step progress while a tool does multi-stage work
+- **Live previews** -- Stream partial results (e.g. a summary) before the tool completes
+- **Artifacts** -- Emit rich content (charts, code, images) as standalone data parts
+- **Status updates** -- Report intermediate state changes to the frontend
+
+## Emitting Data from a Tool
+
+The `execute` function receives `writeData` alongside `input`. Call it at any point during execution to push a data part into the stream:
+
+```ts
+import { createTool } from "@zaikit/core";
+import { z } from "zod";
+
+const analyze_data = createTool({
+  description: "Analyze a dataset and return insights",
+  inputSchema: z.object({
+    datasetId: z.string(),
+  }),
+  execute: async ({ input, writeData }) => {
+    writeData({ type: "progress", data: { step: 1, total: 3, label: "Loading dataset" } });
+    const dataset = await loadDataset(input.datasetId);
+
+    writeData({ type: "progress", data: { step: 2, total: 3, label: "Running analysis" } });
+    const analysis = await runAnalysis(dataset);
+
+    writeData({ type: "preview", data: { summary: analysis.summary } });
+
+    writeData({ type: "progress", data: { step: 3, total: 3, label: "Done" } });
+    return analysis;
+  },
+});
+```
+
+Each `writeData` call emits a data part immediately into the SSE stream. The client receives it in real time, before the tool finishes.
+
+## WriteDataPart
+
+```ts
+type WriteDataPart = {
+  type: string;        // Data type name (auto-prefixed with `data-` on the wire)
+  data: unknown;       // Arbitrary payload
+  id?: string;         // Auto-generated if not provided
+  transient?: boolean; // If true, appears in stream but NOT persisted in message
+  scope?: "tool" | "message";
+};
+```
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `type` | `string` | Required | Name for this data type. Prefixed with `data-` on the wire automatically. |
+| `data` | `unknown` | Required | Arbitrary payload. Must be JSON-serializable. |
+| `id` | `string` | Auto-generated | Unique ID. Same `type` + `id` = update in place (AI SDK deduplication). |
+| `transient` | `boolean` | `false` | When `true`, the part appears in the stream but is not persisted in the stored message. |
+| `scope` | `"tool" \| "message"` | `"tool"` | Controls how the part is associated on the frontend. |
+
+## Scoping: Tool vs Message
+
+The `scope` field determines how a data part is associated on the frontend.
+
+**`scope: "tool"`** (default when called from a tool): The data part is associated with the specific tool call. On the frontend, these parts are stripped from the message's parts array and attached to the corresponding tool part's `data` array. This is the right choice when the data is contextual to a particular tool invocation.
+
+```ts
+// This progress update is tied to this specific tool call
+writeData({ type: "progress", data: { percent: 50 } });
+```
+
+**`scope: "message"`**: The data part is a standalone message-level part, not tied to any tool call. It remains in the message's parts array directly.
+
+```ts
+// This artifact is not tied to any specific tool call
+writeData({ type: "artifact", data: { html: "<div>...</div>" }, scope: "message" });
+```
+
+## Deduplication
+
+The AI SDK deduplicates data parts by `type` + `id`. If you emit two parts with the same type and id, the second replaces the first. This is useful for updating a progress bar in place rather than appending new entries:
+
+```ts
+writeData({ type: "progress", data: { percent: 25 }, id: "main-progress" });
+// ... later ...
+writeData({ type: "progress", data: { percent: 75 }, id: "main-progress" });
+// Client sees only the latest: { percent: 75 }
+```
+
+When `id` is omitted, a unique ID is auto-generated for each call, so each emission creates a distinct part.
+
+## Transient vs Persistent Data
+
+By default, data parts are persisted in the stored message. Set `transient: true` to emit data that appears in the live stream but is not saved:
+
+```ts
+// Persisted — will be in the message when loaded from memory
+writeData({ type: "chart", data: chartData });
+
+// Transient — visible during streaming only, gone after reload
+writeData({ type: "progress", data: { percent: 50 }, transient: true });
+```
+
+Transient data is ideal for progress indicators that are only meaningful during the current stream. Persistent data is better for artifacts the user should see when revisiting the conversation.
+
+## Frontend Access
+
+On the frontend, tool-scoped data parts are available via the `data` field on `ToolRenderProps`:
+
+```tsx
+import { useToolRenderer } from "@zaikit/react";
+
+useToolRenderer("analyze_data", (props) => {
+  // props.data contains all tool-scoped data parts for this tool call
+  const progress = props.data.find((d) => d.type === "progress");
+  const preview = props.data.find((d) => d.type === "preview");
+
+  if (props.state === "call" && progress) {
+    return (
+      <div>
+        Step {progress.data.step} of {progress.data.total}: {progress.data.label}
+      </div>
+    );
+  }
+
+  if (props.state === "result") {
+    return <ResultView data={props.result} />;
+  }
+
+  return <div>Analyzing...</div>;
+});
+```
+
+Each entry in `data` is a `ToolDataPart`:
+
+```ts
+type ToolDataPart = {
+  type: string;   // The type without the `data-` prefix
+  id: string;
+  data: unknown;
+};
+```
+
+## The `onData` Callback
+
+Both `stream()` and `generate()` accept an `onData` callback that fires for every `writeData` call across all tools:
+
+```ts
+const { stream, result } = await agent.stream({
+  messages,
+  onData: (part) => {
+    console.log(part.type, part.data);
+  },
+});
+
+const result = await agent.generate({
+  prompt: "Analyze dataset-42",
+  onData: (part) => {
+    console.log(part.type, part.data);
+  },
+});
+```
+
+This is useful for server-side logging, metrics, or forwarding data to external systems.
+
+## Sub-Agent Forwarding
+
+When a tool invokes a sub-agent via `generate()`, it can forward the sub-agent's data parts to the parent stream using `onData` and `writeData` together:
+
+```ts
+const research_tool = createTool({
+  description: "Research a topic using a specialized sub-agent",
+  inputSchema: z.object({ topic: z.string() }),
+  execute: async ({ input, writeData }) => {
+    const result = await researchAgent.generate({
+      prompt: `Research: ${input.topic}`,
+      onData: (part) => {
+        // Forward sub-agent data to the parent stream
+        writeData({ type: part.type, data: part.data, transient: true });
+      },
+    });
+    return result.text;
+  },
+});
+```
+
+The parent tool's `writeData` is tool-scoped by default, so forwarded data parts are associated with the `research_tool` call on the frontend.
+
+## Resume Behavior
+
+When a tool is re-executed during a resume, `writeData` calls made during re-execution are written to the stream before the LLM continuation. Data parts emitted during resume are delivered to the client in the same way as during the initial execution.
+
+## Summary
+
+| Concept | Description |
+|---|---|
+| `writeData` | Function available in tool execute context. Emits a custom data part to the stream. |
+| `scope: "tool"` | Data part is associated with the tool call. Appears in `ToolRenderProps.data`. |
+| `scope: "message"` | Data part is standalone, not tied to a tool call. |
+| `transient: true` | Data part is streamed but not persisted in the message. |
+| Deduplication | Same `type` + `id` = update in place. Auto-generated `id` if not provided. |
+| `onData` | Callback on `stream()` / `generate()` options. Fires for every `writeData` call. |
+| `ToolDataPart` | Frontend type: `{ type, id, data }` with the `data-` prefix stripped. |

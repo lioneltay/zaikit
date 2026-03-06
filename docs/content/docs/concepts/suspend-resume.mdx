@@ -84,7 +84,7 @@ Key points:
 - `suspend(payload)` returns a `SuspendResult`. You must return it from the execute function.
 - `resumeData` is `undefined` on the first call and populated with the user's response on subsequent calls.
 - Both `suspendSchema` and `resumeSchema` are validated with Zod at runtime.
-- A regular (non-suspendable) tool only receives `{ input }` in its execute function.
+- A regular (non-suspendable) tool receives `{ input, writeData }` in its execute function.
 
 ## The `SuspendResult` Type
 
