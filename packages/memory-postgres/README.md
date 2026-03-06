@@ -30,4 +30,4 @@ const agent = createAgent({
 
 ## License
 
-MIT
+Apache-2.0

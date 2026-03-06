@@ -15,8 +15,10 @@ import type { InternalWriteDataFn } from "./write-data";
 type ToolInjection = {
   /** Request-scoped context provided via agent.chat({ context }) */
   context?: unknown;
-  /** Resume data provided when resuming a suspended tool */
+  /** Resume data provided when resuming a suspended tool (latest) */
   resumeData?: unknown;
+  /** Accumulated resume responses from previous suspensions (multi-suspend) */
+  resumeHistory?: unknown[];
   /** Callback to emit custom data parts to the stream */
   writeData?: InternalWriteDataFn;
 };

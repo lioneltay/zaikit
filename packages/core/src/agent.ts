@@ -502,12 +502,25 @@ export function createAgent<
     const modelMessages = await convertToModelMessages(messages);
     const originalPartCount = suspendedMsg.parts.length;
 
+    // Read existing resume history from the suspend part
+    const suspendPart = suspendedMsg.parts.find(
+      (p) => isSuspendPart(p) && p.data.toolCallId === resume.toolCallId,
+    );
+    if (!suspendPart || !isSuspendPart(suspendPart)) {
+      throw new Error(
+        `Suspend part not found for toolCallId: ${resume.toolCallId}`,
+      );
+    }
+    const previousHistory = suspendPart.data.resumeHistory ?? [];
+    const resumeHistory = [...previousHistory, resume.data];
+
     const uiStream = createUIMessageStream({
       originalMessages: messages,
       execute: async ({ writer }) => {
         // Immediately mark the suspend as resolved in the stream so the
         // client hides the confirmation UI before the tool re-executes.
-        // The suspend is resolved the moment the user provides resumeData.
+        // If the tool re-suspends, a new suspend part will overwrite this
+        // via the AI SDK's same-type+id dedup.
         writer.write({
           type: DATA_TOOL_SUSPEND,
           id: resume.toolCallId,
@@ -523,9 +536,14 @@ export function createAgent<
           writer.write(chunk as any),
         );
 
-        // Re-execute tool with writeData available
+        // Re-execute tool with writeData, resumeData, and resumeHistory
         const output = await runWithToolInjection(
-          { context, resumeData: resume.data, writeData: writeDataImpl },
+          {
+            context,
+            resumeData: resume.data,
+            resumeHistory,
+            writeData: writeDataImpl,
+          },
           () =>
             execute(toolInput, {
               toolCallId: resume.toolCallId,
@@ -534,9 +552,35 @@ export function createAgent<
         );
 
         if (isSuspendResult(output)) {
-          throw new Error(
-            `Tool "${toolName}" re-suspended during resume. Re-suspension is not supported.`,
+          // Tool re-suspended — stream a new suspend part (overwrites the
+          // resolved marker via same type+id dedup) and update memory.
+          const newSuspendData = {
+            toolCallId: resume.toolCallId,
+            toolName,
+            payload: output.payload,
+            resumeHistory,
+          };
+
+          writer.write({
+            type: DATA_TOOL_SUSPEND,
+            id: resume.toolCallId,
+            data: newSuspendData,
+          } as any);
+
+          // Update memory: replace the old suspend part with the new one
+          const updatedParts = suspendedMsg.parts.map(
+            (p): UIMessage["parts"][number] => {
+              if (isSuspendPart(p) && p.data.toolCallId === resume.toolCallId) {
+                return { ...p, data: newSuspendData };
+              }
+              return p;
+            },
           );
+
+          await memory.updateMessage(threadId, suspendedMsg.id, {
+            parts: updatedParts,
+          });
+          return;
         }
 
         // Update the message — fill in tool output, mark suspend as resolved

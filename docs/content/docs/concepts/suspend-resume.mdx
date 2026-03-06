@@ -31,13 +31,13 @@ Here is the complete lifecycle of a suspended tool call, from LLM invocation to 
 
 11. **Message updated in place** — The tool output replaces the suspension in the stored message. The `data-tool-suspend` part is marked as resolved.
 
-12. **Remaining suspensions check** — If other tools in the same message are still suspended, the server returns `204 No Content`. The client re-fetches messages and shows the remaining suspension UIs. Otherwise, the LLM continues with the updated conversation.
+12. **Remaining suspensions check** — If other tools in the same message are still suspended, the server ends the stream early without continuing the LLM. The client re-fetches messages and shows the remaining suspension UIs. Otherwise, the LLM continues with the updated conversation.
 
 ![Flight booking tool suspended — waiting for the user to select a flight](../guides/demo-flight-booking.png)
 
 ## Defining a Suspendable Tool
 
-A suspendable tool declares `suspendSchema` and `resumeSchema` alongside the regular `inputSchema`. The `execute` function receives `{ input, suspend, resumeData }`:
+A suspendable tool declares `suspendSchema` and `resumeSchema` alongside the regular `inputSchema`. The `execute` function receives `{ input, suspend, resumeData, resumeHistory }`:
 
 ```ts
 import { createTool } from "@zaikit/core";
@@ -83,6 +83,7 @@ Key points:
 
 - `suspend(payload)` returns a `SuspendResult`. You must return it from the execute function.
 - `resumeData` is `undefined` on the first call and populated with the user's response on subsequent calls.
+- `resumeHistory` is an array of all past resume responses (see [Multi-Suspend](#multi-suspend) below).
 - Both `suspendSchema` and `resumeSchema` are validated with Zod at runtime.
 - A regular (non-suspendable) tool receives `{ input, writeData }` in its execute function.
 
@@ -101,23 +102,23 @@ The `__suspended` marker lets the agent distinguish suspension from normal tool 
 
 ## The AsyncLocalStorage Bridge
 
-The AI SDK's `tool.execute` signature is `(input, { toolCallId, messages })` — there is no way to pass custom context. ZAIKit uses Node.js `AsyncLocalStorage` to thread `resumeData` from the agent's `handleResume` into the tool's execute wrapper:
+The AI SDK's `tool.execute` signature is `(input, { toolCallId, messages })` — there is no way to pass custom context. ZAIKit uses Node.js `AsyncLocalStorage` to thread resume data from the agent's `handleResume` into the tool's execute wrapper:
 
 ```ts
 // agent.ts — when resuming
 const output = await runWithToolInjection(
-  { resumeData: resume.data },
+  { resumeData: resume.data, resumeHistory, context, writeData },
   () => toolDef.execute!(toolInput, { toolCallId, messages }),
 );
 ```
 
 ```ts
 // create-tool.ts — inside the execute wrapper
-const { resumeData } = getToolInjection(); // reads from AsyncLocalStorage
-result = await execute({ input, suspend, resumeData });
+const { resumeData, resumeHistory } = getToolInjection();
+result = await execute({ input, suspend, resumeData, resumeHistory });
 ```
 
-This is an internal implementation detail. As a tool author, you simply use `resumeData` from the execute arguments.
+This is an internal implementation detail. As a tool author, you simply use `resumeData` and `resumeHistory` from the execute arguments.
 
 ## Multiple Simultaneous Suspensions
 
@@ -127,10 +128,83 @@ When the user resolves one suspension:
 
 1. The server marks that specific `data-tool-suspend` part as `resolved`.
 2. It checks if any unresolved suspensions remain.
-3. If yes, it returns `204 No Content` — the client re-fetches messages and shows the remaining UIs.
+3. If yes, the stream ends early without continuing the LLM — the client re-fetches messages and shows the remaining UIs.
 4. If all are resolved, the LLM continues with the full conversation.
 
 This means suspensions are resolved one at a time. Each resolution updates the stored message in place until all tools have been addressed.
+
+## Multi-Suspend
+
+A tool can suspend more than once across its lifecycle. This is useful for multi-phase workflows — for example, a deploy tool that first asks "deploy?", then after deploying asks "activate traffic?".
+
+### How It Works
+
+Each time the user resumes a tool, the tool's `execute` function runs from scratch. The `resumeHistory` array accumulates all past resume responses:
+
+| Invocation | `resumeHistory` | `resumeData` |
+|---|---|---|
+| 1st (initial) | `[]` | `undefined` |
+| 2nd (first resume) | `[firstResponse]` | `firstResponse` |
+| 3rd (second resume) | `[firstResponse, secondResponse]` | `secondResponse` |
+
+Use `resumeHistory.length` to determine which phase the tool is in:
+
+```ts
+const deploy_service = createTool({
+  description: "Deploy a service with confirmation gates",
+  inputSchema: z.object({
+    service: z.string(),
+    environment: z.enum(["staging", "production"]),
+  }),
+  suspendSchema: z.object({
+    phase: z.enum(["confirm-deploy", "activate-traffic"]),
+    service: z.string(),
+    version: z.string(),
+  }),
+  resumeSchema: z.object({ approved: z.boolean() }),
+  execute: async ({ input, suspend, resumeHistory }) => {
+    const version = "v2.1.0";
+
+    // Phase 0: initial — run checks, ask to deploy
+    if (resumeHistory.length === 0) {
+      return suspend({ phase: "confirm-deploy", service: input.service, version });
+    }
+
+    // Phase 1: user responded to deploy confirmation
+    if (resumeHistory.length === 1) {
+      if (!resumeHistory[0].approved) {
+        return { deployed: false, reason: "User cancelled" };
+      }
+      // Deploy succeeded — ask to activate traffic
+      return suspend({ phase: "activate-traffic", service: input.service, version });
+    }
+
+    // Phase 2: user responded to traffic activation
+    if (!resumeHistory[resumeHistory.length - 1].approved) {
+      return { deployed: true, trafficActive: false };
+    }
+    return { deployed: true, trafficActive: true };
+  },
+});
+```
+
+### What Happens Under the Hood
+
+1. When a tool re-suspends, the `data-tool-suspend` part in the stream is replaced (same `type` + `id` = update in place via the AI SDK's dedup behavior).
+2. The `resumeHistory` is stored inside the suspend part's data in memory, so it persists across server restarts.
+3. The client sees the same `state: "suspended"` with the new `suspendPayload` — no client-side changes are needed.
+4. When all phases complete and the tool returns a result, the LLM continues as normal.
+
+### `resumeData` vs `resumeHistory`
+
+For single-suspend tools, use `resumeData` — it's simpler:
+
+```ts
+if (!resumeData) return suspend({ ... });
+// resumeData is the user's response
+```
+
+For multi-suspend tools, use `resumeHistory` to track phases. `resumeData` always contains the most recent response (equivalent to `resumeHistory[resumeHistory.length - 1]`).
 
 ## What's Next
 

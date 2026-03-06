@@ -66,7 +66,7 @@ const book_flight = createTool({
 
 ### 2. Implement Two-Phase Execute
 
-When `suspendSchema` and `resumeSchema` are present, the execute context includes two additional fields: `suspend` (a function) and `resumeData` (the user's response, or `undefined` on the first call).
+When `suspendSchema` and `resumeSchema` are present, the execute context includes additional fields: `suspend` (a function), `resumeData` (the user's most recent response, or `undefined` on the first call), and `resumeHistory` (array of all past responses — see [Multi-Phase Tools](#multi-phase-tools)).
 
 ```ts title="Backend"
 const book_flight = createTool({
@@ -499,6 +499,38 @@ function ApprovalTool(props: ToolRenderProps) {
   );
 }
 ```
+
+## Multi-Phase Tools
+
+A tool can suspend multiple times for workflows that need more than one confirmation step. Use `resumeHistory` instead of `resumeData` to track which phase the tool is in:
+
+```ts
+execute: async ({ input, suspend, resumeHistory }) => {
+  // Phase 0: ask for confirmation
+  if (resumeHistory.length === 0) {
+    return suspend({ phase: "confirm", ... });
+  }
+  // Phase 1: user confirmed, do work, ask to finalize
+  if (resumeHistory.length === 1) {
+    if (!resumeHistory[0].approved) return { cancelled: true };
+    return suspend({ phase: "finalize", ... });
+  }
+  // Phase 2: done
+  return { success: true };
+}
+```
+
+On the frontend, use the suspend payload to determine which UI to show:
+
+```tsx
+if (props.state === "suspended") {
+  const phase = props.suspendPayload?.phase;
+  if (phase === "confirm") return <ConfirmUI {...props} />;
+  if (phase === "finalize") return <FinalizeUI {...props} />;
+}
+```
+
+See the [Suspend & Resume concept page](/concepts/suspend-resume#multi-suspend) for details on how `resumeHistory` accumulates across phases.
 
 ## Wildcard Renderer
 

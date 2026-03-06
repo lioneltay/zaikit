@@ -2341,6 +2341,225 @@ describe("writeData", () => {
       expect(suspendIdx).toBeLessThan(progressIdx);
     }
   });
+
+  it("supports multi-suspend: tool suspends twice then returns result", async () => {
+    const memory = createInMemoryMemory();
+
+    const multiStepTool = createTool({
+      description: "Multi-step confirmation",
+      inputSchema: z.object({ action: z.string() }),
+      suspendSchema: z.object({ phase: z.string(), prompt: z.string() }),
+      resumeSchema: z.object({ value: z.string() }),
+      execute: async ({ input, suspend, resumeData, resumeHistory }) => {
+        if (resumeHistory.length === 0) {
+          return suspend({
+            phase: "confirm",
+            prompt: `Confirm ${input.action}?`,
+          });
+        }
+        if (resumeHistory.length === 1) {
+          return suspend({ phase: "mfa", prompt: "Enter MFA code" });
+        }
+        return { status: "done", action: input.action, mfa: resumeData?.value };
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("tc-1", "multi", { action: "deploy" }),
+        textResponse("All done."),
+      ]),
+      tools: { multi: multiStepTool },
+      memory,
+    });
+
+    // Step 1: initial chat — tool suspends with phase "confirm"
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Deploy"),
+    });
+
+    let msgs = await memory.getMessages("t1");
+    let suspendPart = msgs[1].parts.find(
+      (p) => p.type === "data-tool-suspend",
+    ) as any;
+    expect(suspendPart.data.payload.phase).toBe("confirm");
+    expect(suspendPart.data.resumeHistory).toBeUndefined();
+
+    // Step 2: first resume — tool re-suspends with phase "mfa"
+    const resume1 = await agent.chat({
+      threadId: "t1",
+      resume: { toolCallId: "tc-1", data: { value: "yes" } },
+    });
+    await resume1.text();
+
+    msgs = await memory.getMessages("t1");
+    suspendPart = msgs[1].parts.find(
+      (p) => p.type === "data-tool-suspend",
+    ) as any;
+    expect(suspendPart.data.payload.phase).toBe("mfa");
+    expect(suspendPart.data.resumeHistory).toEqual([{ value: "yes" }]);
+    expect(suspendPart.data.resolved).toBeFalsy();
+
+    // Tool part should NOT have output yet
+    const toolPart = msgs[1].parts.find(
+      (p) => "toolCallId" in p && (p as any).toolCallId === "tc-1",
+    );
+    expect((toolPart as any).state).not.toBe("output-available");
+
+    // Step 3: second resume — tool returns result, LLM continues
+    const resume2 = await agent.chat({
+      threadId: "t1",
+      resume: { toolCallId: "tc-1", data: { value: "123456" } },
+    });
+    await resume2.text();
+
+    msgs = await memory.getMessages("t1");
+    const finalToolPart = msgs[1].parts.find(
+      (p) => "toolCallId" in p && (p as any).toolCallId === "tc-1",
+    );
+    expect((finalToolPart as any).state).toBe("output-available");
+    expect((finalToolPart as any).output).toEqual({
+      status: "done",
+      action: "deploy",
+      mfa: "123456",
+    });
+
+    // LLM continuation should have produced text
+    const textPart = msgs[1].parts.find((p) => p.type === "text");
+    expect(textPart).toBeDefined();
+  });
+
+  it("multi-suspend with other tools still suspended", async () => {
+    const memory = createInMemoryMemory();
+
+    const multiTool = createTool({
+      description: "Multi-step tool",
+      inputSchema: z.object({}),
+      suspendSchema: z.object({ step: z.number() }),
+      resumeSchema: z.object({ ok: z.boolean() }),
+      execute: async ({ suspend, resumeHistory }) => {
+        if (resumeHistory.length === 0) {
+          return suspend({ step: 1 });
+        }
+        return "done";
+      },
+    });
+
+    const otherTool = createTool({
+      description: "Another suspendable tool",
+      inputSchema: z.object({}),
+      suspendSchema: z.object({ prompt: z.string() }),
+      resumeSchema: z.object({ ok: z.boolean() }),
+      execute: async ({ suspend, resumeData }) => {
+        if (!resumeData) {
+          return suspend({ prompt: "Approve?" });
+        }
+        return "approved";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        multiToolCallResponse([
+          { toolCallId: "c1", toolName: "multi", args: {} },
+          { toolCallId: "c2", toolName: "other", args: {} },
+        ]),
+        textResponse("Both done."),
+      ]),
+      tools: { multi: multiTool, other: otherTool },
+      memory,
+    });
+
+    // Both tools suspend
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Do both"),
+    });
+
+    // Resume multi tool → it returns result, but other tool still suspended
+    const resume1 = await agent.chat({
+      threadId: "t1",
+      resume: { toolCallId: "c1", data: { ok: true } },
+    });
+    await resume1.text();
+
+    // Check: multi tool is resolved, other tool still suspended
+    const msgs = await memory.getMessages("t1");
+    const suspendParts = msgs[1].parts.filter(
+      (p) => p.type === "data-tool-suspend",
+    );
+    const multiSuspend = suspendParts.find(
+      (p) => (p as any).data.toolCallId === "c1",
+    );
+    const otherSuspend = suspendParts.find(
+      (p) => (p as any).data.toolCallId === "c2",
+    );
+    expect((multiSuspend as any).data.resolved).toBe(true);
+    expect((otherSuspend as any).data.resolved).toBeFalsy();
+
+    // Resume other tool → all resolved → LLM continues
+    const resume2 = await agent.chat({
+      threadId: "t1",
+      resume: { toolCallId: "c2", data: { ok: true } },
+    });
+    await resume2.text();
+
+    const finalMsgs = await memory.getMessages("t1");
+    const textPart = finalMsgs[1].parts.find((p) => p.type === "text");
+    expect(textPart).toBeDefined();
+  });
+
+  it("resumeHistory accumulates across multiple re-suspensions", async () => {
+    const memory = createInMemoryMemory();
+    const historyLog: unknown[][] = [];
+
+    const tool = createTool({
+      description: "Three-phase tool",
+      inputSchema: z.object({}),
+      suspendSchema: z.object({ phase: z.number() }),
+      resumeSchema: z.object({ answer: z.string() }),
+      execute: async ({ suspend, resumeHistory }) => {
+        historyLog.push([...resumeHistory]);
+        if (resumeHistory.length < 3) {
+          return suspend({ phase: resumeHistory.length + 1 });
+        }
+        return "complete";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("tc-1", "tool", {}),
+        textResponse("Finished."),
+      ]),
+      tools: { tool },
+      memory,
+    });
+
+    // Initial suspend
+    await chatAndConsume(agent, {
+      threadId: "t1",
+      message: userMessage("Go"),
+    });
+
+    // Resume 3 times
+    for (const answer of ["a", "b", "c"]) {
+      const res = await agent.chat({
+        threadId: "t1",
+        resume: { toolCallId: "tc-1", data: { answer } },
+      });
+      await res.text();
+    }
+
+    // Verify the tool saw accumulating history
+    expect(historyLog).toEqual([
+      [], // initial call
+      [{ answer: "a" }], // first resume
+      [{ answer: "a" }, { answer: "b" }], // second resume
+      [{ answer: "a" }, { answer: "b" }, { answer: "c" }], // third resume
+    ]);
+  });
 });
 
 describe("generateThreadTitle", () => {

@@ -30,6 +30,8 @@ export type SuspendPartData = {
   toolName: string;
   payload: unknown;
   resolved?: boolean;
+  /** Accumulated resume responses from previous suspensions (multi-suspend). */
+  resumeHistory?: unknown[];
 };
 
 /** Check if a part is a `data-tool-suspend` part. */

@@ -1,5 +1,17 @@
 # Features Roadmap
 
+## Brain Dump
+
+- Home Page
+- Blog page
+
+- creating github issues for docs via fumadocs?
+- note taker skill?
+
+- taking videos with playwright mcp?
+- allow ai to take video demos for doc site
+- image generator integration?
+
 ## P0 — Polish & Foundations
 
 Things that fix or complete existing work. Do these first.
@@ -7,6 +19,7 @@ Things that fix or complete existing work. Do these first.
 - [x] Make sure renderers have correct state (add a suspend state?)
 - [ ] Configuration demo — ability to select middlewares
 - [ ] Docs server RAG
+- [ ] better demo app using all the features
 
 ## P1 — Core Capabilities
 

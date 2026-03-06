@@ -1,8 +1,10 @@
 {
   "name": "zaikit",
   "private": true,
+  "license": "Apache-2.0",
   "packageManager": "pnpm@10.6.2",
   "scripts": {
+    "predev": "lsof -ti:7300,7301,7777 | xargs kill 2>/dev/null || true",
     "dev": "turbo dev --concurrency 20",
     "build": "turbo build",
     "check-types": "turbo check-types",

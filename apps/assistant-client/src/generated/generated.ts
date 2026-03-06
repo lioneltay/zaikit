@@ -103,6 +103,7 @@ export type DeployServiceOutput =
   | {
       deployed: boolean;
       reason: string;
+      trafficActive?: undefined;
       service?: undefined;
       environment?: undefined;
       version?: undefined;
@@ -110,6 +111,16 @@ export type DeployServiceOutput =
     }
   | {
       deployed: boolean;
+      trafficActive: boolean;
+      reason: string;
+      service: string;
+      environment: "staging" | "production";
+      version: string;
+      url: string;
+    }
+  | {
+      deployed: boolean;
+      trafficActive: boolean;
       service: string;
       environment: "staging" | "production";
       version: string;
@@ -117,10 +128,12 @@ export type DeployServiceOutput =
       reason?: undefined;
     };
 export type DeployServiceSuspend = {
+  phase: "confirm-deploy" | "activate-traffic";
   service: string;
   environment: string;
   version: string;
-  checksCompleted: number;
+  checksCompleted?: number | undefined;
+  deployUrl?: string | undefined;
 };
 export type DeployServiceResume = { approved: boolean };
 

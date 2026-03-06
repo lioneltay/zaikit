@@ -157,7 +157,8 @@ The execute function for a suspendable tool receives all fields from `BaseExecut
 | `input` | `INPUT` | The validated tool input from the LLM. Same on both calls. |
 | `writeData` | `WriteDataFn` | Emit custom data parts to the stream mid-execution. See [Tool Data](/concepts/tool-data). |
 | `suspend` | `(data: SUSPEND) => SuspendResult<SUSPEND>` | Call this to pause and send data to the client. Return the result from your execute function. |
-| `resumeData` | `RESUME \| undefined` | `undefined` on the first call. Populated with the user's response on resume. |
+| `resumeData` | `RESUME \| undefined` | `undefined` on the first call. Populated with the user's most recent response on resume. |
+| `resumeHistory` | `RESUME[]` | Array of all past resume responses, in order. Empty on the first call, grows by one on each resume. Use `resumeHistory.length` to determine the current phase in [multi-suspend](/concepts/suspend-resume#multi-suspend) tools. |
 
 ## ZaikitTool Type
 

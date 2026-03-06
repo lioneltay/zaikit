@@ -262,7 +262,7 @@ async function runStepsWithProgress(
 
 const deploy_service = createTool({
   description:
-    "Deploy a service to a target environment. Runs pre-deploy checks, asks for confirmation, then deploys.",
+    "Deploy a service to a target environment. Runs pre-deploy checks, asks for confirmation, deploys, then asks to activate traffic.",
   inputSchema: z.object({
     service: z.string().describe("Service name, e.g. 'auth-service'"),
     environment: z
@@ -270,18 +270,27 @@ const deploy_service = createTool({
       .describe("Target environment"),
   }),
   suspendSchema: z.object({
+    phase: z.enum(["confirm-deploy", "activate-traffic"]),
     service: z.string(),
     environment: z.string(),
     version: z.string(),
-    checksCompleted: z.number(),
+    checksCompleted: z.number().optional(),
+    deployUrl: z.string().optional(),
   }),
   resumeSchema: z.object({
     approved: z.boolean(),
   }),
-  execute: async ({ input, writeData, suspend, resumeData }) => {
-    const version = `v${Math.floor(Math.random() * 5) + 1}.${Math.floor(Math.random() * 20)}.${Math.floor(Math.random() * 10)}`;
+  execute: async ({ input, writeData, suspend, resumeHistory }) => {
+    // Derive a stable version from the input so it stays consistent across
+    // re-executions (the tool runs from scratch on each resume).
+    const hash = Array.from(input.service + input.environment).reduce(
+      (h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0,
+      0,
+    );
+    const version = `v${(Math.abs(hash) % 5) + 1}.${Math.abs(hash >> 5) % 20}.${Math.abs(hash >> 10) % 10}`;
 
-    if (!resumeData) {
+    // Phase 0: Initial call — run pre-deploy checks, then ask for confirmation
+    if (resumeHistory.length === 0) {
       await runStepsWithProgress(
         [
           { name: "Linting", detail: "eslint + prettier" },
@@ -293,6 +302,7 @@ const deploy_service = createTool({
       );
 
       return suspend({
+        phase: "confirm-deploy",
         service: input.service,
         environment: input.environment,
         version,
@@ -300,29 +310,68 @@ const deploy_service = createTool({
       });
     }
 
-    if (!resumeData.approved) {
-      return { deployed: false, reason: "User cancelled" };
+    // Phase 1: User responded to deploy confirmation
+    if (resumeHistory.length === 1) {
+      if (!resumeHistory[0].approved) {
+        return { deployed: false, reason: "User cancelled deploy" };
+      }
+
+      await runStepsWithProgress(
+        [
+          {
+            name: "Pushing image",
+            detail: `registry.acme.io/${input.service}:${version}`,
+          },
+          { name: "Rolling out pods", detail: `${input.environment} cluster` },
+          { name: "Health check", detail: "GET /healthz" },
+        ],
+        writeData,
+        "deploy",
+      );
+
+      const url = `https://${input.service}.${input.environment}.acme.io`;
+      return suspend({
+        phase: "activate-traffic",
+        service: input.service,
+        environment: input.environment,
+        version,
+        deployUrl: url,
+      });
     }
 
+    // Phase 2: User responded to traffic activation
+    const lastResume = resumeHistory[resumeHistory.length - 1];
+    if (!lastResume.approved) {
+      return {
+        deployed: true,
+        trafficActive: false,
+        reason:
+          "Deployed but traffic not activated — still on previous version",
+        service: input.service,
+        environment: input.environment,
+        version,
+        url: `https://${input.service}.${input.environment}.acme.io`,
+      };
+    }
+
+    const url = `https://${input.service}.${input.environment}.acme.io`;
     await runStepsWithProgress(
       [
-        {
-          name: "Pushing image",
-          detail: `registry.acme.io/${input.service}:${version}`,
-        },
-        { name: "Rolling out pods", detail: `${input.environment} cluster` },
-        { name: "Health check", detail: "GET /healthz" },
+        { name: "Shifting traffic", detail: `0% → 100% to ${version}` },
+        { name: "DNS propagation", detail: url },
+        { name: "Smoke tests", detail: "12 scenarios passed" },
       ],
       writeData,
-      "deploy",
+      "traffic",
     );
 
     return {
       deployed: true,
+      trafficActive: true,
       service: input.service,
       environment: input.environment,
       version,
-      url: `https://${input.service}.${input.environment}.acme.io`,
+      url,
     };
   },
 });

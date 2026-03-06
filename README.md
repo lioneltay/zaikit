@@ -88,4 +88,4 @@ See the [Getting Started guide](https://zaikit.dev/getting-started) for a full w
 
 ## License
 
-MIT
+Apache-2.0

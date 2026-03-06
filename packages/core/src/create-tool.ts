@@ -90,6 +90,7 @@ type SuspendableToolOptions<
           ctx: BaseExecuteContext<INPUT> & {
             suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
             resumeData: RESUME | undefined;
+            resumeHistory: RESUME[];
           },
         ) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
       }
@@ -103,6 +104,7 @@ type SuspendableToolOptions<
             context: CONTEXT;
             suspend: (data: SUSPEND) => SuspendResult<SUSPEND>;
             resumeData: RESUME | undefined;
+            resumeHistory: RESUME[];
           },
         ) => Promise<OUTPUT | SuspendResult<SUSPEND>>;
       });
@@ -171,6 +173,7 @@ export function createTool(options: any): ZaikitTool<any, any> {
 
       if (isSuspendable) {
         const resumeData = injection.resumeData;
+        const resumeHistory = (injection.resumeHistory as unknown[]) ?? [];
 
         ctx.suspend = (data: unknown) => {
           options.suspendSchema.parse(data);
@@ -182,6 +185,7 @@ export function createTool(options: any): ZaikitTool<any, any> {
         }
 
         ctx.resumeData = resumeData;
+        ctx.resumeHistory = resumeHistory;
       }
 
       const result = await execute(ctx);

@@ -20,4 +20,4 @@ npx zaikit-codegen-react --agent ./src/agent.ts --output ./src/tools
 
 ## License
 
-MIT
+Apache-2.0
