@@ -58,7 +58,7 @@ const suspendTool = createTool({
   inputSchema: z.object({ prompt: z.string() }),
   suspendSchema: z.object({ question: z.string() }),
   resumeSchema: z.object({ answer: z.string() }),
-  execute: async ({ suspend, resumeData, resumeHistory }) => {
+  execute: async ({ suspend, resumeData, resumeHistory: _rh }) => {
     if (!resumeData) return suspend({ question: "ready?" });
     return `got: ${resumeData.answer}`;
   },
@@ -133,7 +133,7 @@ const fullTool = createTool({
     context,
     suspend,
     resumeData,
-    resumeHistory,
+    resumeHistory: _rh,
     writeToolData,
     writeData,
   }) => {
