@@ -2,7 +2,7 @@
   "extends": "@zaikit/typescript-config/react.json",
   "compilerOptions": {
     "outDir": "dist",
-    "rootDir": "src"
+    "rootDir": "."
   },
-  "include": ["src"]
+  "include": ["src", "test"]
 }

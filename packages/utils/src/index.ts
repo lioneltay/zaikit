@@ -11,6 +11,7 @@ export {
 
 export {
   DATA_TOOL_SUSPEND,
+  DATA_TYPE_PREFIX,
   hasToolCallId,
   isCustomDataPart,
   isSuspendPart,

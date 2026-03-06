@@ -6,6 +6,7 @@ export type ToolTypeInfo = {
   output: string;
   suspend: string | null;
   resume: string | null;
+  data: string | null;
 };
 
 export function extractToolTypes(options: {
@@ -56,6 +57,7 @@ export function extractToolTypes(options: {
     const outputProp = brandType.getProperty("output");
     const suspendProp = brandType.getProperty("suspend");
     const resumeProp = brandType.getProperty("resume");
+    const dataProp = brandType.getProperty("data");
 
     if (!inputProp) {
       console.warn(`Tool "${toolName}" missing __toolTypes.input — skipping`);
@@ -72,6 +74,7 @@ export function extractToolTypes(options: {
     const resumeType = resumeProp
       ? resumeProp.getTypeAtLocation(agentDecl)
       : null;
+    const dataType = dataProp ? dataProp.getTypeAtLocation(agentDecl) : null;
 
     result.push({
       name: toolName,
@@ -86,6 +89,10 @@ export function extractToolTypes(options: {
       resume:
         resumeType && !resumeType.isNever()
           ? resumeType.getText(agentDecl, formatFlags)
+          : null,
+      data:
+        dataType && !dataType.isNever()
+          ? dataType.getText(agentDecl, formatFlags)
           : null,
     });
   }

@@ -7,6 +7,9 @@
 
 // --- Constants ---
 
+/** Prefix added to custom data part types on the wire. */
+export const DATA_TYPE_PREFIX = "data-";
+
 /** The custom data part type used for tool suspension. */
 export const DATA_TOOL_SUSPEND = "data-tool-suspend" as const;
 
@@ -57,7 +60,7 @@ export function isCustomDataPart(
     "id" in p &&
     "data" in p &&
     typeof part.type === "string" &&
-    part.type.startsWith("data-") &&
+    part.type.startsWith(DATA_TYPE_PREFIX) &&
     part.type !== DATA_TOOL_SUSPEND
   );
 }

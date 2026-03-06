@@ -43,7 +43,28 @@ const bookFlight = createTool({
   },
 });
 
+const deploy = createTool({
+  description: "Deploy a service",
+  inputSchema: z.object({
+    service: z.string(),
+  }),
+  dataSchema: {
+    "deploy-progress": z.array(
+      z.object({
+        step: z.string(),
+        status: z.enum(["running", "done"]),
+      }),
+    ),
+    preview: z.object({ html: z.string() }),
+  },
+  execute: async ({ writeToolData }) => {
+    writeToolData("deploy-progress", [{ step: "Build", status: "running" }]);
+    writeToolData("preview", { html: "<p>ok</p>" });
+    return { ok: true };
+  },
+});
+
 export const agent = createAgent({
   model,
-  tools: { greet, book_flight: bookFlight },
+  tools: { greet, book_flight: bookFlight, deploy },
 });

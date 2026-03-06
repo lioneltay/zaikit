@@ -46,7 +46,11 @@ import {
 } from "./middleware/core";
 import { isSuspendResult } from "./suspend";
 import { getToolInjection, runWithToolInjection } from "./tool-injection";
-import { createWriteData, type WriteDataPart } from "./write-data";
+import {
+  createWriteData,
+  type ToolDataEvent,
+  type WriteDataPart,
+} from "./write-data";
 
 /** Extract context from options — needed because conditional context types prevent direct access */
 function optContext(opts: object): unknown {
@@ -122,6 +126,7 @@ export function createAgent<
       onResult?: (result: AgentResult) => void;
       onError?: (err: unknown) => void;
       onData?: (part: WriteDataPart) => void;
+      onToolData?: (event: ToolDataEvent) => void;
     },
   ): ReadableStream<unknown> {
     // toolName isn't available on tool-output-available chunks, so we track
@@ -135,6 +140,7 @@ export function createAgent<
           const writeDataImpl = createWriteData(
             (chunk) => controller.enqueue(chunk),
             callbacks?.onData,
+            callbacks?.onToolData,
           );
 
           // Wrap loop in ALS so tools can access writeData (merges with outer context scope)
@@ -333,6 +339,7 @@ export function createAgent<
         onResult: resolveResult,
         onError: rejectResult,
         onData: opts.onData,
+        onToolData: opts.onToolData,
       }),
     );
 
@@ -536,13 +543,14 @@ export function createAgent<
           writer.write(chunk as any),
         );
 
-        // Re-execute tool with writeData, resumeData, and resumeHistory
+        // Re-execute tool with writeData, resumeData, resumeHistory, and toolName
         const output = await runWithToolInjection(
           {
             context,
             resumeData: resume.data,
             resumeHistory,
             writeData: writeDataImpl,
+            toolName,
           },
           () =>
             execute(toolInput, {
@@ -735,6 +743,9 @@ export function createAgent<
     return streamToResponse(sr, allMessages, { memory, threadId });
   }
 
+  // Cast needed: the implementation uses StreamOptions<C> (untyped onToolData)
+  // while Agent<T, C> exposes StreamOptions<C, T> (typed onToolData).
+  // The typed narrowing is purely at the consumer side — runtime is identical.
   return {
     tools: resolvedTools as ResolveToolsConfig<T> & ToolSet,
     memory,
@@ -818,6 +829,7 @@ export function createAgent<
         frontendTools: opts.frontendTools,
         context: optContext(opts),
         onData: opts.onData,
+        onToolData: opts.onToolData,
       } as StreamOptions<C>);
 
       // Consume the stream — detect suspension (not supported in generate)
@@ -832,5 +844,5 @@ export function createAgent<
 
       return (await result) as GenerateResult<OUTPUT>;
     },
-  };
+  } as Agent<ResolveToolsConfig<T> & ToolSet, C>;
 }

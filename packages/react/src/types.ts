@@ -4,10 +4,18 @@ import type React from "react";
 
 export type ToolRenderState = "call" | "suspended" | "result" | "error";
 
+/** Typed view of tool data parts grouped by type key. Partial because keys are only populated when data arrives. */
+export type TypedToolData<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> = {
+  [K in keyof T]?: Array<{ id: string; data: T[K] }>;
+};
+
 export type ToolRenderProps<
   TArgs = Record<string, unknown>,
   TSuspend = unknown,
   TResume = unknown,
+  TData extends Record<string, unknown> = Record<string, unknown>,
 > = {
   toolCallId: string;
   toolName: string;
@@ -18,6 +26,7 @@ export type ToolRenderProps<
   error: string | undefined;
   resume: (data: TResume) => void;
   data: ToolDataPart[];
+  toolData: TypedToolData<TData>;
 };
 
 export type ToolRenderFn = (props: ToolRenderProps) => React.ReactNode;

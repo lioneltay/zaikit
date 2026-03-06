@@ -1,8 +1,6 @@
 {
   "ignoredFiles": {
-    ".env": "symlink",
-    ".mcp.json": "symlink",
-    ".claude/": "symlink"
+    ".env": "symlink"
   },
   "open": "~/.wt-open.sh {{path}} {{branch}}"
 }

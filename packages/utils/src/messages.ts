@@ -1,5 +1,6 @@
 import type { UIMessage } from "ai";
 import {
+  DATA_TYPE_PREFIX,
   hasToolCallId,
   isCustomDataPart,
   isSuspendPart,
@@ -97,7 +98,7 @@ export function enrichToolPartsWithDataParts(
         const { toolCallId, payload } = p.data;
         const list = dataMap.get(toolCallId) ?? [];
         list.push({
-          type: p.type.slice(5), // strip "data-" prefix
+          type: p.type.slice(DATA_TYPE_PREFIX.length),
           id: p.id,
           data: payload,
         });

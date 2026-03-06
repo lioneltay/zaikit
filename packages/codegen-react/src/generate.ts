@@ -28,6 +28,9 @@ export function generateOutput(tools: ToolTypeInfo[]): string {
     if (tool.resume) {
       lines.push(`export type ${pascal}Resume = ${tool.resume};`);
     }
+    if (tool.data) {
+      lines.push(`export type ${pascal}Data = ${tool.data};`);
+    }
   }
 
   lines.push("");
@@ -35,16 +38,13 @@ export function generateOutput(tools: ToolTypeInfo[]): string {
 
   for (const tool of tools) {
     const pascal = toPascalCase(tool.name);
+    const suspendType = tool.suspend ? `${pascal}Suspend` : "unknown";
+    const resumeType = tool.resume ? `${pascal}Resume` : "unknown";
+    const dataType = tool.data ? `${pascal}Data` : "Record<string, unknown>";
     lines.push("");
-    if (tool.suspend && tool.resume) {
-      lines.push(
-        `export type ${pascal}ToolProps = ToolRenderProps<${pascal}Input, ${pascal}Suspend, ${pascal}Resume>;`,
-      );
-    } else {
-      lines.push(
-        `export type ${pascal}ToolProps = ToolRenderProps<${pascal}Input>;`,
-      );
-    }
+    lines.push(
+      `export type ${pascal}ToolProps = ToolRenderProps<${pascal}Input, ${suspendType}, ${resumeType}, ${dataType}>;`,
+    );
   }
 
   // ─── Tool Props Map + Typed useToolRenderer ───

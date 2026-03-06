@@ -16,25 +16,37 @@ export type WriteDataPart = {
   id?: string;
   /** If true, appears in the stream but is NOT persisted in the message */
   transient?: boolean;
-  /**
-   * Scope of the data part.
-   * - `"tool"` (default when called from a tool): associated with the tool call.
-   *   Embedded with `toolCallId` in data, stripped from message parts on the
-   *   frontend and attached to the tool part as `data`.
-   * - `"message"`: standalone message-level data part, not associated with any tool.
-   */
-  scope?: "tool" | "message";
 };
 
 export type WriteDataFn = (part: WriteDataPart) => void;
 
+/** Typed function for writing tool-scoped data parts with schema validation. */
+export type WriteToolDataFn<DATA extends Record<string, unknown>> = <
+  K extends keyof DATA & string,
+>(
+  type: K,
+  data: DATA[K],
+  options?: { id?: string; transient?: boolean },
+) => void;
+
+/** Event emitted to the `onToolData` callback. */
+export type ToolDataEvent = {
+  toolName: string;
+  toolCallId: string;
+  type: string;
+  data: unknown;
+  id: string;
+  transient?: boolean;
+};
+
 /**
  * Internal type used between `createTool` and `createWriteData`. The
- * `toolCallId` is set by `createTool` for tool-scoped parts and is NOT
- * part of the public `WriteDataPart` API.
+ * `toolCallId` and `toolName` are set by `createTool` for tool-scoped parts
+ * and are NOT part of the public `WriteDataPart` API.
  */
 export type InternalWriteDataPart = WriteDataPart & {
   toolCallId?: string;
+  toolName?: string;
 };
 
 /**
@@ -45,8 +57,7 @@ export type InternalWriteDataFn = (part: InternalWriteDataPart) => void;
 
 /**
  * Create an InternalWriteDataFn that auto-generates IDs, prefixes `data-` on
- * the wire, and optionally calls an `onData` callback with the original
- * (un-prefixed) part.
+ * the wire, and optionally calls `onData` / `onToolData` callbacks.
  *
  * Used by both `coreAgentStream` and `handleResume` to avoid duplicating the
  * writeData-to-wire-format logic.
@@ -59,13 +70,14 @@ export type InternalWriteDataFn = (part: InternalWriteDataPart) => void;
 export function createWriteData(
   sink: (chunk: object) => void,
   onData?: (part: WriteDataPart) => void,
+  onToolData?: (event: ToolDataEvent) => void,
 ): InternalWriteDataFn {
   return (part) => {
     const id = part.id ?? crypto.randomUUID();
     const type = part.type.startsWith("data-")
       ? part.type
       : `data-${part.type}`;
-    const { toolCallId } = part;
+    const { toolCallId, toolName } = part;
 
     // Tool-scoped parts wrap data in an envelope so the frontend can match
     // data parts to their tool call via enrichToolPartsWithDataParts.
@@ -88,5 +100,17 @@ export function createWriteData(
       id,
       ...(part.transient && { transient: true }),
     });
+
+    // onToolData fires only for tool-scoped parts (writeToolData)
+    if (toolCallId && toolName) {
+      onToolData?.({
+        toolName,
+        toolCallId,
+        type: part.type,
+        data: part.data,
+        id,
+        ...(part.transient && { transient: true }),
+      });
+    }
   };
 }

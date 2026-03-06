@@ -62,7 +62,11 @@ export function sumUsage(steps: StepResult<ToolSet>[]): LanguageModelUsage {
 // --- Tool wrapping ---
 
 /**
- * Wrap each tool's execute function with onBeforeToolCall/onAfterToolCall hooks.
+ * Wrap each tool's execute function to inject `toolName` via ALS and
+ * apply onBeforeToolCall/onAfterToolCall hooks when present.
+ *
+ * Always wraps tools (even without hooks) so that `toolName` is available
+ * to `createTool` via `getToolInjection()`.
  */
 export function wrapToolsWithHooks(
   tools: ToolSet,
@@ -71,8 +75,6 @@ export function wrapToolsWithHooks(
     onAfterToolCall?: CreateAgentOptions["onAfterToolCall"];
   },
 ): ToolSet {
-  if (!hooks.onBeforeToolCall && !hooks.onAfterToolCall) return tools;
-
   return Object.fromEntries(
     Object.entries(tools).map(([name, t]) => {
       if (!t.execute) return [name, t];
@@ -94,7 +96,10 @@ export function wrapToolsWithHooks(
               }
             }
 
-            const output = await originalExecute(finalInput, context);
+            // Inject toolName via ALS so createTool can read it
+            const output = await runWithToolInjection({ toolName: name }, () =>
+              originalExecute(finalInput, context),
+            );
 
             if (hooks.onAfterToolCall) {
               const afterResult = await hooks.onAfterToolCall({

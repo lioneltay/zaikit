@@ -21,6 +21,8 @@ type ToolInjection = {
   resumeHistory?: unknown[];
   /** Callback to emit custom data parts to the stream */
   writeData?: InternalWriteDataFn;
+  /** Name of the currently executing tool (set by agent-helpers) */
+  toolName?: string;
 };
 
 const store = new AsyncLocalStorage<ToolInjection>();

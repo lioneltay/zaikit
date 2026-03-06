@@ -74,9 +74,9 @@ export function DeployServiceTool(props: DeployServiceToolProps) {
   const payload = props.suspendPayload;
   const phase = payload?.phase;
 
-  const steps = props.data
-    .filter((d) => d.type === "deploy-progress")
-    .flatMap((d) => (d.data as any[]) ?? []);
+  const steps = (props.toolData["deploy-progress"] ?? []).flatMap(
+    (entry) => entry.data,
+  );
 
   return (
     <Box>

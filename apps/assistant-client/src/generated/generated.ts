@@ -136,6 +136,13 @@ export type DeployServiceSuspend = {
   deployUrl?: string | undefined;
 };
 export type DeployServiceResume = { approved: boolean };
+export type DeployServiceData = {
+  "deploy-progress": {
+    step: string;
+    detail: string;
+    status: "running" | "done";
+  }[];
+};
 
 export type GetMyProfileInput = Record<string, never>;
 export type GetMyProfileOutput =
@@ -192,7 +199,8 @@ export type SendEmailToolProps = ToolRenderProps<
 export type DeployServiceToolProps = ToolRenderProps<
   DeployServiceInput,
   DeployServiceSuspend,
-  DeployServiceResume
+  DeployServiceResume,
+  DeployServiceData
 >;
 
 export type GetMyProfileToolProps = ToolRenderProps<GetMyProfileInput>;

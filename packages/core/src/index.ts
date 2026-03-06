@@ -21,6 +21,7 @@ export type {
   StreamOptions,
   StreamResult,
   ToolConfigValue,
+  ToolDataEventFor,
   ValidateMappedTools,
 } from "./agent-types";
 export type { ToolMeta, ZaikitTool } from "./create-tool";
@@ -33,4 +34,9 @@ export { collectStream, mapChunks, toStream } from "./stream-utils";
 export type { SuspendResult } from "./suspend";
 export { isSuspendResult } from "./suspend";
 export { runWithToolInjection } from "./tool-injection";
-export type { WriteDataFn, WriteDataPart } from "./write-data";
+export type {
+  ToolDataEvent,
+  WriteDataFn,
+  WriteDataPart,
+  WriteToolDataFn,
+} from "./write-data";

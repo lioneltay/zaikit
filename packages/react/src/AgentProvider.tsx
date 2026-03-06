@@ -88,6 +88,16 @@ export function AgentProvider({
         state = "call";
       }
 
+      const rawData = (p.data as ToolRenderProps["data"]) ?? [];
+
+      // Group raw data parts by type into a typed record
+      const toolData: Record<string, Array<{ id: string; data: unknown }>> = {};
+      for (const d of rawData) {
+        const list = toolData[d.type] ?? [];
+        list.push({ id: d.id, data: d.data });
+        toolData[d.type] = list;
+      }
+
       const props: ToolRenderProps = {
         toolCallId,
         toolName,
@@ -101,7 +111,8 @@ export function AgentProvider({
           state === "error"
             ? ((p.errorText as string) ?? "Unknown error")
             : undefined,
-        data: (p.data as ToolRenderProps["data"]) ?? [],
+        data: rawData,
+        toolData,
         resume: (data: unknown) => {
           if (frontendToolsRef.current.has(toolName)) {
             chat.addToolOutput({ tool: toolName, toolCallId, output: data });

@@ -238,18 +238,27 @@ const send_email = createTool({
   },
 });
 
-// -- Deploy tool (writeData + suspend/resume demo) --
+// -- Deploy tool (writeToolData + suspend/resume demo) --
 
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+type DeployStep = {
+  step: string;
+  detail: string;
+  status: "running" | "done";
+}[];
+
 async function runStepsWithProgress(
   items: { name: string; detail: string }[],
-  writeData: (part: { type: string; id: string; data: unknown }) => void,
+  writeToolData: (
+    type: "deploy-progress",
+    data: DeployStep,
+    opts?: { id?: string },
+  ) => void,
   id: string,
 ) {
-  const steps: { step: string; detail: string; status: string }[] = [];
-  const emit = () =>
-    writeData({ type: "deploy-progress", id, data: [...steps] });
+  const steps: DeployStep = [];
+  const emit = () => writeToolData("deploy-progress", [...steps], { id });
 
   for (const item of items) {
     steps.push({ step: item.name, detail: item.detail, status: "running" });
@@ -269,6 +278,15 @@ const deploy_service = createTool({
       .enum(["staging", "production"])
       .describe("Target environment"),
   }),
+  dataSchema: {
+    "deploy-progress": z.array(
+      z.object({
+        step: z.string(),
+        detail: z.string(),
+        status: z.enum(["running", "done"]),
+      }),
+    ),
+  },
   suspendSchema: z.object({
     phase: z.enum(["confirm-deploy", "activate-traffic"]),
     service: z.string(),
@@ -280,7 +298,7 @@ const deploy_service = createTool({
   resumeSchema: z.object({
     approved: z.boolean(),
   }),
-  execute: async ({ input, writeData, suspend, resumeHistory }) => {
+  execute: async ({ input, writeToolData, suspend, resumeHistory }) => {
     // Derive a stable version from the input so it stays consistent across
     // re-executions (the tool runs from scratch on each resume).
     const hash = Array.from(input.service + input.environment).reduce(
@@ -297,7 +315,7 @@ const deploy_service = createTool({
           { name: "Unit tests", detail: "247 tests" },
           { name: "Build", detail: `${input.service}:${version}` },
         ],
-        writeData,
+        writeToolData,
         "pre-deploy",
       );
 
@@ -325,7 +343,7 @@ const deploy_service = createTool({
           { name: "Rolling out pods", detail: `${input.environment} cluster` },
           { name: "Health check", detail: "GET /healthz" },
         ],
-        writeData,
+        writeToolData,
         "deploy",
       );
 
@@ -361,7 +379,7 @@ const deploy_service = createTool({
         { name: "DNS propagation", detail: url },
         { name: "Smoke tests", detail: "12 scenarios passed" },
       ],
-      writeData,
+      writeToolData,
       "traffic",
     );
 

@@ -183,6 +183,7 @@ export function ToolStory({ name, render, schema }: ToolStoryProps) {
       result: state === "result" ? result : undefined,
       error: state === "error" ? errorText : undefined,
       data: [],
+      toolData: {},
       resume: (data: unknown) => {
         setCapturedResume(data);
       },

@@ -36,6 +36,7 @@ describe("generateOutput", () => {
         output: "{ message: string }",
         suspend: null,
         resume: null,
+        data: null,
       },
     ];
     const output = generateOutput(tools);
@@ -44,9 +45,9 @@ describe("generateOutput", () => {
     expect(output).toContain("export type GreetOutput = { message: string };");
     expect(output).not.toContain("GreetSuspend");
     expect(output).not.toContain("GreetResume");
-    // Regular tool: ToolRenderProps<Input> (1 param)
+    // Regular tool: all params with defaults for absent ones
     expect(output).toContain(
-      "export type GreetToolProps = ToolRenderProps<GreetInput>;",
+      "export type GreetToolProps = ToolRenderProps<GreetInput, unknown, unknown, Record<string, unknown>>;",
     );
     expect(output).toContain("greet: GreetToolProps;");
   });
@@ -59,6 +60,7 @@ describe("generateOutput", () => {
         output: "{ confirmation: string }",
         suspend: "{ options: string[] }",
         resume: "{ selected: number }",
+        data: null,
       },
     ];
     const output = generateOutput(tools);
@@ -69,9 +71,49 @@ describe("generateOutput", () => {
     expect(output).toContain(
       "export type BookFlightResume = { selected: number };",
     );
-    // Suspendable tool: ToolRenderProps<Input, Suspend, Resume> (3 params)
+    // Suspendable tool: all params with defaults for absent ones
     expect(output).toContain(
-      "export type BookFlightToolProps = ToolRenderProps<BookFlightInput, BookFlightSuspend, BookFlightResume>;",
+      "export type BookFlightToolProps = ToolRenderProps<BookFlightInput, BookFlightSuspend, BookFlightResume, Record<string, unknown>>;",
+    );
+  });
+
+  it("generates types for a tool with dataSchema", () => {
+    const tools: ToolTypeInfo[] = [
+      {
+        name: "deploy_service",
+        input: "{ service: string }",
+        output: "{ ok: boolean }",
+        suspend: null,
+        resume: null,
+        data: '{ "deploy-progress": { step: string; status: string }[] }',
+      },
+    ];
+    const output = generateOutput(tools);
+
+    expect(output).toContain("export type DeployServiceData =");
+    // Data tool without suspend/resume: ToolRenderProps<Input, unknown, unknown, Data>
+    expect(output).toContain(
+      "export type DeployServiceToolProps = ToolRenderProps<DeployServiceInput, unknown, unknown, DeployServiceData>;",
+    );
+  });
+
+  it("generates types for a suspendable tool with dataSchema", () => {
+    const tools: ToolTypeInfo[] = [
+      {
+        name: "deploy",
+        input: "{ service: string }",
+        output: "{ ok: boolean }",
+        suspend: "{ phase: string }",
+        resume: "{ approved: boolean }",
+        data: "{ progress: { step: number } }",
+      },
+    ];
+    const output = generateOutput(tools);
+
+    expect(output).toContain("export type DeployData =");
+    // Suspendable + data: ToolRenderProps<Input, Suspend, Resume, Data>
+    expect(output).toContain(
+      "export type DeployToolProps = ToolRenderProps<DeployInput, DeploySuspend, DeployResume, DeployData>;",
     );
   });
 });
@@ -91,7 +133,7 @@ describe("extractToolTypes", () => {
   });
 
   it("extracts the correct number of tools", () => {
-    expect(tools).toHaveLength(2);
+    expect(tools).toHaveLength(3);
   });
 
   it("extracts a regular tool with null suspend/resume", () => {
@@ -108,12 +150,23 @@ describe("extractToolTypes", () => {
     expect(bookFlight?.resume).not.toBeNull();
   });
 
+  it("extracts a tool with dataSchema", () => {
+    const deploy = tools.find((t) => t.name === "deploy");
+    expect(deploy).toBeDefined();
+    expect(deploy?.data).not.toBeNull();
+    expect(deploy?.data).toContain("deploy-progress");
+    expect(deploy?.data).toContain("preview");
+    expect(deploy?.suspend).toBeNull();
+    expect(deploy?.resume).toBeNull();
+  });
+
   it("output types do not contain import(...) expressions", () => {
     for (const tool of tools) {
       expect(tool.input).not.toMatch(/import\(/);
       expect(tool.output).not.toMatch(/import\(/);
       if (tool.suspend) expect(tool.suspend).not.toMatch(/import\(/);
       if (tool.resume) expect(tool.resume).not.toMatch(/import\(/);
+      if (tool.data) expect(tool.data).not.toMatch(/import\(/);
     }
   });
 

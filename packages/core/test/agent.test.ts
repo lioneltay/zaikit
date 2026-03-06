@@ -1920,15 +1920,9 @@ describe("writeData", () => {
 
     const dataChunks = chunks.filter((c) => c.type === "data-progress");
     expect(dataChunks).toHaveLength(2);
-    // Wire data uses { toolCallId, payload } envelope for tool-part association
-    expect(dataChunks[0].data).toEqual({
-      toolCallId: "c1",
-      payload: { step: 1, total: 2 },
-    });
-    expect(dataChunks[1].data).toEqual({
-      toolCallId: "c1",
-      payload: { step: 2, total: 2 },
-    });
+    // writeData defaults to message scope — no { toolCallId, payload } envelope
+    expect(dataChunks[0].data).toEqual({ step: 1, total: 2 });
+    expect(dataChunks[1].data).toEqual({ step: 2, total: 2 });
 
     const agentResult = await result;
     expect(agentResult.text).toBe("Work complete.");
@@ -2203,67 +2197,10 @@ describe("writeData", () => {
     const assistantParts = messages[1].parts;
 
     // The data part from writeData during resume should be persisted
-    // Wire data uses { toolCallId, payload } envelope
+    // writeData defaults to message scope — no { toolCallId, payload } envelope
     const dataPart = assistantParts.find((p) => p.type === "data-progress");
     expect(dataPart).toBeDefined();
-    expect((dataPart as any).data).toEqual({
-      toolCallId: "call-1",
-      payload: { status: "processing" },
-    });
-  });
-
-  it("writeData with scope 'message' produces no toolCallId envelope", async () => {
-    const tool = createTool({
-      description: "Emit message-scoped data",
-      inputSchema: z.object({}),
-      execute: async ({ writeData }) => {
-        writeData({
-          type: "notification",
-          data: { msg: "hello" },
-          scope: "message",
-        });
-        return "done";
-      },
-    });
-
-    const agent = createAgent({
-      model: mockModel([
-        toolCallResponse("c1", "notify", {}),
-        textResponse("Done."),
-      ]),
-      tools: { notify: tool },
-    });
-
-    const { stream } = await agent.stream({
-      messages: [userMessage("Go")],
-    });
-
-    const chunks: any[] = [];
-    for await (const chunk of stream as any) {
-      chunks.push(chunk);
-    }
-
-    const dataChunk = chunks.find((c) => c.type === "data-notification");
-    expect(dataChunk).toBeDefined();
-    // Message-scoped: data should be the raw payload, no { toolCallId, payload } envelope
-    expect(dataChunk.data).toEqual({ msg: "hello" });
-    expect(dataChunk.data.toolCallId).toBeUndefined();
-  });
-
-  it("invalid writeData scope throws", async () => {
-    const tool = createTool({
-      description: "Bad scope",
-      inputSchema: z.object({}),
-      execute: async ({ writeData }) => {
-        writeData({ type: "test", data: "x", scope: "invalid" as any });
-        return "done";
-      },
-    });
-
-    // Test at the tool level — the throw happens synchronously in writeData
-    await expect(
-      tool.execute?.({}, { toolCallId: "tc-1", messages: [] } as any),
-    ).rejects.toThrow("Invalid writeData scope");
+    expect((dataPart as any).data).toEqual({ status: "processing" });
   });
 
   it("resume stream sends resolved data-tool-suspend before tool re-execution", async () => {
@@ -2559,6 +2496,275 @@ describe("writeData", () => {
       [{ answer: "a" }, { answer: "b" }], // second resume
       [{ answer: "a" }, { answer: "b" }, { answer: "c" }], // third resume
     ]);
+  });
+
+  it("writeToolData emits tool-scoped envelope on wire", async () => {
+    const tool = createTool({
+      description: "Emit typed data",
+      inputSchema: z.object({}),
+      dataSchema: {
+        progress: z.object({ step: z.number(), total: z.number() }),
+      },
+      execute: async ({ writeToolData }) => {
+        writeToolData("progress", { step: 1, total: 3 });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "work", {}),
+        textResponse("Done."),
+      ]),
+      tools: { work: tool },
+    });
+
+    const { stream } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+
+    const chunks: any[] = [];
+    for await (const chunk of stream as any) {
+      chunks.push(chunk);
+    }
+
+    const dataChunk = chunks.find((c) => c.type === "data-progress");
+    expect(dataChunk).toBeDefined();
+    // writeToolData is always tool-scoped — data wrapped in envelope
+    expect(dataChunk.data).toEqual({
+      toolCallId: "c1",
+      payload: { step: 1, total: 3 },
+    });
+  });
+
+  it("writeToolData validates against schema", async () => {
+    const tool = createTool({
+      description: "Typed data tool",
+      inputSchema: z.object({}),
+      dataSchema: {
+        status: z.object({ ok: z.boolean() }),
+      },
+      execute: async ({ writeToolData }) => {
+        // @ts-expect-error — invalid data
+        writeToolData("status", { ok: "not-a-boolean" });
+        return "done";
+      },
+    });
+
+    await expect(
+      tool.execute?.({}, { toolCallId: "tc-1", messages: [] } as any),
+    ).rejects.toThrow();
+  });
+
+  it("writeToolData rejects unknown type keys", async () => {
+    const tool = createTool({
+      description: "Typed data tool",
+      inputSchema: z.object({}),
+      dataSchema: {
+        status: z.object({ ok: z.boolean() }),
+      },
+      execute: async ({ writeToolData }) => {
+        // @ts-expect-error — unknown type
+        writeToolData("nonexistent", { ok: true });
+        return "done";
+      },
+    });
+
+    await expect(
+      tool.execute?.({}, { toolCallId: "tc-1", messages: [] } as any),
+    ).rejects.toThrow('Unknown data type: "nonexistent"');
+  });
+
+  it("tool without dataSchema does not get writeToolData", async () => {
+    let hasWriteToolData = false;
+    const tool = createTool({
+      description: "Regular tool",
+      inputSchema: z.object({}),
+      execute: async (ctx) => {
+        hasWriteToolData = "writeToolData" in ctx;
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "work", {}),
+        textResponse("Done."),
+      ]),
+      tools: { work: tool },
+    });
+
+    const { stream } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+    for await (const _ of stream as any) {
+    }
+
+    expect(hasWriteToolData).toBe(false);
+  });
+
+  it("onToolData fires for writeToolData but not writeData", async () => {
+    const toolDataEvents: any[] = [];
+    const onDataParts: any[] = [];
+
+    const tool = createTool({
+      description: "Mixed data tool",
+      inputSchema: z.object({}),
+      dataSchema: {
+        typed: z.object({ val: z.number() }),
+      },
+      execute: async ({ writeData, writeToolData }) => {
+        writeData({ type: "untyped", data: "msg" });
+        writeToolData("typed", { val: 42 });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "mix", {}),
+        textResponse("Done."),
+      ]),
+      tools: { mix: tool },
+    });
+
+    const { stream } = await agent.stream({
+      messages: [userMessage("Go")],
+      onData: (part) => onDataParts.push(part),
+      onToolData: (event) => toolDataEvents.push(event),
+    });
+
+    for await (const _ of stream as any) {
+    }
+
+    // onData fires for both
+    expect(onDataParts).toHaveLength(2);
+    expect(onDataParts[0].type).toBe("untyped");
+    expect(onDataParts[1].type).toBe("typed");
+
+    // onToolData fires only for writeToolData
+    expect(toolDataEvents).toHaveLength(1);
+    expect(toolDataEvents[0].toolName).toBe("mix");
+    expect(toolDataEvents[0].toolCallId).toBe("c1");
+    expect(toolDataEvents[0].type).toBe("typed");
+    expect(toolDataEvents[0].data).toEqual({ val: 42 });
+  });
+
+  it("onToolData fires on generate()", async () => {
+    const toolDataEvents: any[] = [];
+
+    const tool = createTool({
+      description: "Typed data tool",
+      inputSchema: z.object({}),
+      dataSchema: {
+        status: z.object({ ok: z.boolean() }),
+      },
+      execute: async ({ writeToolData }) => {
+        writeToolData("status", { ok: true });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "check", {}),
+        textResponse("Done."),
+      ]),
+      tools: { check: tool },
+    });
+
+    await agent.generate({
+      prompt: "Go",
+      onToolData: (event) => toolDataEvents.push(event),
+    });
+
+    expect(toolDataEvents).toHaveLength(1);
+    expect(toolDataEvents[0].toolName).toBe("check");
+    expect(toolDataEvents[0].type).toBe("status");
+    expect(toolDataEvents[0].data).toEqual({ ok: true });
+  });
+
+  it("writeToolData emits data during resume", async () => {
+    const memory = createInMemoryMemory();
+
+    const tool = createTool({
+      description: "Suspend then emit typed data on resume",
+      inputSchema: z.object({}),
+      dataSchema: {
+        progress: z.object({ step: z.string() }),
+      },
+      suspendSchema: z.object({ question: z.string() }),
+      resumeSchema: z.object({ answer: z.string() }),
+      execute: async ({ writeToolData, suspend, resumeData }) => {
+        if (!resumeData) {
+          return suspend({ question: "Ready?" });
+        }
+        writeToolData("progress", { step: "processing" });
+        return `Got: ${resumeData.answer}`;
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "work", {}),
+        textResponse("Done."),
+      ]),
+      tools: { work: tool },
+      memory,
+    });
+
+    // First chat: tool suspends
+    await (
+      await agent.chat({
+        threadId: "t1",
+        message: userMessage("Go"),
+      })
+    ).text();
+
+    // Resume — writeToolData should emit data part
+    const resumeResponse = await agent.chat({
+      threadId: "t1",
+      resume: { toolCallId: "c1", data: { answer: "yes" } },
+    });
+    await resumeResponse.text();
+
+    const messages = await memory.getMessages("t1");
+    const assistantParts = messages[1].parts;
+
+    // The data part from writeToolData during resume should be persisted
+    // writeToolData is tool-scoped — data wrapped in { toolCallId, payload } envelope
+    const dataPart = assistantParts.find((p) => p.type === "data-progress");
+    expect(dataPart).toBeDefined();
+    expect((dataPart as any).data).toEqual({
+      toolCallId: "c1",
+      payload: { step: "processing" },
+    });
+  });
+
+  it("dataSchema key that collides with reserved wire type throws", () => {
+    expect(() =>
+      createTool({
+        description: "Bad tool",
+        inputSchema: z.object({}),
+        dataSchema: {
+          "tool-suspend": z.object({ info: z.string() }),
+        },
+        execute: async () => "done",
+      }),
+    ).toThrow('reserved wire type "data-tool-suspend"');
+  });
+
+  it("dataSchema key starting with 'data-' throws", () => {
+    expect(() =>
+      createTool({
+        description: "Bad prefix",
+        inputSchema: z.object({}),
+        dataSchema: {
+          "data-progress": z.object({ step: z.number() }),
+        },
+        execute: async () => "done",
+      }),
+    ).toThrow('must not start with "data-"');
   });
 });
 

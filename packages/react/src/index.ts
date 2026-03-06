@@ -4,6 +4,7 @@ export type {
   ToolRenderFn,
   ToolRenderProps,
   ToolRenderState,
+  TypedToolData,
 } from "./types";
 export { useAgent } from "./useAgent";
 export { type UseToolOptions, useTool } from "./useTool";

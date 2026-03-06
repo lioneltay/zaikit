@@ -11,7 +11,40 @@ import type {
 } from "ai";
 import type { z } from "zod";
 import type { Middleware } from "./middleware/core";
-import type { WriteDataPart } from "./write-data";
+import type { ToolDataEvent, WriteDataPart } from "./write-data";
+
+// --- Typed tool data event ---
+
+/**
+ * Derives a discriminated union of tool data events from a ToolSet.
+ * Each member is discriminated first by `toolName`, then by `type`,
+ * narrowing `data` to the exact schema type.
+ *
+ * For tools without `dataSchema` (DATA = never), no members are produced.
+ * Falls back to the untyped `ToolDataEvent` when no tools have data schemas.
+ */
+export type ToolDataEventFor<T extends ToolSet> = {
+  [Name in keyof T & string]: T[Name] extends {
+    __toolTypes: { data: infer D };
+  }
+    ? [D] extends [never]
+      ? never
+      : {
+          [K in keyof D & string]: {
+            toolName: Name;
+            toolCallId: string;
+            type: K;
+            data: D[K];
+            id: string;
+            transient?: boolean;
+          };
+        }[keyof D & string]
+    : never;
+}[keyof T & string] extends infer U
+  ? [U] extends [never]
+    ? ToolDataEvent
+    : U
+  : ToolDataEvent;
 
 // --- Hook context types ---
 
@@ -154,7 +187,9 @@ export type AgentResult = {
   usage: LanguageModelUsage;
 };
 
-export type StreamOptions<C = undefined> = ([C] extends [undefined]
+export type StreamOptions<C = undefined, T extends ToolSet = ToolSet> = ([
+  C,
+] extends [undefined]
   ? { context?: never }
   : { context: C }) & {
   messages: UIMessage[];
@@ -164,6 +199,7 @@ export type StreamOptions<C = undefined> = ([C] extends [undefined]
   output?: z.ZodType;
   frontendTools?: FrontendToolDef[];
   onData?: (part: WriteDataPart) => void;
+  onToolData?: (event: ToolDataEventFor<T>) => void;
 };
 
 export type StreamResult = {
@@ -171,16 +207,22 @@ export type StreamResult = {
   result: Promise<AgentResult>;
 };
 
-export type BaseGenerateOptions<C = undefined> = ([C] extends [undefined]
+export type BaseGenerateOptions<C = undefined, T extends ToolSet = ToolSet> = ([
+  C,
+] extends [undefined]
   ? { context?: never }
   : { context: C }) & {
   model?: LanguageModel;
   maxSteps?: number;
   frontendTools?: FrontendToolDef[];
   onData?: (part: WriteDataPart) => void;
+  onToolData?: (event: ToolDataEventFor<T>) => void;
 } & ({ prompt: string } | { messages: UIMessage[] });
 
-export type GenerateOptions<C = undefined> = BaseGenerateOptions<C> & {
+export type GenerateOptions<
+  C = undefined,
+  T extends ToolSet = ToolSet,
+> = BaseGenerateOptions<C, T> & {
   output?: z.ZodType;
 };
 
@@ -196,9 +238,9 @@ export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   model: LanguageModel;
   system: string | ((context: C) => string | Promise<string>) | undefined;
   contextSchema: Record<string, unknown> | undefined;
-  stream(options: StreamOptions<C>): Promise<StreamResult>;
+  stream(options: StreamOptions<C, T>): Promise<StreamResult>;
   chat(options: ChatOptions<C>): Promise<Response>;
   generate<OUTPUT extends z.ZodType = never>(
-    options: BaseGenerateOptions<C> & { output?: OUTPUT },
+    options: BaseGenerateOptions<C, T> & { output?: OUTPUT },
   ): Promise<GenerateResult<OUTPUT>>;
 };

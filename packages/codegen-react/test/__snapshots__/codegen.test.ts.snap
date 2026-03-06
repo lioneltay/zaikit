@@ -17,17 +17,24 @@ export type BookFlightOutput = { confirmation: string; };
 export type BookFlightSuspend = { flightOptions: { airline: string; price: number; }[]; };
 export type BookFlightResume = { selectedIndex: number; notes?: string | undefined; };
 
+export type DeployInput = { service: string; };
+export type DeployOutput = { ok: boolean; };
+export type DeployData = { "deploy-progress": { step: string; status: "running" | "done"; }[]; preview: { html: string; }; };
+
 // ─── Typed Props ───
 
-export type GreetToolProps = ToolRenderProps<GreetInput>;
+export type GreetToolProps = ToolRenderProps<GreetInput, unknown, unknown, Record<string, unknown>>;
 
-export type BookFlightToolProps = ToolRenderProps<BookFlightInput, BookFlightSuspend, BookFlightResume>;
+export type BookFlightToolProps = ToolRenderProps<BookFlightInput, BookFlightSuspend, BookFlightResume, Record<string, unknown>>;
+
+export type DeployToolProps = ToolRenderProps<DeployInput, unknown, unknown, DeployData>;
 
 // ─── Typed useToolRenderer ───
 
 type ToolPropsMap = {
   greet: GreetToolProps;
   book_flight: BookFlightToolProps;
+  deploy: DeployToolProps;
 };
 
 export function useToolRenderer<T extends keyof ToolPropsMap>(name: T, render: (props: ToolPropsMap[T]) => ReactNode): void;
@@ -40,6 +47,7 @@ export function useToolRenderer(name: string, render: ToolRenderFn): void {
 
 export type ToolName =
   | "greet"
-  | "book_flight";
+  | "book_flight"
+  | "deploy";
 "
 `;
