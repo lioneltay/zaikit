@@ -275,6 +275,46 @@ export function memoryConformanceTests<TContext = void>({
           { type: "text", text: " + more" },
         ]);
       });
+
+      it("updates message metadata", async () => {
+        await memory.createThread("t1");
+
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "assistant",
+          parts: [{ type: "text", text: "hello" }],
+          metadata: { suggestions: ["a"] },
+        });
+
+        await memory.updateMessage("t1", "m1", {
+          metadata: { suggestions: ["b", "c"] },
+        });
+
+        const msgs = await memory.getMessages("t1");
+        expect(msgs[0].metadata).toEqual({ suggestions: ["b", "c"] });
+        // parts should be unchanged
+        expect(msgs[0].parts).toEqual([{ type: "text", text: "hello" }]);
+      });
+
+      it("updates both parts and metadata together", async () => {
+        await memory.createThread("t1");
+
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "assistant",
+          parts: [{ type: "text", text: "original" }],
+          metadata: { old: true },
+        });
+
+        await memory.updateMessage("t1", "m1", {
+          parts: [{ type: "text", text: "updated" }],
+          metadata: { new: true },
+        });
+
+        const msgs = await memory.getMessages("t1");
+        expect(msgs[0].parts).toEqual([{ type: "text", text: "updated" }]);
+        expect(msgs[0].metadata).toEqual({ new: true });
+      });
     });
 
     describe.runIf(isPersistent)("persistence", () => {

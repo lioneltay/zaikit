@@ -88,7 +88,8 @@ export function createInMemoryMemory(): Memory {
       if (!threadMsgs) return;
       const msg = threadMsgs.find((m) => m.id === messageId);
       if (msg) {
-        msg.parts = updates.parts;
+        if (updates.parts !== undefined) msg.parts = updates.parts;
+        if (updates.metadata !== undefined) msg.metadata = updates.metadata;
       }
       // Update thread's updatedAt
       const thread = threads.get(threadId);

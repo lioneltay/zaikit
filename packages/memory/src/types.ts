@@ -36,6 +36,6 @@ export type Memory = {
   updateMessage(
     threadId: string,
     messageId: string,
-    updates: { parts: UIMessage["parts"] },
+    updates: { parts?: UIMessage["parts"]; metadata?: UIMessage["metadata"] },
   ): Promise<void>;
 };

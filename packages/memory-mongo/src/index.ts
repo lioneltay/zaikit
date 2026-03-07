@@ -159,10 +159,12 @@ export function createMongoMemory({
     },
 
     async updateMessage(threadId, messageId, updates) {
-      await messages.updateOne(
-        { messageId, threadId },
-        { $set: { parts: updates.parts } },
-      );
+      const $set: Record<string, unknown> = {};
+      if (updates.parts !== undefined) $set.parts = updates.parts;
+      if (updates.metadata !== undefined) $set.metadata = updates.metadata;
+      if (Object.keys($set).length > 0) {
+        await messages.updateOne({ messageId, threadId }, { $set });
+      }
       await threads.updateOne(
         { _id: threadId },
         { $set: { updatedAt: new Date() } },

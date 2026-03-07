@@ -173,11 +173,21 @@ export function createPostgresMemory({
     },
 
     async updateMessage(threadId, messageId, updates) {
-      await sql`
-        UPDATE zaikit_messages
-        SET parts = ${sql.json(updates.parts as any)}
-        WHERE id = ${messageId} AND thread_id = ${threadId}
-      `;
+      const sets: ReturnType<typeof sql>[] = [];
+      if (updates.parts !== undefined) {
+        sets.push(sql`parts = ${sql.json(updates.parts as any)}`);
+      }
+      if (updates.metadata !== undefined) {
+        sets.push(sql`metadata = ${sql.json(updates.metadata as any)}`);
+      }
+      if (sets.length > 0) {
+        const setClause = sets.reduce((a, b) => sql`${a}, ${b}`);
+        await sql`
+          UPDATE zaikit_messages
+          SET ${setClause}
+          WHERE id = ${messageId} AND thread_id = ${threadId}
+        `;
+      }
       await sql`
         UPDATE zaikit_threads SET updated_at = NOW() WHERE id = ${threadId}
       `;
