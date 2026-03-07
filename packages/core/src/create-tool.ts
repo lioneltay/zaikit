@@ -10,6 +10,7 @@ import { getToolInjection } from "./tool-injection";
 import type {
   InternalWriteDataFn,
   WriteDataFn,
+  WriteMetadataFn,
   WriteToolDataFn,
 } from "./write-data";
 
@@ -52,6 +53,7 @@ type BaseToolOptions<INPUT> = {
 type BaseExecuteContext<INPUT> = {
   input: INPUT;
   writeData: WriteDataFn;
+  writeMetadata: WriteMetadataFn;
 };
 
 // Conditionally add writeToolData when DATA is present.
@@ -272,7 +274,9 @@ export function createTool(options: any): ZaikitTool<any, any> {
       // writeData always emits message-scoped parts (no tool association).
       // For tool-scoped data, use writeToolData (typed, requires dataSchema).
       const writeData: WriteDataFn = (part) => rawWriteData(part);
-      const ctx: Record<string, unknown> = { input, writeData };
+      const writeMetadata: WriteMetadataFn =
+        injection.writeMetadata ?? (() => {});
+      const ctx: Record<string, unknown> = { input, writeData, writeMetadata };
 
       // Build writeToolData when dataSchema is declared
       if (dataSchemas) {

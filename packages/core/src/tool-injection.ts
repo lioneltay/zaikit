@@ -10,7 +10,7 @@
  * This is an internal implementation detail — not exported from the package.
  */
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { InternalWriteDataFn } from "./write-data";
+import type { InternalWriteDataFn, WriteMetadataFn } from "./write-data";
 
 type ToolInjection = {
   /** Request-scoped context provided via agent.chat({ context }) */
@@ -21,6 +21,8 @@ type ToolInjection = {
   resumeHistory?: unknown[];
   /** Callback to emit custom data parts to the stream */
   writeData?: InternalWriteDataFn;
+  /** Callback to emit message-level metadata to the stream */
+  writeMetadata?: WriteMetadataFn;
   /** Name of the currently executing tool (set by agent-helpers) */
   toolName?: string;
 };

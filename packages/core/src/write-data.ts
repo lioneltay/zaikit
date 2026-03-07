@@ -55,6 +55,17 @@ export type InternalWriteDataPart = WriteDataPart & {
  */
 export type InternalWriteDataFn = (part: InternalWriteDataPart) => void;
 
+// --- writeMetadata ---
+
+/**
+ * Function for tools to write message-level metadata.
+ *
+ * Metadata is deep-merged by the AI SDK into `message.metadata` on the client.
+ * Unlike data parts, metadata has no `id`, `type`, or `transient` — it's just
+ * a key-value object that accumulates via merging.
+ */
+export type WriteMetadataFn = (metadata: Record<string, unknown>) => void;
+
 /**
  * Create an InternalWriteDataFn that auto-generates IDs, prefixes `data-` on
  * the wire, and optionally calls `onData` / `onToolData` callbacks.
@@ -112,5 +123,21 @@ export function createWriteData(
         ...(part.transient && { transient: true }),
       });
     }
+  };
+}
+
+/**
+ * Create a WriteMetadataFn that emits `message-metadata` chunks to the stream.
+ *
+ * The AI SDK deep-merges each chunk into `message.metadata` on the client,
+ * so multiple calls accumulate rather than overwrite.
+ */
+export function createWriteMetadata(
+  sink: (chunk: object) => void,
+  onMetadata?: (metadata: Record<string, unknown>) => void,
+): WriteMetadataFn {
+  return (metadata) => {
+    sink({ type: "message-metadata", messageMetadata: metadata });
+    onMetadata?.(metadata);
   };
 }
