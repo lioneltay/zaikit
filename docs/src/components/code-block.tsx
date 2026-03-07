@@ -1,5 +1,6 @@
-import { Copy, Terminal } from "lucide-react";
+import { Terminal } from "lucide-react";
 import { codeToHtml, type ThemeRegistration } from "shiki";
+import { CopyButton } from "./copy-button";
 
 /**
  * ZAIKit code theme — Graphite & Emerald
@@ -129,9 +130,9 @@ export async function CodeBlock({
           <Terminal className="size-3.5 text-fd-muted-foreground/60" />
         ) : (
           <div className="flex gap-1.5">
-            <div className="size-3 rounded-full bg-fd-muted-foreground/20" />
-            <div className="size-3 rounded-full bg-fd-muted-foreground/20" />
-            <div className="size-3 rounded-full bg-fd-muted-foreground/20" />
+            <div className="size-3 rounded-full bg-[#ff5f57]" />
+            <div className="size-3 rounded-full bg-[#febc2e]" />
+            <div className="size-3 rounded-full bg-[#28c840]" />
           </div>
         )}
         <div className="flex-1 text-center">
@@ -141,7 +142,10 @@ export async function CodeBlock({
             </span>
           )}
         </div>
-        <Copy className="size-4 text-fd-muted-foreground/40" />
+        <CopyButton
+          text={code.trim()}
+          className="text-fd-muted-foreground/40"
+        />
       </div>
 
       {/* Code — shiki returns sanitized HTML */}

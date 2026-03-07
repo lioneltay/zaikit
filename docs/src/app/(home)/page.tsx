@@ -1,7 +1,6 @@
 import {
   ArrowRight,
   Bug,
-  Copy,
   Cpu,
   Database,
   Layers,
@@ -16,6 +15,7 @@ import Image from "next/image";
 import Link from "next/link";
 import logo from "@/app/icon.svg";
 import { CodeBlock } from "@/components/code-block";
+import { CopyButton } from "@/components/copy-button";
 
 function GitHubIcon({ className }: { className?: string }) {
   return (
@@ -34,26 +34,54 @@ function GitHubIcon({ className }: { className?: string }) {
 function Hero() {
   return (
     <section className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-4 text-center">
-      {/* Radial glow behind logo */}
-      <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
-        <div className="h-[600px] w-[600px] rounded-full bg-[oklch(0.7_0.17_162/0.06)] blur-[150px]" />
+      {/* Gradient mesh — layered glows for depth */}
+      <div className="pointer-events-none absolute inset-0">
+        {/* Primary emerald glow — large, behind content */}
+        <div className="absolute top-[35%] left-1/2 -translate-x-1/2 -translate-y-1/2">
+          <div className="h-[900px] w-[900px] rounded-full bg-[oklch(0.7_0.17_162/0.10)] blur-[200px]" />
+        </div>
+        {/* Secondary teal accent — bottom right for asymmetry */}
+        <div className="absolute right-[10%] bottom-[15%]">
+          <div className="h-[500px] w-[500px] rounded-full bg-[oklch(0.6_0.12_195/0.06)] blur-[160px]" />
+        </div>
+        {/* Warm purple accent — top left for color variety */}
+        <div className="absolute top-[8%] left-[8%]">
+          <div className="h-[400px] w-[400px] rounded-full bg-[oklch(0.55_0.10_280/0.04)] blur-[130px]" />
+        </div>
       </div>
 
-      {/* Subtle grid */}
+      {/* Grid with radial fade — visible near center, fading to edges */}
       <div
-        className="pointer-events-none absolute inset-0 opacity-[0.04]"
+        className="pointer-events-none absolute inset-0"
         style={{
           backgroundImage:
             "linear-gradient(rgba(255,255,255,0.3) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.3) 1px, transparent 1px)",
           backgroundSize: "64px 64px",
+          maskImage:
+            "radial-gradient(ellipse 70% 55% at 50% 45%, black 10%, transparent 70%)",
+          WebkitMaskImage:
+            "radial-gradient(ellipse 70% 55% at 50% 45%, black 10%, transparent 70%)",
+          opacity: 0.07,
+        }}
+      />
+
+      {/* Noise grain — adds texture to flat gradients */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.025]"
+        style={{
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")`,
+          backgroundSize: "200px 200px",
         }}
       />
 
       <div className="relative z-10">
-        <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-fd-border/60 bg-fd-card/50 px-4 py-1.5 text-xs font-medium text-fd-muted-foreground backdrop-blur-sm">
+        <Link
+          href="/docs/concepts/suspend-resume"
+          className="mb-6 inline-flex items-center gap-2 rounded-full border border-fd-border/60 bg-fd-card/50 px-4 py-1.5 text-xs font-medium text-fd-muted-foreground backdrop-blur-sm transition-colors hover:border-fd-primary/40 hover:text-fd-primary"
+        >
           <Zap className="size-3 text-fd-primary" />
           New: Suspend &amp; resume for human-in-the-loop
-        </div>
+        </Link>
 
         <Image
           src={logo}
@@ -98,7 +126,10 @@ function Hero() {
             <span className="text-fd-primary">pnpm</span> add @zaikit/core
             @zaikit/react
           </span>
-          <Copy className="size-3.5 text-fd-muted-foreground/40" />
+          <CopyButton
+            text="pnpm add @zaikit/core @zaikit/react"
+            className="text-fd-muted-foreground/40"
+          />
         </div>
       </div>
     </section>
@@ -288,9 +319,9 @@ function Features() {
             <Link
               key={feature.title}
               href={feature.href}
-              className="group relative rounded-2xl border border-fd-border/50 bg-fd-card/40 p-6 transition-all hover:border-fd-primary/30 hover:bg-fd-card/70"
+              className="group relative rounded-2xl border border-fd-border bg-fd-card/60 p-6 transition-all hover:border-fd-primary/30 hover:bg-fd-card/80"
             >
-              <div className="mb-4 inline-flex rounded-xl border border-fd-border/50 bg-fd-muted/30 p-2.5">
+              <div className="mb-4 inline-flex rounded-xl border border-fd-primary/20 bg-fd-primary/5 p-2.5">
                 <feature.icon className="size-5 text-fd-primary" />
               </div>
               <h3 className="mb-2 text-lg font-semibold">{feature.title}</h3>
@@ -309,6 +340,10 @@ function Features() {
 function Architecture() {
   return (
     <section className="relative px-4 py-24">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+      </div>
+
       <div className="mx-auto max-w-4xl">
         <div className="mb-16 text-center">
           <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">
@@ -327,22 +362,28 @@ function Architecture() {
               label: "Server",
               title: "Define",
               description: "createAgent + createTool with Zod schemas",
+              href: "/docs/reference/core/create-agent",
             },
             {
               icon: Zap,
               label: "Transport",
               title: "Stream",
               description: "SSE streaming with tool calls, data, and status",
+              href: "/docs/concepts/agent-loop",
             },
             {
               icon: Shield,
               label: "Client",
               title: "Render",
               description: "Type-safe React components via codegen",
+              href: "/docs/concepts/tool-rendering",
             },
           ].map((step, i) => (
             <div key={step.title} className="relative">
-              <div className="rounded-2xl border border-fd-border/50 bg-fd-card/40 p-6">
+              <Link
+                href={step.href}
+                className="block rounded-2xl border border-fd-border bg-fd-card/60 p-6 transition-all hover:border-fd-primary/30 hover:bg-fd-card/80"
+              >
                 <div className="mb-3 flex items-center gap-2">
                   <span className="flex size-6 items-center justify-center rounded-full bg-fd-primary/10 font-mono text-xs font-bold text-fd-primary">
                     {i + 1}
@@ -356,7 +397,7 @@ function Architecture() {
                 <p className="text-sm text-fd-muted-foreground">
                   {step.description}
                 </p>
-              </div>
+              </Link>
               {i < 2 && (
                 <div className="pointer-events-none absolute top-1/2 -right-4 z-10 hidden -translate-y-1/2 text-fd-primary/50 md:block">
                   <ArrowRight className="size-6" />
@@ -432,7 +473,7 @@ function Packages() {
             <Link
               key={pkg}
               href={href}
-              className="rounded-xl border border-fd-border/40 bg-fd-card/30 px-4 py-3 transition-colors hover:border-fd-border hover:bg-fd-card/60"
+              className="rounded-xl border border-fd-border bg-fd-card/50 px-4 py-3 transition-colors hover:border-fd-primary/30 hover:bg-fd-card/70"
             >
               <span className="block font-mono text-sm text-fd-primary">
                 {pkg}
@@ -450,6 +491,10 @@ function Packages() {
 function FinalCTA() {
   return (
     <section className="relative px-4 py-32">
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+      </div>
+
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
         <div className="h-[400px] w-[400px] rounded-full bg-[oklch(0.7_0.17_162/0.06)] blur-[100px]" />
       </div>
