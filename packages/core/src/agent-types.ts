@@ -13,6 +13,15 @@ import type { z } from "zod";
 import type { Middleware } from "./middleware/core";
 import type { ToolDataEvent, WriteDataPart } from "./write-data";
 
+// --- Data callbacks ---
+
+/** Callbacks for observing data/metadata events. Used at both agent and per-request level. */
+export type DataCallbacks<T extends ToolSet = ToolSet> = {
+  onData?: (part: WriteDataPart) => void;
+  onToolData?: (event: ToolDataEventFor<T>) => void;
+  onMetadata?: (metadata: Record<string, unknown>) => void;
+};
+
 // --- Typed tool data event ---
 
 /**
@@ -143,7 +152,7 @@ export type CreateAgentOptions<
     | Promise<{ output?: unknown } | undefined>
     | { output?: unknown }
     | undefined;
-};
+} & DataCallbacks;
 
 // --- Frontend tool types ---
 
@@ -155,9 +164,12 @@ export type FrontendToolDef = {
 
 // --- ChatOptions ---
 
-export type ChatOptions<C = undefined> = ([C] extends [undefined]
+export type ChatOptions<C = undefined, T extends ToolSet = ToolSet> = ([
+  C,
+] extends [undefined]
   ? { context?: never }
   : { context: C }) &
+  DataCallbacks<T> &
   (
     | {
         threadId: string;
@@ -191,16 +203,15 @@ export type StreamOptions<C = undefined, T extends ToolSet = ToolSet> = ([
   C,
 ] extends [undefined]
   ? { context?: never }
-  : { context: C }) & {
-  messages: UIMessage[];
-  model?: LanguageModel;
-  threadId?: string;
-  maxSteps?: number;
-  output?: z.ZodType;
-  frontendTools?: FrontendToolDef[];
-  onData?: (part: WriteDataPart) => void;
-  onToolData?: (event: ToolDataEventFor<T>) => void;
-};
+  : { context: C }) &
+  DataCallbacks<T> & {
+    messages: UIMessage[];
+    model?: LanguageModel;
+    threadId?: string;
+    maxSteps?: number;
+    output?: z.ZodType;
+    frontendTools?: FrontendToolDef[];
+  };
 
 export type StreamResult = {
   stream: ReadableStream<unknown>;
@@ -211,13 +222,12 @@ export type BaseGenerateOptions<C = undefined, T extends ToolSet = ToolSet> = ([
   C,
 ] extends [undefined]
   ? { context?: never }
-  : { context: C }) & {
-  model?: LanguageModel;
-  maxSteps?: number;
-  frontendTools?: FrontendToolDef[];
-  onData?: (part: WriteDataPart) => void;
-  onToolData?: (event: ToolDataEventFor<T>) => void;
-} & ({ prompt: string } | { messages: UIMessage[] });
+  : { context: C }) &
+  DataCallbacks<T> & {
+    model?: LanguageModel;
+    maxSteps?: number;
+    frontendTools?: FrontendToolDef[];
+  } & ({ prompt: string } | { messages: UIMessage[] });
 
 export type GenerateOptions<
   C = undefined,
@@ -239,7 +249,7 @@ export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
   system: string | ((context: C) => string | Promise<string>) | undefined;
   contextSchema: Record<string, unknown> | undefined;
   stream(options: StreamOptions<C, T>): Promise<StreamResult>;
-  chat(options: ChatOptions<C>): Promise<Response>;
+  chat(options: ChatOptions<C, T>): Promise<Response>;
   generate<OUTPUT extends z.ZodType = never>(
     options: BaseGenerateOptions<C, T> & { output?: OUTPUT },
   ): Promise<GenerateResult<OUTPUT>>;

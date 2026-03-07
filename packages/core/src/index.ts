@@ -11,6 +11,7 @@ export type {
   BeforeToolCallContext,
   ChatOptions,
   CreateAgentOptions,
+  DataCallbacks,
   FrontendToolDef,
   GenerateOptions,
   GenerateResult,
@@ -38,5 +39,6 @@ export type {
   ToolDataEvent,
   WriteDataFn,
   WriteDataPart,
+  WriteMetadataFn,
   WriteToolDataFn,
 } from "./write-data";

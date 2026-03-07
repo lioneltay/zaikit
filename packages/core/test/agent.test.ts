@@ -2768,6 +2768,306 @@ describe("writeData", () => {
   });
 });
 
+describe("writeMetadata", () => {
+  it("tool writeMetadata emits message-metadata chunks in stream()", async () => {
+    const metadataTool = createTool({
+      description: "Emit metadata",
+      inputSchema: z.object({}),
+      execute: async ({ writeMetadata }) => {
+        writeMetadata({ traceId: "abc-123" });
+        writeMetadata({ suggestions: ["yes", "no"] });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "meta", {}),
+        textResponse("Done."),
+      ]),
+      tools: { meta: metadataTool },
+    });
+
+    const chunks: any[] = [];
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+
+    for await (const chunk of stream as any) {
+      chunks.push(chunk);
+    }
+    const agentResult = await result;
+
+    const metaChunks = chunks.filter((c) => c.type === "message-metadata");
+    expect(metaChunks).toHaveLength(2);
+    expect(metaChunks[0].messageMetadata).toEqual({ traceId: "abc-123" });
+    expect(metaChunks[1].messageMetadata).toEqual({
+      suggestions: ["yes", "no"],
+    });
+    expect(agentResult.text).toBe("Done.");
+  });
+
+  it("onMetadata callback fires on stream()", async () => {
+    const received: any[] = [];
+
+    const tool = createTool({
+      description: "Emit metadata",
+      inputSchema: z.object({}),
+      execute: async ({ writeMetadata }) => {
+        writeMetadata({ key: "value" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Go")],
+      onMetadata: (meta) => received.push(meta),
+    });
+
+    for await (const _ of stream as any) {
+    }
+    await result;
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual({ key: "value" });
+  });
+
+  it("onMetadata callback fires on generate()", async () => {
+    const received: any[] = [];
+
+    const tool = createTool({
+      description: "Emit metadata",
+      inputSchema: z.object({}),
+      execute: async ({ writeMetadata }) => {
+        writeMetadata({ source: "tool" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+    });
+
+    await agent.generate({
+      prompt: "Go",
+      onMetadata: (meta) => received.push(meta),
+    });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual({ source: "tool" });
+  });
+
+  it("writeMetadata no-ops gracefully outside agent context", async () => {
+    const tool = createTool({
+      description: "Standalone tool",
+      inputSchema: z.object({ x: z.number() }),
+      execute: async ({ input, writeMetadata }) => {
+        writeMetadata({ traceId: "test" });
+        return input.x * 2;
+      },
+    });
+
+    const result = await tool.execute?.({ x: 5 }, {
+      toolCallId: "direct",
+      messages: [],
+    } as any);
+    expect(result).toBe(10);
+  });
+
+  it("writeMetadata works during resume", async () => {
+    const memory = createInMemoryMemory();
+
+    const confirmTool = createTool({
+      description: "Confirm action with metadata",
+      inputSchema: z.object({ action: z.string() }),
+      suspendSchema: z.object({ prompt: z.string() }),
+      resumeSchema: z.object({ confirmed: z.boolean() }),
+      execute: async ({ input, suspend, resumeData, writeMetadata }) => {
+        if (!resumeData) {
+          return suspend({ prompt: `Confirm: ${input.action}?` });
+        }
+        writeMetadata({ resolvedBy: "user", action: input.action });
+        return resumeData.confirmed ? "Confirmed" : "Cancelled";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("call-1", "confirm", { action: "deploy" }),
+        textResponse("Deployed."),
+      ]),
+      tools: { confirm: confirmTool },
+      memory,
+    });
+
+    // Initial chat — tool suspends
+    await (
+      await agent.chat({
+        threadId: "t1",
+        message: userMessage("Deploy it"),
+      })
+    ).text();
+
+    // Resume — writeMetadata should emit message-metadata
+    const resumeResponse = await agent.chat({
+      threadId: "t1",
+      resume: { toolCallId: "call-1", data: { confirmed: true } },
+    });
+    await resumeResponse.text();
+
+    const messages = await memory.getMessages("t1");
+
+    // metadata written during resume should be persisted to memory
+    expect(messages[1].role).toBe("assistant");
+    expect(messages[1].metadata).toEqual(
+      expect.objectContaining({ resolvedBy: "user", action: "deploy" }),
+    );
+  });
+
+  it("metadata from resume overrides metadata from initial chat", async () => {
+    const memory = createInMemoryMemory();
+
+    const weatherTool = createTool({
+      description: "Get weather",
+      inputSchema: z.object({ city: z.string() }),
+      execute: async ({ input, writeMetadata }) => {
+        writeMetadata({ suggestions: [`Book flight to ${input.city}`] });
+        return { temp: 72 };
+      },
+    });
+
+    const confirmTool = createTool({
+      description: "Confirm with metadata on resume",
+      inputSchema: z.object({ action: z.string() }),
+      suspendSchema: z.object({ prompt: z.string() }),
+      resumeSchema: z.object({ ok: z.boolean() }),
+      execute: async ({ input, suspend, resumeData, writeMetadata }) => {
+        if (!resumeData) {
+          return suspend({ prompt: `Confirm: ${input.action}?` });
+        }
+        writeMetadata({ suggestions: ["Submit expense for $100"] });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        multiToolCallResponse([
+          { toolCallId: "c1", toolName: "weather", args: { city: "NYC" } },
+          { toolCallId: "c2", toolName: "confirm", args: { action: "deploy" } },
+        ]),
+        textResponse("All done."),
+      ]),
+      tools: { weather: weatherTool, confirm: confirmTool },
+      memory,
+    });
+
+    // Initial chat — weather writes metadata, confirm suspends
+    await (
+      await agent.chat({
+        threadId: "t1",
+        message: userMessage("Check weather and deploy"),
+      })
+    ).text();
+
+    const beforeResume = await memory.getMessages("t1");
+    expect(beforeResume[1].metadata).toEqual(
+      expect.objectContaining({ suggestions: ["Book flight to NYC"] }),
+    );
+
+    // Resume — confirm writes new suggestions, should override
+    await (
+      await agent.chat({
+        threadId: "t1",
+        resume: { toolCallId: "c2", data: { ok: true } },
+      })
+    ).text();
+
+    const afterResume = await memory.getMessages("t1");
+    expect(afterResume[1].metadata).toEqual(
+      expect.objectContaining({ suggestions: ["Submit expense for $100"] }),
+    );
+  });
+
+  it("metadata persists when tool writes metadata then re-suspends", async () => {
+    const memory = createInMemoryMemory();
+
+    // Multi-suspend tool: suspends twice, writes metadata on second suspend
+    const multiStep = createTool({
+      description: "Multi-step with metadata",
+      inputSchema: z.object({}),
+      suspendSchema: z.object({ step: z.number() }),
+      resumeSchema: z.object({ go: z.boolean() }),
+      execute: async ({ suspend, resumeHistory, writeMetadata }) => {
+        if (resumeHistory.length === 0) {
+          return suspend({ step: 1 });
+        }
+        if (resumeHistory.length === 1) {
+          writeMetadata({ phase: "confirming", step: 2 });
+          return suspend({ step: 2 });
+        }
+        writeMetadata({ phase: "complete" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "multi", {}),
+        textResponse("Finished."),
+      ]),
+      tools: { multi: multiStep },
+      memory,
+    });
+
+    // Initial chat — tool suspends (step 1)
+    await (
+      await agent.chat({
+        threadId: "t1",
+        message: userMessage("Go"),
+      })
+    ).text();
+
+    // Resume 1 — tool writes metadata then re-suspends (step 2)
+    await (
+      await agent.chat({
+        threadId: "t1",
+        resume: { toolCallId: "c1", data: { go: true } },
+      })
+    ).text();
+
+    const afterReSuspend = await memory.getMessages("t1");
+    expect(afterReSuspend[1].metadata).toEqual(
+      expect.objectContaining({ phase: "confirming", step: 2 }),
+    );
+
+    // Resume 2 — tool completes, writes final metadata
+    await (
+      await agent.chat({
+        threadId: "t1",
+        resume: { toolCallId: "c1", data: { go: true } },
+      })
+    ).text();
+
+    const afterComplete = await memory.getMessages("t1");
+    expect(afterComplete[1].metadata).toEqual(
+      expect.objectContaining({ phase: "complete" }),
+    );
+  });
+});
+
 describe("generateThreadTitle", () => {
   it("generates a title for new threads", async () => {
     const memory = createInMemoryMemory();
@@ -2806,5 +3106,291 @@ describe("generateThreadTitle", () => {
 
     const thread = await memory.getThread("t1");
     expect(thread?.title).toBe("My Custom Title");
+  });
+});
+
+describe("agent-level data callbacks", () => {
+  it("agent-level onData fires on stream()", async () => {
+    const received: any[] = [];
+
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "status", data: "working" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+      onData: (part) => received.push(part),
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Go")],
+    });
+    for await (const _ of stream as any) {
+    }
+    await result;
+
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe("status");
+    expect(received[0].data).toBe("working");
+  });
+
+  it("agent-level onData fires on chat()", async () => {
+    const received: any[] = [];
+    const memory = createInMemoryMemory();
+
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "status", data: "working" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+      memory,
+      onData: (part) => received.push(part),
+    });
+
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Go"),
+    });
+    await response.text();
+
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe("status");
+  });
+
+  it("agent-level onData fires during resume", async () => {
+    const received: any[] = [];
+    const memory = createInMemoryMemory();
+
+    const tool = createTool({
+      description: "Confirm with data",
+      inputSchema: z.object({}),
+      suspendSchema: z.object({ prompt: z.string() }),
+      resumeSchema: z.object({ ok: z.boolean() }),
+      execute: async ({ suspend, resumeData, writeData }) => {
+        if (!resumeData) {
+          return suspend({ prompt: "Continue?" });
+        }
+        writeData({ type: "progress", data: "processing" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("tc-1", "confirm", {}),
+        textResponse("Done."),
+      ]),
+      tools: { confirm: tool },
+      memory,
+      onData: (part) => received.push(part),
+    });
+
+    // Suspend
+    await (
+      await agent.chat({
+        threadId: "t1",
+        message: userMessage("Go"),
+      })
+    ).text();
+
+    received.length = 0; // clear parts from initial call
+
+    // Resume — agent-level onData should fire
+    await (
+      await agent.chat({
+        threadId: "t1",
+        resume: { toolCallId: "tc-1", data: { ok: true } },
+      })
+    ).text();
+
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe("progress");
+    expect(received[0].data).toBe("processing");
+  });
+
+  it("per-request onData fires on chat()", async () => {
+    const received: any[] = [];
+    const memory = createInMemoryMemory();
+
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "status", data: "working" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+      memory,
+    });
+
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Go"),
+      onData: (part) => received.push(part),
+    });
+    await response.text();
+
+    expect(received).toHaveLength(1);
+    expect(received[0].type).toBe("status");
+  });
+
+  it("agent-level and per-request callbacks both fire (agent first)", async () => {
+    const order: string[] = [];
+    const memory = createInMemoryMemory();
+
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "status", data: "working" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+      memory,
+      onData: () => order.push("agent"),
+    });
+
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Go"),
+      onData: () => order.push("per-request"),
+    });
+    await response.text();
+
+    expect(order).toEqual(["agent", "per-request"]);
+  });
+
+  it("agent-level and per-request both fire on stream()", async () => {
+    const order: string[] = [];
+
+    const tool = createTool({
+      description: "Emit data",
+      inputSchema: z.object({}),
+      execute: async ({ writeData }) => {
+        writeData({ type: "status", data: "working" });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+      onData: () => order.push("agent"),
+    });
+
+    const { stream, result } = await agent.stream({
+      messages: [userMessage("Go")],
+      onData: () => order.push("per-request"),
+    });
+    for await (const _ of stream as any) {
+    }
+    await result;
+
+    expect(order).toEqual(["agent", "per-request"]);
+  });
+
+  it("agent-level onToolData fires on chat()", async () => {
+    const events: any[] = [];
+    const memory = createInMemoryMemory();
+
+    const tool = createTool({
+      description: "Emit typed data",
+      inputSchema: z.object({}),
+      dataSchema: { status: z.object({ progress: z.number() }) },
+      execute: async ({ writeToolData }) => {
+        writeToolData("status", { progress: 50 });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+      memory,
+      onToolData: (event) => events.push(event),
+    });
+
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Go"),
+    });
+    await response.text();
+
+    expect(events).toHaveLength(1);
+    expect(events[0].toolName).toBe("emit");
+    expect(events[0].type).toBe("status");
+    expect(events[0].data).toEqual({ progress: 50 });
+  });
+
+  it("agent-level onMetadata fires on chat()", async () => {
+    const received: any[] = [];
+    const memory = createInMemoryMemory();
+
+    const tool = createTool({
+      description: "Write metadata",
+      inputSchema: z.object({}),
+      execute: async ({ writeMetadata }) => {
+        writeMetadata({ suggestions: ["a", "b"] });
+        return "done";
+      },
+    });
+
+    const agent = createAgent({
+      model: mockModel([
+        toolCallResponse("c1", "emit", {}),
+        textResponse("Done."),
+      ]),
+      tools: { emit: tool },
+      memory,
+      onMetadata: (meta) => received.push(meta),
+    });
+
+    const response = await agent.chat({
+      threadId: "t1",
+      message: userMessage("Go"),
+    });
+    await response.text();
+
+    expect(received).toHaveLength(1);
+    expect(received[0]).toEqual({ suggestions: ["a", "b"] });
   });
 });
