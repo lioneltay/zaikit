@@ -2,11 +2,14 @@
 set -euo pipefail
 
 PACKAGES=(
+  packages/utils/package.json
   packages/memory/package.json
+  packages/memory-inmemory/package.json
+  packages/memory-postgres/package.json
   packages/core/package.json
   packages/react/package.json
-  packages/memory-postgres/package.json
   packages/codegen-react/package.json
+  packages/sandbox/package.json
 )
 
 # Read current version from core
