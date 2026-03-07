@@ -11,9 +11,7 @@ import {
   UserCheck,
   Zap,
 } from "lucide-react";
-import Image from "next/image";
 import Link from "next/link";
-import logo from "@/app/icon.svg";
 import { CodeBlock } from "@/components/code-block";
 import { CopyButton } from "@/components/copy-button";
 
@@ -33,7 +31,7 @@ function GitHubIcon({ className }: { className?: string }) {
 /* ─── Hero ─── */
 function Hero() {
   return (
-    <section className="relative flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center overflow-hidden px-4 text-center">
+    <section className="relative flex flex-col items-center justify-center overflow-hidden px-4 pt-32 pb-40 text-center sm:pt-40 sm:pb-48">
       {/* Gradient mesh — layered glows for depth */}
       <div className="pointer-events-none absolute inset-0">
         {/* Primary emerald glow — large, behind content */}
@@ -74,6 +72,9 @@ function Hero() {
         }}
       />
 
+      {/* Bottom fade — smooth transition into next section */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-fd-background to-transparent" />
+
       <div className="relative z-10">
         <Link
           href="/docs/concepts/suspend-resume"
@@ -82,14 +83,6 @@ function Hero() {
           <Zap className="size-3 text-fd-primary" />
           New: Suspend &amp; resume for human-in-the-loop
         </Link>
-
-        <Image
-          src={logo}
-          alt=""
-          width={72}
-          height={72}
-          className="mx-auto mb-8"
-        />
 
         <h1 className="mb-6 text-5xl font-bold tracking-[-0.04em] sm:text-7xl lg:text-8xl">
           Build AI agents
@@ -203,7 +196,12 @@ export default function App() {
 
 async function CodeShowcase() {
   return (
-    <section className="relative px-4 pb-32">
+    <section className="relative px-4 py-24">
+      {/* Section glow */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+      </div>
+
       <div className="mx-auto max-w-6xl">
         <div className="mb-12 text-center">
           <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">

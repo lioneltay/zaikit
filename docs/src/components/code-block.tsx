@@ -44,9 +44,14 @@ const zaikitTheme: ThemeRegistration = {
       scope: ["string"],
       settings: { foreground: "#5ce0a0" },
     },
-    // Import aliases & read-write variables (named imports, identifiers)
+    // Variables (named imports, identifiers, objects, parameters)
     {
-      scope: ["variable.other.readwrite.alias", "variable.other.readwrite"],
+      scope: [
+        "variable.other.readwrite.alias",
+        "variable.other.readwrite",
+        "variable.other.object",
+        "variable.parameter",
+      ],
       settings: { foreground: "#e0c590" },
     },
     // Destructured constants (const { x } = ...)
@@ -54,15 +59,19 @@ const zaikitTheme: ThemeRegistration = {
       scope: ["variable.other.constant"],
       settings: { foreground: "#d4c4a0" },
     },
-    // Variables & parameters (general fallback)
+    // Variables (general fallback)
     {
-      scope: ["variable", "variable.parameter", "meta.object-literal.key"],
+      scope: ["variable", "meta.object-literal.key"],
       settings: { foreground: "#c8c8cc" },
     },
-    // Object properties
+    // Object properties (all levels of property access)
     {
-      scope: ["variable.other.property", "support.variable.property"],
-      settings: { foreground: "#c8c8cc" },
+      scope: [
+        "variable.other.property",
+        "variable.other.object.property",
+        "support.variable.property",
+      ],
+      settings: { foreground: "#a0b8cc" },
     },
     // Constants, numbers, booleans
     {
@@ -78,14 +87,20 @@ const zaikitTheme: ThemeRegistration = {
       ],
       settings: { foreground: "#6ec8e6" },
     },
-    // JSX/HTML tags
+    // JSX/HTML tags — teal, distinct from string green
     {
-      scope: [
-        "entity.name.tag",
-        "support.class.component",
-        "punctuation.definition.tag",
-      ],
-      settings: { foreground: "#5ce0a0" },
+      scope: ["entity.name.tag"],
+      settings: { foreground: "#70c0b0" },
+    },
+    // JSX components — cyan like types
+    {
+      scope: ["support.class.component"],
+      settings: { foreground: "#6ec8e6" },
+    },
+    // Tag punctuation (< > />)
+    {
+      scope: ["punctuation.definition.tag"],
+      settings: { foreground: "#70c0b0" },
     },
     // JSX/HTML attributes
     {
