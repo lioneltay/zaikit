@@ -70,11 +70,6 @@ export function createMongoMemory({
     async close() {
       await client.close();
     },
-    async clear() {
-      await messages.deleteMany({});
-      await threads.deleteMany({});
-      await counters.deleteMany({});
-    },
 
     async createThread(id, title, ownerId) {
       const now = new Date();

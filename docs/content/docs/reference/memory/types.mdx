@@ -39,14 +39,21 @@ type Thread = {
 ## Memory Interface
 
 ```ts
+type GetMessagesOptions = {
+  limit?: number;
+};
+
 type Memory = {
+  initialize(): Promise<void>;
+  close(): Promise<void>;
+
   createThread(id: string, title?: string, ownerId?: string): Promise<Thread>;
   getThread(id: string): Promise<Thread | null>;
   listThreads(opts?: { ownerId?: string }): Promise<Thread[]>;
   deleteThread(id: string): Promise<void>;
   updateThread(id: string, updates: { title?: string; ownerId?: string }): Promise<Thread>;
 
-  getMessages(threadId: string): Promise<UIMessage[]>;
+  getMessages(threadId: string, options?: GetMessagesOptions): Promise<UIMessage[]>;
   addMessage(threadId: string, message: UIMessage): Promise<void>;
   updateMessage(
     threadId: string,
@@ -59,6 +66,13 @@ type Memory = {
 `UIMessage` is the AI SDK's message type from the `ai` package.
 
 ## Method Reference
+
+### Lifecycle Methods
+
+| Method | Signature | Description |
+| --- | --- | --- |
+| `initialize` | `() => Promise<void>` | Create tables, indexes, or other storage structures. Idempotent — safe to call on every startup. |
+| `close` | `() => Promise<void>` | Close database connections and release resources. |
 
 ### Thread Methods
 
@@ -74,7 +88,7 @@ type Memory = {
 
 | Method | Signature | Description |
 | --- | --- | --- |
-| `getMessages` | `(threadId: string) => Promise<UIMessage[]>` | Get all messages in a thread, ordered by creation time. |
+| `getMessages` | `(threadId: string, options?: GetMessagesOptions) => Promise<UIMessage[]>` | Get all messages in a thread, ordered by creation time. Pass `{ limit: N }` to return only the most recent N messages. |
 | `addMessage` | `(threadId: string, message: UIMessage) => Promise<void>` | Add a message to a thread. Implementations should use upsert semantics (insert or update if the message ID already exists). |
 | `updateMessage` | `(threadId: string, messageId: string, updates: { parts: UIMessage["parts"] }) => Promise<void>` | Update the parts of an existing message. Used by the agent during resume to update suspended tool outputs in-place. |
 
@@ -88,6 +102,14 @@ import type { UIMessage } from "ai";
 
 export function createMyMemory(): Memory {
   return {
+    async initialize() {
+      // Create tables/indexes (idempotent)
+    },
+
+    async close() {
+      // Close database connections
+    },
+
     async createThread(id, title, ownerId) {
       // Insert into your storage
       // Return the created Thread
@@ -112,8 +134,9 @@ export function createMyMemory(): Memory {
       // Return the updated Thread
     },
 
-    async getMessages(threadId) {
+    async getMessages(threadId, options) {
       // Return messages ordered by creation time
+      // If options.limit is set, return only the most recent N messages
     },
 
     async addMessage(threadId, message) {
@@ -140,17 +163,44 @@ export function createMyMemory(): Memory {
 
 ```ts
 import { memoryConformanceTests } from "@zaikit/memory/test";
-import { describe } from "vitest";
 import { createMyMemory } from "./index";
 
-describe("MyMemory", () => {
-  memoryConformanceTests(() => createMyMemory());
+memoryConformanceTests({
+  create: () => createMyMemory(),
 });
 ```
 
-The suite covers all thread and message operations including edge cases like upsert semantics, cascade deletes, and ordering.
+The function accepts an options object:
+
+| Option | Type | Required | Description |
+| --- | --- | --- | --- |
+| `create` | `(ctx: TContext) => Memory \| Promise<Memory>` | Yes | Factory that returns a fresh `Memory` instance. The framework calls `initialize` and cleans up between tests automatically. |
+| `start` | `() => TContext \| Promise<TContext>` | No | Start backing infrastructure (e.g. a test container). Runs once before all tests. The returned context is passed to `create`. |
+| `stop` | `(ctx: TContext) => void \| Promise<void>` | No | Tear down infrastructure. Runs once after all tests. |
+
+When `start` is provided, the suite also runs persistence tests that verify data survives across separate `Memory` instances connected to the same backing store.
+
+Example with a test container:
+
+```ts
+import { MongoDBContainer, type StartedMongoDBContainer } from "@testcontainers/mongodb";
+import { memoryConformanceTests } from "@zaikit/memory/test";
+import { createMongoMemory } from "@zaikit/memory-mongo";
+
+memoryConformanceTests<StartedMongoDBContainer>({
+  start: () => new MongoDBContainer("mongo:7").start(),
+  stop: (container) => container.stop(),
+  create: (container) =>
+    createMongoMemory({
+      url: `${container.getConnectionString()}?directConnection=true`,
+    }),
+});
+```
+
+The suite covers all thread and message operations including edge cases like upsert semantics, cascade deletes, ordering, and `getMessages` limit.
 
 ## Official Adapters
 
 - [`@zaikit/memory-postgres`](/reference/memory-postgres/create-postgres-memory) -- PostgreSQL adapter using the `postgres` driver.
+- [`@zaikit/memory-mongo`](/reference/memory-mongo/create-mongo-memory) -- MongoDB adapter using the `mongodb` driver.
 - [`@zaikit/memory-inmemory`](/reference/memory-inmemory/create-in-memory-memory) -- In-memory adapter for development and testing.

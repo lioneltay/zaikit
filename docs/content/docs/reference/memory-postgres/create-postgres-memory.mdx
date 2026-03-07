@@ -35,7 +35,7 @@ const agent = createAgent({
 ```ts
 function createPostgresMemory(options: {
   connectionString: string;
-}): Memory & { initialize: () => Promise<void> };
+}): Memory;
 ```
 
 ## Options
@@ -46,12 +46,7 @@ function createPostgresMemory(options: {
 
 ## Return Type
 
-Returns a `Memory` object (implementing all methods from the [`Memory` interface](/reference/memory/types)) plus an additional `initialize` method.
-
-| Property | Type | Description |
-| --- | --- | --- |
-| `initialize` | `() => Promise<void>` | Creates the required tables and indexes if they do not exist. Call this once on application startup. |
-| *(all Memory methods)* | | See the [Memory reference](/reference/memory/types) for the full method list. |
+Returns a `Memory` object implementing the full [Memory interface](/reference/memory/types).
 
 ## initialize()
 

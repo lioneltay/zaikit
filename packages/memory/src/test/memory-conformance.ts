@@ -7,7 +7,7 @@ type MemoryConformanceOptions<TContext = void> = {
   start?: () => TContext | Promise<TContext>;
   /** Stop backing infrastructure. Runs once after all tests. */
   stop?: (ctx: TContext) => void | Promise<void>;
-  /** Create a Memory instance. Framework handles initialize/clear/close. */
+  /** Create a Memory instance. Framework handles initialize and close. */
   create: (ctx: TContext) => Memory | Promise<Memory>;
 };
 
@@ -40,7 +40,11 @@ export function memoryConformanceTests<TContext = void>({
   beforeEach(async () => {
     memory = await create(ctx);
     await memory.initialize();
-    await memory.clear();
+    // Clean up any leftover data from previous tests
+    const threads = await memory.listThreads();
+    for (const thread of threads) {
+      await memory.deleteThread(thread.id);
+    }
   });
 
   describe("Memory conformance", () => {

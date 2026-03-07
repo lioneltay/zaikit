@@ -28,7 +28,7 @@ const agent = createAgent({
 });
 ```
 
-No initialization step is needed -- unlike the PostgreSQL adapter, there are no tables to create.
+You can call `memory.initialize()` for consistency with other adapters, but it is a no-op — there are no tables or indexes to create.
 
 ## Signature
 
@@ -52,4 +52,5 @@ Returns a `Memory` object that implements the full [Memory interface](/reference
 |---|---|
 | Local development | `@zaikit/memory-inmemory` |
 | Tests | `@zaikit/memory-inmemory` |
-| Production | [`@zaikit/memory-postgres`](/reference/memory-postgres/create-postgres-memory) |
+| Production (PostgreSQL) | [`@zaikit/memory-postgres`](/reference/memory-postgres/create-postgres-memory) |
+| Production (MongoDB) | [`@zaikit/memory-mongo`](/reference/memory-mongo/create-mongo-memory) |

@@ -26,7 +26,15 @@ type Thread = {
   updatedAt: Date;
 };
 
+type GetMessagesOptions = {
+  limit?: number;
+};
+
 type Memory = {
+  // Lifecycle
+  initialize(): Promise<void>;
+  close(): Promise<void>;
+
   // Thread operations
   createThread(id: string, title?: string, ownerId?: string): Promise<Thread>;
   getThread(id: string): Promise<Thread | null>;
@@ -35,7 +43,7 @@ type Memory = {
   updateThread(id: string, updates: { title?: string; ownerId?: string }): Promise<Thread>;
 
   // Message operations
-  getMessages(threadId: string): Promise<UIMessage[]>;
+  getMessages(threadId: string, options?: GetMessagesOptions): Promise<UIMessage[]>;
   addMessage(threadId: string, message: UIMessage): Promise<void>;
   updateMessage(
     threadId: string,
@@ -44,6 +52,13 @@ type Memory = {
   ): Promise<void>;
 };
 ```
+
+### Lifecycle Methods
+
+| Method | Description |
+|---|---|
+| `initialize()` | Create tables/indexes. Safe to call multiple times (idempotent). |
+| `close()` | Close connections and release resources. |
 
 ### Thread Operations
 
@@ -59,7 +74,7 @@ type Memory = {
 
 | Method | Description |
 |---|---|
-| `getMessages(threadId)` | Return all messages in a thread, ordered by creation time. |
+| `getMessages(threadId, options?)` | Return messages in a thread, ordered by creation time. Pass `{ limit: N }` to return only the most recent N messages. |
 | `addMessage(threadId, message)` | Append a message to a thread. |
 | `updateMessage(threadId, messageId, updates)` | Update a message's `parts` array. Used during suspend/resume to fill in tool outputs. |
 
@@ -106,6 +121,7 @@ An in-memory implementation for development and testing. Data is lost when the p
 import { createInMemoryMemory } from "@zaikit/memory-inmemory";
 
 const memory = createInMemoryMemory();
+await memory.initialize();
 
 const agent = createAgent({
   model,
@@ -113,8 +129,6 @@ const agent = createAgent({
   memory,
 });
 ```
-
-No initialization step needed.
 
 ### `@zaikit/memory-postgres`
 
@@ -126,8 +140,6 @@ import { createPostgresMemory } from "@zaikit/memory-postgres";
 const memory = createPostgresMemory({
   connectionString: process.env.DATABASE_URL!,
 });
-
-// Create tables if they don't exist
 await memory.initialize();
 
 const agent = createAgent({
@@ -137,12 +149,26 @@ const agent = createAgent({
 });
 ```
 
-`initialize()` creates two tables if they do not exist:
+### `@zaikit/memory-mongo`
 
-- `zaikit_threads` — stores thread metadata (`id`, `title`, `created_at`, `updated_at`)
-- `zaikit_messages` — stores messages (`id`, `thread_id`, `role`, `parts` as JSONB, `metadata` as JSONB, `created_at`)
+A MongoDB-backed implementation:
 
-Messages cascade-delete when a thread is deleted.
+```ts
+import { createMongoMemory } from "@zaikit/memory-mongo";
+
+const memory = createMongoMemory({
+  url: process.env.MONGO_URL!,
+});
+await memory.initialize();
+
+const agent = createAgent({
+  model,
+  tools,
+  memory,
+});
+```
+
+All adapters call `initialize()` to set up their storage (tables, indexes, etc.). This is idempotent and safe to call on every server start.
 
 ## Custom Adapter
 
@@ -152,6 +178,12 @@ To use a different database, implement the `Memory` type and pass it to `createA
 import type { Memory } from "@zaikit/memory";
 
 const memory: Memory = {
+  async initialize() {
+    // Create tables/indexes (idempotent)
+  },
+  async close() {
+    // Close database connections
+  },
   async createThread(id, title, ownerId) {
     // Insert into your database
     // Return { id, title, ownerId, createdAt, updatedAt }
@@ -169,8 +201,9 @@ const memory: Memory = {
   async updateThread(id, updates) {
     // Update and return the thread
   },
-  async getMessages(threadId) {
+  async getMessages(threadId, options) {
     // Return UIMessage[] ordered by creation time
+    // If options.limit is set, return only the most recent N messages
   },
   async addMessage(threadId, message) {
     // Insert the message
@@ -192,3 +225,4 @@ The most important detail is that `addMessage` and `updateMessage` must correctl
 ## What's Next
 
 - **[Postgres Memory Guide](/guides/postgres-memory)** — Production setup with PostgreSQL
+- **[MongoDB Reference](/reference/memory-mongo/create-mongo-memory)** — MongoDB adapter reference

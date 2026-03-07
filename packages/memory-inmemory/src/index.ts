@@ -8,10 +8,6 @@ export function createInMemoryMemory(): Memory {
   return {
     async initialize() {},
     async close() {},
-    async clear() {
-      threads.clear();
-      messages.clear();
-    },
 
     async createThread(id, title, ownerId) {
       const now = new Date();

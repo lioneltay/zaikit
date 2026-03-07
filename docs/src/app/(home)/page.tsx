@@ -223,36 +223,42 @@ const features = [
   {
     icon: Cpu,
     title: "Full-Stack Agents",
+    href: "/docs/concepts/how-it-works",
     description:
       "Define tools on the server, connect from React with a single provider. One framework for the entire stack.",
   },
   {
     icon: Radio,
     title: "Real-Time Streaming",
+    href: "/docs/concepts/agent-loop",
     description:
       "Responses stream over SSE with zero configuration. Token-by-token updates, tool calls, and status changes — all live.",
   },
   {
     icon: Puzzle,
     title: "Type-Safe Tool Rendering",
+    href: "/docs/concepts/tool-rendering",
     description:
       "Map tool calls to React components with full type inference via codegen. No manual typing, no runtime surprises.",
   },
   {
     icon: UserCheck,
     title: "Human-in-the-Loop",
+    href: "/docs/concepts/suspend-resume",
     description:
       "Tools can suspend for user input and resume seamlessly. Build approval flows, confirmations, and interactive workflows.",
   },
   {
     icon: Database,
     title: "Built-in Persistence",
+    href: "/docs/concepts/memory",
     description:
-      "Plug in PostgreSQL or in-memory storage. Conversations persist across sessions with thread management built in.",
+      "Plug in PostgreSQL, MongoDB, or in-memory storage. Conversations persist across sessions with thread management built in.",
   },
   {
     icon: Bug,
     title: "Dev Sandbox",
+    href: "/docs/guides/sandbox",
     description:
       "Inspect tool calls, debug agent behavior, and test tools in isolation. A purpose-built UI for agent development.",
   },
@@ -279,8 +285,9 @@ function Features() {
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {features.map((feature) => (
-            <div
+            <Link
               key={feature.title}
+              href={feature.href}
               className="group relative rounded-2xl border border-fd-border/50 bg-fd-card/40 p-6 transition-all hover:border-fd-primary/30 hover:bg-fd-card/70"
             >
               <div className="mb-4 inline-flex rounded-xl border border-fd-border/50 bg-fd-muted/30 p-2.5">
@@ -290,7 +297,7 @@ function Features() {
               <p className="text-sm leading-relaxed text-fd-muted-foreground">
                 {feature.description}
               </p>
-            </div>
+            </Link>
           ))}
         </div>
       </div>
@@ -379,42 +386,59 @@ function Packages() {
           Pick what you need. Every package is independently versioned.
         </p>
 
-        <div className="grid gap-3 text-left sm:grid-cols-2">
+        <div className="grid gap-3 text-left sm:grid-cols-2 lg:grid-cols-3">
           {[
             {
               pkg: "@zaikit/core",
               desc: "Agent and tool primitives",
+              href: "/docs/reference/core/create-agent",
             },
             {
               pkg: "@zaikit/react",
               desc: "React hooks and providers",
-            },
-            {
-              pkg: "@zaikit/memory-postgres",
-              desc: "PostgreSQL persistence",
+              href: "/docs/reference/react/agent-provider",
             },
             {
               pkg: "@zaikit/codegen-react",
               desc: "Type-safe tool rendering codegen",
+              href: "/docs/reference/codegen-react/cli",
             },
             {
               pkg: "@zaikit/sandbox",
               desc: "Dev UI for testing agents",
+              href: "/docs/reference/sandbox/create-sandbox",
             },
             {
               pkg: "@zaikit/memory",
-              desc: "Memory interface and in-memory adapter",
+              desc: "Memory interface and types",
+              href: "/docs/reference/memory/types",
             },
-          ].map(({ pkg, desc }) => (
-            <div
+            {
+              pkg: "@zaikit/memory-inmemory",
+              desc: "In-memory adapter for dev and testing",
+              href: "/docs/reference/memory-inmemory/create-in-memory-memory",
+            },
+            {
+              pkg: "@zaikit/memory-postgres",
+              desc: "PostgreSQL persistence",
+              href: "/docs/reference/memory-postgres/create-postgres-memory",
+            },
+            {
+              pkg: "@zaikit/memory-mongo",
+              desc: "MongoDB persistence",
+              href: "/docs/reference/memory-mongo/create-mongo-memory",
+            },
+          ].map(({ pkg, desc, href }) => (
+            <Link
               key={pkg}
-              className="rounded-xl border border-fd-border/40 bg-fd-card/30 px-4 py-3"
+              href={href}
+              className="rounded-xl border border-fd-border/40 bg-fd-card/30 px-4 py-3 transition-colors hover:border-fd-border hover:bg-fd-card/60"
             >
               <span className="block font-mono text-sm text-fd-primary">
                 {pkg}
               </span>
               <span className="text-xs text-fd-muted-foreground">{desc}</span>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

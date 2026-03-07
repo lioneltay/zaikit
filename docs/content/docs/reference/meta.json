@@ -7,6 +7,7 @@
     "memory",
     "memory-inmemory",
     "memory-postgres",
+    "memory-mongo",
     "sandbox",
     "codegen-react"
   ]

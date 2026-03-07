@@ -1,0 +1,114 @@
+---
+title: createMongoMemory
+description: MongoDB implementation of the Memory interface using the mongodb driver.
+---
+
+Creates a `Memory` adapter backed by MongoDB. Uses the [`mongodb`](https://github.com/mongodb/node-mongodb-native) driver.
+
+```ts
+import { createMongoMemory } from "@zaikit/memory-mongo";
+```
+
+## Install
+
+```bash
+pnpm add @zaikit/memory-mongo
+```
+
+## Usage
+
+```ts
+import { createMongoMemory } from "@zaikit/memory-mongo";
+import { createAgent } from "@zaikit/core";
+import { openai } from "@ai-sdk/openai";
+
+const memory = createMongoMemory({
+  url: process.env.MONGO_URL!,
+});
+
+// Create indexes on startup
+await memory.initialize();
+
+const agent = createAgent({
+  model: openai("gpt-4o"),
+  tools: { /* ... */ },
+  memory,
+});
+```
+
+## Signature
+
+```ts
+function createMongoMemory(options: {
+  url: string;
+  dbName?: string;
+}): Memory;
+```
+
+## Options
+
+| Option | Type | Required | Default | Description |
+| --- | --- | --- | --- | --- |
+| `url` | `string` | Yes | | MongoDB connection string (e.g. `mongodb://localhost:27017`). |
+| `dbName` | `string` | No | `"zaikit"` | Database name. |
+
+## Return Type
+
+Returns a `Memory` object implementing the full [Memory interface](/reference/memory/types).
+
+## initialize()
+
+Creates the following collections and indexes:
+
+### Collections
+
+#### `zaikit_threads`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `_id` | `string` | Thread ID (typically a UUID) |
+| `title` | `string \| null` | Thread title |
+| `ownerId` | `string \| null` | Optional owner identifier |
+| `createdAt` | `Date` | Creation timestamp |
+| `updatedAt` | `Date` | Last update timestamp |
+
+#### `zaikit_messages`
+
+| Field | Type | Description |
+| --- | --- | --- |
+| `messageId` | `string` | Message ID (from `UIMessage.id`) |
+| `threadId` | `string` | Parent thread ID |
+| `role` | `string` | Message role (`"user"` or `"assistant"`) |
+| `parts` | `array` | The message parts array |
+| `metadata` | `object \| null` | Optional metadata |
+| `seq` | `number` | Sequence number for ordering |
+
+#### `zaikit_counters`
+
+Used internally to generate monotonically increasing sequence numbers for message ordering.
+
+### Indexes
+
+| Collection | Index | Properties |
+| --- | --- | --- |
+| `zaikit_threads` | `{ ownerId: 1 }` | For filtering by owner |
+| `zaikit_messages` | `{ messageId: 1, threadId: 1 }` | Unique, for upsert lookups |
+| `zaikit_messages` | `{ threadId: 1, seq: 1 }` | For ordered message retrieval |
+
+## Implementation Details
+
+### Sequence-Based Ordering
+
+Messages are ordered by a `seq` field rather than timestamps. Each thread has an atomic counter (stored in `zaikit_counters`) that increments via `findOneAndUpdate` with `$inc`. This ensures deterministic ordering even when messages are inserted in rapid succession.
+
+### Upsert Semantics
+
+`addMessage` uses `updateOne` with `upsert: true`, matching on `{ messageId, threadId }`. If the message already exists, its `role`, `parts`, and `metadata` are updated. The `seq` is only set on insert (`$setOnInsert`), preserving the original ordering.
+
+### Cascade Delete
+
+`deleteThread` explicitly removes all messages and counters associated with the thread before deleting the thread document.
+
+### Updated Timestamps
+
+Both `addMessage` and `updateMessage` touch the parent thread's `updatedAt` field.
