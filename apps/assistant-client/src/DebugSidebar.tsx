@@ -350,12 +350,22 @@ const MessageCard = memo(function MessageCard({
   message,
   index,
 }: {
-  message: { id: string; role: string; parts: Record<string, unknown>[] };
+  message: {
+    id: string;
+    role: string;
+    parts: Record<string, unknown>[];
+    metadata?: unknown;
+  };
   index: number;
 }) {
   const roleColor = message.role === "user" ? "primary" : "secondary";
   const truncatedId =
     message.id.length > 8 ? `${message.id.slice(0, 8)}...` : message.id;
+
+  const hasMetadata =
+    message.metadata != null &&
+    typeof message.metadata === "object" &&
+    Object.keys(message.metadata as object).length > 0;
 
   return (
     <Paper
@@ -402,6 +412,38 @@ const MessageCard = memo(function MessageCard({
           {message.parts.length} part{message.parts.length !== 1 ? "s" : ""}
         </Typography>
       </Box>
+      {hasMetadata && (
+        <Box
+          sx={{
+            px: 1,
+            py: 0.5,
+            borderBottom: "1px solid #3e3e42",
+            bgcolor: "#1a2332",
+          }}
+        >
+          <Chip
+            label="metadata"
+            size="small"
+            sx={{
+              bgcolor: "#0d47a1",
+              color: "#fff",
+              fontSize: "0.6rem",
+              height: 18,
+              mb: 0.5,
+            }}
+          />
+          <Box
+            sx={{
+              fontFamily: "monospace",
+              fontSize: "0.7rem",
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+            }}
+          >
+            <JsonValue data={message.metadata} defaultExpanded />
+          </Box>
+        </Box>
+      )}
       <Box sx={{ p: 0.5 }}>
         {message.parts.map((part, i) => (
           <PartItem key={i} part={part} />
@@ -426,6 +468,7 @@ export function DebugSidebar({
       data.map((m) => ({
         id: m.id,
         role: m.role,
+        metadata: m.metadata,
         parts: m.parts.map((p) => {
           const { ...rest } = p as any;
           delete rest.callProviderMetadata;

@@ -51,7 +51,7 @@ const get_weather = createTool({
   inputSchema: z.object({
     location: z.string().describe("City name, e.g. 'Sydney'"),
   }),
-  execute: async ({ input }) => {
+  execute: async ({ input, writeMetadata }) => {
     const conditions = [
       "Sunny",
       "Cloudy",
@@ -61,6 +61,14 @@ const get_weather = createTool({
       "Windy",
       "Partly Cloudy",
     ];
+
+    writeMetadata({
+      suggestions: [
+        `Book a flight to ${input.location}`,
+        "Check tomorrow's forecast",
+      ],
+    });
+
     return {
       location: input.location,
       temperature: Math.round(Math.random() * 35 + 5),
@@ -168,7 +176,7 @@ const book_flight = createTool({
     selectedFlightId: z.string(),
     seatPreference: z.enum(["window", "aisle", "middle"]),
   }),
-  execute: async ({ input, suspend, resumeData }) => {
+  execute: async ({ input, suspend, resumeData, writeMetadata }) => {
     const flights = generateFlights(input.destination, input.date);
 
     if (!resumeData) {
@@ -179,6 +187,13 @@ const book_flight = createTool({
     if (!flight) {
       return { error: `Flight ${resumeData.selectedFlightId} not found` };
     }
+
+    writeMetadata({
+      suggestions: [
+        `Submit a travel expense for $${flight.price}`,
+        `Check weather in ${input.destination}`,
+      ],
+    });
 
     return {
       confirmation: `Booked ${flight.airline} flight ${flight.id} to ${input.destination}`,
@@ -404,7 +419,9 @@ const get_my_profile = createTool({
     orgId: z.string(),
     orgName: z.string(),
   }),
-  execute: async ({ context }) => {
+  execute: async ({ context, writeMetadata }) => {
+    writeMetadata({ dataClassification: "pii" });
+
     const employee = employees[context.userId];
     if (!employee) {
       return {
