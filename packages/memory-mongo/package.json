@@ -1,0 +1,40 @@
+{
+  "name": "@zaikit/memory-mongo",
+  "version": "0.1.2",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lioneltay/zaikit.git",
+    "directory": "packages/memory-mongo"
+  },
+  "homepage": "https://zaikit.dev",
+  "bugs": "https://github.com/lioneltay/zaikit/issues",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@zaikit/memory": "workspace:*",
+    "ai": "^6",
+    "mongodb": "^6"
+  },
+  "devDependencies": {
+    "@testcontainers/mongodb": "^11.12.0",
+    "@zaikit/typescript-config": "workspace:*",
+    "tsup": "^8",
+    "typescript": "^5",
+    "vitest": "^3"
+  }
+}
