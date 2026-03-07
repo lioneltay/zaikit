@@ -121,7 +121,7 @@ export async function CodeBlock({
 
   return (
     <div
-      className={`overflow-hidden rounded-2xl border border-fd-border/60 bg-fd-card/80 shadow-2xl shadow-black/20 backdrop-blur-sm ${className ?? ""}`}
+      className={`min-w-0 overflow-hidden rounded-2xl border border-fd-border/60 bg-fd-card/80 shadow-2xl shadow-black/20 backdrop-blur-sm ${className ?? ""}`}
     >
       {/* Window chrome */}
       <div className="flex items-center gap-2 border-b border-fd-border/60 px-4 py-3">

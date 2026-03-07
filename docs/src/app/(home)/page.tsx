@@ -185,7 +185,7 @@ async function CodeShowcase() {
         </div>
 
         <div className="grid gap-6 lg:grid-cols-2">
-          <div className="flex flex-col">
+          <div className="flex min-w-0 flex-col">
             <p className="mb-3 text-sm font-medium text-fd-muted-foreground">
               <span className="mr-2 inline-flex size-5 items-center justify-center rounded-full bg-fd-primary/10 text-xs font-bold text-fd-primary">
                 1
@@ -198,7 +198,7 @@ async function CodeShowcase() {
               className="flex-1"
             />
           </div>
-          <div className="flex flex-col">
+          <div className="flex min-w-0 flex-col">
             <p className="mb-3 text-sm font-medium text-fd-muted-foreground">
               <span className="mr-2 inline-flex size-5 items-center justify-center rounded-full bg-fd-primary/10 text-xs font-bold text-fd-primary">
                 2
@@ -262,8 +262,8 @@ function Features() {
   return (
     <section className="relative px-4 py-24">
       {/* Section glow */}
-      <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2">
-        <div className="h-px w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
       </div>
 
       <div className="mx-auto max-w-6xl">
@@ -367,8 +367,8 @@ function Architecture() {
 function Packages() {
   return (
     <section className="relative px-4 py-24">
-      <div className="pointer-events-none absolute top-0 left-1/2 -translate-x-1/2">
-        <div className="h-px w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
       </div>
 
       <div className="mx-auto max-w-3xl text-center">
@@ -426,7 +426,7 @@ function Packages() {
 function FinalCTA() {
   return (
     <section className="relative px-4 py-32">
-      <div className="pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
         <div className="h-[400px] w-[400px] rounded-full bg-[oklch(0.7_0.17_162/0.06)] blur-[100px]" />
       </div>
 
