@@ -76,7 +76,13 @@ export function createSandboxHono(
     const name = c.req.param("name");
     const memory = getMemory(name);
     if (!memory) return c.json({ error: "Agent not found" }, 404);
-    return c.json(await memory.getMessages(c.req.param("threadId")));
+    const limit = c.req.query("limit");
+    return c.json(
+      await memory.getMessages(
+        c.req.param("threadId"),
+        limit ? { limit: Number(limit) } : undefined,
+      ),
+    );
   });
 
   app.delete("/api/agents/:name/threads/:threadId", async (c) => {

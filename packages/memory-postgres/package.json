@@ -22,7 +22,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
     "@zaikit/memory": "workspace:*",
@@ -30,8 +31,10 @@
     "postgres": "^3"
   },
   "devDependencies": {
+    "@testcontainers/postgresql": "^11.12.0",
     "@zaikit/typescript-config": "workspace:*",
     "tsup": "^8",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3"
   }
 }

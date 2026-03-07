@@ -179,6 +179,57 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
         expect(msgs[0].parts).toEqual([{ type: "text", text: "updated" }]);
       });
 
+      it("getMessages with limit returns the most recent N in order", async () => {
+        const memory = await setup();
+        await memory.createThread("t1");
+        for (let i = 1; i <= 5; i++) {
+          await memory.addMessage("t1", {
+            id: `m${i}`,
+            role: i % 2 === 1 ? "user" : "assistant",
+            parts: [{ type: "text", text: `msg ${i}` }],
+          });
+        }
+
+        const last2 = await memory.getMessages("t1", { limit: 2 });
+        expect(last2).toHaveLength(2);
+        expect(last2[0].id).toBe("m4");
+        expect(last2[1].id).toBe("m5");
+      });
+
+      it("getMessages with limit greater than total returns all messages", async () => {
+        const memory = await setup();
+        await memory.createThread("t1");
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "user",
+          parts: [{ type: "text", text: "only one" }],
+        });
+
+        const msgs = await memory.getMessages("t1", { limit: 50 });
+        expect(msgs).toHaveLength(1);
+        expect(msgs[0].id).toBe("m1");
+      });
+
+      it("getMessages with no options returns all (backwards compat)", async () => {
+        const memory = await setup();
+        await memory.createThread("t1");
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "user",
+          parts: [{ type: "text", text: "a" }],
+        });
+        await memory.addMessage("t1", {
+          id: "m2",
+          role: "assistant",
+          parts: [{ type: "text", text: "b" }],
+        });
+
+        const msgs = await memory.getMessages("t1");
+        expect(msgs).toHaveLength(2);
+        expect(msgs[0].id).toBe("m1");
+        expect(msgs[1].id).toBe("m2");
+      });
+
       it("updates message parts", async () => {
         const memory = await setup();
         await memory.createThread("t1");

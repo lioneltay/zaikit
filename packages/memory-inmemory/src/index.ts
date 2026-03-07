@@ -52,8 +52,12 @@ export function createInMemoryMemory(): Memory {
       return updated;
     },
 
-    async getMessages(threadId) {
-      return messages.get(threadId) ?? [];
+    async getMessages(threadId, options) {
+      const all = messages.get(threadId) ?? [];
+      if (options?.limit != null) {
+        return all.slice(-options.limit);
+      }
+      return all;
     },
 
     async addMessage(threadId, message) {

@@ -39,9 +39,17 @@ export function createAppRouter(agent: Agent<any, any>) {
         }),
 
       getMessages: t.procedure
-        .input(z.object({ threadId: z.string() }))
+        .input(
+          z.object({
+            threadId: z.string(),
+            limit: z.number().int().positive().optional(),
+          }),
+        )
         .query(async ({ input }) => {
-          return memory.getMessages(input.threadId);
+          return memory.getMessages(
+            input.threadId,
+            input.limit ? { limit: input.limit } : undefined,
+          );
         }),
     }),
   });

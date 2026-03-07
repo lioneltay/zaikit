@@ -105,7 +105,13 @@ export function createSandboxExpress(
       const name = param(req, "name");
       const memory = getMemory(name);
       if (!memory) return res.status(404).json({ error: "Agent not found" });
-      res.json(await memory.getMessages(param(req, "threadId")));
+      const limit = req.query.limit;
+      res.json(
+        await memory.getMessages(
+          param(req, "threadId"),
+          limit ? { limit: Number(limit) } : undefined,
+        ),
+      );
     },
   );
 

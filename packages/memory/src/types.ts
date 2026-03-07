@@ -8,6 +8,11 @@ export type Thread = {
   updatedAt: Date;
 };
 
+export type GetMessagesOptions = {
+  /** Return the most recent N messages. Omit for all messages. */
+  limit?: number;
+};
+
 export type Memory = {
   createThread(id: string, title?: string, ownerId?: string): Promise<Thread>;
   getThread(id: string): Promise<Thread | null>;
@@ -18,7 +23,10 @@ export type Memory = {
     updates: { title?: string; ownerId?: string },
   ): Promise<Thread>;
 
-  getMessages(threadId: string): Promise<UIMessage[]>;
+  getMessages(
+    threadId: string,
+    options?: GetMessagesOptions,
+  ): Promise<UIMessage[]>;
   addMessage(threadId: string, message: UIMessage): Promise<void>;
   updateMessage(
     threadId: string,

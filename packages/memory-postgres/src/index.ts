@@ -31,11 +31,20 @@ export function createPostgresMemory({
         role TEXT NOT NULL,
         parts JSONB NOT NULL DEFAULT '[]',
         metadata JSONB,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        seq BIGSERIAL
       )
     `;
+    // Add seq column to existing tables (idempotent migration)
     await sql`
-      CREATE INDEX IF NOT EXISTS idx_zaikit_messages_thread_id ON zaikit_messages(thread_id, created_at)
+      ALTER TABLE zaikit_messages ADD COLUMN IF NOT EXISTS seq BIGSERIAL
+    `;
+    // Replace old created_at index with seq-based index for deterministic ordering
+    await sql`
+      DROP INDEX IF EXISTS idx_zaikit_messages_thread_id
+    `;
+    await sql`
+      CREATE INDEX IF NOT EXISTS idx_zaikit_messages_thread_seq ON zaikit_messages(thread_id, seq)
     `;
   }
 
@@ -112,12 +121,23 @@ export function createPostgresMemory({
       };
     },
 
-    async getMessages(threadId) {
-      const rows = await sql`
-        SELECT id, role, parts, metadata FROM zaikit_messages
-        WHERE thread_id = ${threadId}
-        ORDER BY created_at
-      `;
+    async getMessages(threadId, options) {
+      const limit = options?.limit;
+      const rows =
+        limit != null
+          ? await sql`
+              SELECT id, role, parts, metadata FROM (
+                SELECT id, role, parts, metadata, seq FROM zaikit_messages
+                WHERE thread_id = ${threadId}
+                ORDER BY seq DESC
+                LIMIT ${limit}
+              ) sub ORDER BY seq
+            `
+          : await sql`
+              SELECT id, role, parts, metadata FROM zaikit_messages
+              WHERE thread_id = ${threadId}
+              ORDER BY seq
+            `;
       return rows.map(
         (row): UIMessage => ({
           id: row.id,

@@ -1,1 +1,1 @@
-export type { Memory, Thread } from "./types";
+export type { GetMessagesOptions, Memory, Thread } from "./types";
