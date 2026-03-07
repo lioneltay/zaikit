@@ -1,0 +1,26 @@
+---
+title: Introducing ZAIKit
+description: Why we built ZAIKit, what problems it solves, and how to get started.
+author: Lionel Tay
+date: "2026-03-07"
+---
+
+We're excited to introduce ZAIKit — a TypeScript toolkit for building full-stack AI agents.
+
+## Why ZAIKit?
+
+Building AI agents that work well in production requires solving several problems at once: streaming responses, rendering tool calls in the UI, persisting conversations, and handling human-in-the-loop interactions. Most frameworks solve one or two of these, but leave you to wire everything together yourself.
+
+ZAIKit gives you the full stack — from defining tools on the server to rendering them as React components in the browser, with type safety all the way through.
+
+## Key Features
+
+- **Full-stack agents** — Define your agent and tools on the server, connect from React with a single provider.
+- **Streaming** — Responses stream from backend to browser over SSE with zero configuration.
+- **Tool rendering** — Map tool calls to React components with full type inference via codegen.
+- **Suspend and resume** — Tools can pause for human input and resume with the user's response.
+- **Persistence** — Plug in a memory backend to save and restore conversations across sessions.
+
+## Getting Started
+
+Check out the [documentation](/docs) to get started.
