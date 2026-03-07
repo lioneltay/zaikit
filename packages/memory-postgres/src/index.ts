@@ -49,6 +49,15 @@ export function createPostgresMemory({
   }
 
   const memory: Memory = {
+    initialize,
+    async close() {
+      await sql.end();
+    },
+    async clear() {
+      await sql`DELETE FROM zaikit_messages`;
+      await sql`DELETE FROM zaikit_threads`;
+    },
+
     async createThread(id, title, ownerId) {
       const [row] = await sql`
         INSERT INTO zaikit_threads (id, title, owner_id)
@@ -179,5 +188,5 @@ export function createPostgresMemory({
     },
   };
 
-  return { ...memory, initialize };
+  return memory;
 }

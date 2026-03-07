@@ -6,6 +6,13 @@ export function createInMemoryMemory(): Memory {
   const messages = new Map<string, UIMessage[]>();
 
   return {
+    async initialize() {},
+    async close() {},
+    async clear() {
+      threads.clear();
+      messages.clear();
+    },
+
     async createThread(id, title, ownerId) {
       const now = new Date();
       const thread: Thread = {

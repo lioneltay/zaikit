@@ -1,16 +1,51 @@
 import type { UIMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Memory } from "../types";
 
-type MemoryConformanceOptions = {
-  setup: () => Memory | Promise<Memory>;
+type MemoryConformanceOptions<TContext = void> = {
+  /** Start backing infrastructure (e.g. testcontainer). Runs once before all tests. */
+  start?: () => TContext | Promise<TContext>;
+  /** Stop backing infrastructure. Runs once after all tests. */
+  stop?: (ctx: TContext) => void | Promise<void>;
+  /** Create a Memory instance. Framework handles initialize/clear/close. */
+  create: (ctx: TContext) => Memory | Promise<Memory>;
 };
 
-export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
+export function memoryConformanceTests<TContext = void>({
+  start,
+  stop,
+  create,
+}: MemoryConformanceOptions<TContext>) {
+  let ctx: TContext;
+  let memory: Memory;
+
+  const isPersistent = !!start;
+
+  beforeAll(async () => {
+    if (start) {
+      ctx = await start();
+    }
+    // Create once to initialize schema
+    const mem = await create(ctx);
+    await mem.initialize();
+    await mem.close();
+  }, 60_000);
+
+  afterAll(async () => {
+    if (stop) {
+      await stop(ctx);
+    }
+  });
+
+  beforeEach(async () => {
+    memory = await create(ctx);
+    await memory.initialize();
+    await memory.clear();
+  });
+
   describe("Memory conformance", () => {
     describe("threads", () => {
       it("creates a thread and retrieves it", async () => {
-        const memory = await setup();
         const thread = await memory.createThread("t1", "My Thread", "user-1");
 
         expect(thread.id).toBe("t1");
@@ -27,7 +62,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("creates a thread with defaults (no title, no ownerId)", async () => {
-        const memory = await setup();
         const thread = await memory.createThread("t1");
 
         expect(thread.title).toBeNull();
@@ -35,13 +69,11 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("returns null for nonexistent thread", async () => {
-        const memory = await setup();
         const thread = await memory.getThread("nonexistent");
         expect(thread).toBeNull();
       });
 
       it("lists threads ordered by updatedAt descending", async () => {
-        const memory = await setup();
         await memory.createThread("t1", "First");
         // Small delay to ensure different timestamps
         await new Promise((r) => setTimeout(r, 5));
@@ -54,7 +86,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("filters threads by ownerId", async () => {
-        const memory = await setup();
         await memory.createThread("t1", "A", "user-1");
         await memory.createThread("t2", "B", "user-2");
         await memory.createThread("t3", "C", "user-1");
@@ -65,7 +96,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("updates thread title", async () => {
-        const memory = await setup();
         await memory.createThread("t1", "Old Title");
 
         const updated = await memory.updateThread("t1", {
@@ -78,7 +108,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("updates thread ownerId", async () => {
-        const memory = await setup();
         await memory.createThread("t1", "Thread", "user-1");
 
         const updated = await memory.updateThread("t1", {
@@ -88,14 +117,12 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("throws when updating nonexistent thread", async () => {
-        const memory = await setup();
         await expect(
           memory.updateThread("nonexistent", { title: "X" }),
         ).rejects.toThrow();
       });
 
       it("deletes a thread", async () => {
-        const memory = await setup();
         await memory.createThread("t1", "Thread");
         await memory.deleteThread("t1");
 
@@ -104,7 +131,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("cascade deletes messages when thread is deleted", async () => {
-        const memory = await setup();
         await memory.createThread("t1");
         await memory.addMessage("t1", {
           id: "m1",
@@ -120,7 +146,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
 
     describe("messages", () => {
       it("stores and retrieves messages in order", async () => {
-        const memory = await setup();
         await memory.createThread("t1");
 
         const msg1: UIMessage = {
@@ -147,20 +172,17 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("returns empty array for thread with no messages", async () => {
-        const memory = await setup();
         await memory.createThread("t1");
         const msgs = await memory.getMessages("t1");
         expect(msgs).toHaveLength(0);
       });
 
       it("returns empty array for nonexistent thread", async () => {
-        const memory = await setup();
         const msgs = await memory.getMessages("nonexistent");
         expect(msgs).toHaveLength(0);
       });
 
       it("upserts message with same id", async () => {
-        const memory = await setup();
         await memory.createThread("t1");
 
         await memory.addMessage("t1", {
@@ -180,7 +202,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("getMessages with limit returns the most recent N in order", async () => {
-        const memory = await setup();
         await memory.createThread("t1");
         for (let i = 1; i <= 5; i++) {
           await memory.addMessage("t1", {
@@ -197,7 +218,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("getMessages with limit greater than total returns all messages", async () => {
-        const memory = await setup();
         await memory.createThread("t1");
         await memory.addMessage("t1", {
           id: "m1",
@@ -211,7 +231,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("getMessages with no options returns all (backwards compat)", async () => {
-        const memory = await setup();
         await memory.createThread("t1");
         await memory.addMessage("t1", {
           id: "m1",
@@ -231,7 +250,6 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
       });
 
       it("updates message parts", async () => {
-        const memory = await setup();
         await memory.createThread("t1");
 
         await memory.addMessage("t1", {
@@ -252,6 +270,94 @@ export function memoryConformanceTests({ setup }: MemoryConformanceOptions) {
           { type: "text", text: "original" },
           { type: "text", text: " + more" },
         ]);
+      });
+    });
+
+    describe.runIf(isPersistent)("persistence", () => {
+      it("data survives reconnect", async () => {
+        await memory.createThread("t1", "Persisted Thread", "user-1");
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "user",
+          parts: [{ type: "text", text: "hello" }],
+        });
+        await memory.close();
+
+        // Create a fresh instance against the same store
+        const mem2 = await create(ctx);
+        await mem2.initialize();
+
+        const thread = await mem2.getThread("t1");
+        expect(thread).not.toBeNull();
+        expect(thread?.title).toBe("Persisted Thread");
+        expect(thread?.ownerId).toBe("user-1");
+
+        const msgs = await mem2.getMessages("t1");
+        expect(msgs).toHaveLength(1);
+        expect(msgs[0].id).toBe("m1");
+        expect(msgs[0].parts).toEqual([{ type: "text", text: "hello" }]);
+
+        await mem2.close();
+
+        // Restore memory for afterEach
+        memory = await create(ctx);
+        await memory.initialize();
+      });
+
+      it("initialize is idempotent — does not wipe existing data", async () => {
+        await memory.createThread("t1", "Survives Init");
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "user",
+          parts: [{ type: "text", text: "still here" }],
+        });
+
+        // Call initialize again on the same instance
+        await memory.initialize();
+
+        const thread = await memory.getThread("t1");
+        expect(thread).not.toBeNull();
+        expect(thread?.title).toBe("Survives Init");
+
+        const msgs = await memory.getMessages("t1");
+        expect(msgs).toHaveLength(1);
+        expect(msgs[0].id).toBe("m1");
+      });
+
+      it("message ordering survives reconnect", async () => {
+        await memory.createThread("t1");
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "user",
+          parts: [{ type: "text", text: "first" }],
+        });
+        await memory.addMessage("t1", {
+          id: "m2",
+          role: "assistant",
+          parts: [{ type: "text", text: "second" }],
+        });
+        await memory.close();
+
+        // Reconnect and add more messages
+        const mem2 = await create(ctx);
+        await mem2.initialize();
+        await mem2.addMessage("t1", {
+          id: "m3",
+          role: "user",
+          parts: [{ type: "text", text: "third" }],
+        });
+
+        const msgs = await mem2.getMessages("t1");
+        expect(msgs).toHaveLength(3);
+        expect(msgs[0].id).toBe("m1");
+        expect(msgs[1].id).toBe("m2");
+        expect(msgs[2].id).toBe("m3");
+
+        await mem2.close();
+
+        // Restore memory for afterEach
+        memory = await create(ctx);
+        await memory.initialize();
       });
     });
   });
