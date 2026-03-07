@@ -1,0 +1,155 @@
+import { Copy, Terminal } from "lucide-react";
+import { codeToHtml, type ThemeRegistration } from "shiki";
+
+/**
+ * ZAIKit code theme — Graphite & Emerald
+ * Matches the brand palette: emerald accent, muted graphite base.
+ */
+const zaikitTheme: ThemeRegistration = {
+  name: "zaikit",
+  type: "dark",
+  colors: {
+    "editor.background": "#1a1a1f",
+    "editor.foreground": "#c8c8cc",
+  },
+  tokenColors: [
+    // Comments
+    {
+      scope: ["comment", "punctuation.definition.comment"],
+      settings: { foreground: "#555560", fontStyle: "italic" },
+    },
+    // Keywords: import, const, return, async, await, export, default, function
+    {
+      scope: [
+        "keyword",
+        "storage.type",
+        "storage.modifier",
+        "keyword.control",
+        "variable.language.this",
+      ],
+      settings: { foreground: "#b392e9" },
+    },
+    // Functions
+    {
+      scope: [
+        "entity.name.function",
+        "support.function",
+        "meta.function-call entity.name.function",
+      ],
+      settings: { foreground: "#6ec8e6" },
+    },
+    // Strings — emerald brand color
+    {
+      scope: ["string"],
+      settings: { foreground: "#5ce0a0" },
+    },
+    // Import aliases & read-write variables (named imports, identifiers)
+    {
+      scope: ["variable.other.readwrite.alias", "variable.other.readwrite"],
+      settings: { foreground: "#e0c590" },
+    },
+    // Destructured constants (const { x } = ...)
+    {
+      scope: ["variable.other.constant"],
+      settings: { foreground: "#d4c4a0" },
+    },
+    // Variables & parameters (general fallback)
+    {
+      scope: ["variable", "variable.parameter", "meta.object-literal.key"],
+      settings: { foreground: "#c8c8cc" },
+    },
+    // Object properties
+    {
+      scope: ["variable.other.property", "support.variable.property"],
+      settings: { foreground: "#c8c8cc" },
+    },
+    // Constants, numbers, booleans
+    {
+      scope: ["constant", "constant.numeric", "constant.language"],
+      settings: { foreground: "#e0a56c" },
+    },
+    // Types & interfaces
+    {
+      scope: [
+        "entity.name.type",
+        "support.type",
+        "entity.other.inherited-class",
+      ],
+      settings: { foreground: "#6ec8e6" },
+    },
+    // JSX/HTML tags
+    {
+      scope: [
+        "entity.name.tag",
+        "support.class.component",
+        "punctuation.definition.tag",
+      ],
+      settings: { foreground: "#5ce0a0" },
+    },
+    // JSX/HTML attributes
+    {
+      scope: ["entity.other.attribute-name"],
+      settings: { foreground: "#b392e9" },
+    },
+    // Punctuation & operators
+    {
+      scope: ["punctuation", "keyword.operator", "meta.brace"],
+      settings: { foreground: "#888890" },
+    },
+  ],
+};
+
+type CodeBlockProps = {
+  code: string;
+  lang?: string;
+  filename?: string;
+  terminal?: boolean;
+  className?: string;
+};
+
+export async function CodeBlock({
+  code,
+  lang = "typescript",
+  filename,
+  terminal = false,
+  className,
+}: CodeBlockProps) {
+  const html = await codeToHtml(code.trim(), {
+    lang,
+    theme: zaikitTheme,
+  });
+
+  return (
+    <div
+      className={`overflow-hidden rounded-2xl border border-fd-border/60 bg-fd-card/80 shadow-2xl shadow-black/20 backdrop-blur-sm ${className ?? ""}`}
+    >
+      {/* Window chrome */}
+      <div className="flex items-center gap-2 border-b border-fd-border/60 px-4 py-3">
+        {terminal ? (
+          <Terminal className="size-3.5 text-fd-muted-foreground/60" />
+        ) : (
+          <div className="flex gap-1.5">
+            <div className="size-3 rounded-full bg-fd-muted-foreground/20" />
+            <div className="size-3 rounded-full bg-fd-muted-foreground/20" />
+            <div className="size-3 rounded-full bg-fd-muted-foreground/20" />
+          </div>
+        )}
+        <div className="flex-1 text-center">
+          {filename && (
+            <span className="rounded-md bg-fd-muted/50 px-3 py-0.5 font-mono text-xs text-fd-muted-foreground">
+              {filename}
+            </span>
+          )}
+        </div>
+        <Copy className="size-4 text-fd-muted-foreground/40" />
+      </div>
+
+      {/* Code — shiki returns sanitized HTML */}
+      <div
+        className="overflow-x-auto p-6 [&_pre]:!bg-transparent [&_pre]:!p-0 [&_code]:font-mono [&_code]:text-[13px] [&_code]:leading-relaxed"
+        // biome-ignore lint/security/noDangerouslySetInnerHtml: shiki output is safe
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    </div>
+  );
+}
