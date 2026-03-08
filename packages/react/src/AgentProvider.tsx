@@ -2,6 +2,10 @@ import { getToolName } from "@zaikit/utils";
 import type { UIMessage } from "ai";
 import type React from "react";
 import { createContext, useCallback, useMemo, useRef, useState } from "react";
+import {
+  ToolErrorBoundary,
+  type ToolErrorFallbackProps,
+} from "./ToolErrorBoundary";
 import type {
   AgentContextValue,
   FrontendToolRegistration,
@@ -13,18 +17,21 @@ import { useAgentChat } from "./useAgentChat";
 
 export const AgentContext = createContext<AgentContextValue | null>(null);
 
-type AgentProviderProps = {
+export type AgentProviderProps = {
   api: string;
   threadId: string;
   initialMessages: UIMessage[];
   fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
   body?: Record<string, unknown>;
+  /** Custom fallback component rendered when a tool renderer throws. Defaults to `null` (render nothing). */
+  toolErrorFallback?: React.ComponentType<ToolErrorFallbackProps> | null;
   children: React.ReactNode;
 };
 
 export function AgentProvider({
   children,
+  toolErrorFallback,
   ...chatOptions
 }: AgentProviderProps) {
   const frontendToolsRef = useRef(new Map<string, FrontendToolRegistration>());
@@ -122,9 +129,17 @@ export function AgentProvider({
         },
       };
 
-      return renderer(props);
+      return (
+        <ToolErrorBoundary
+          toolName={toolName}
+          toolCallId={toolCallId}
+          fallback={toolErrorFallback}
+        >
+          {renderer(props)}
+        </ToolErrorBoundary>
+      );
     },
-    [chat.resumeTool, chat.addToolOutput],
+    [chat.resumeTool, chat.addToolOutput, toolErrorFallback],
   );
 
   const getRegisteredRenderers = useCallback(

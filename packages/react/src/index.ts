@@ -1,4 +1,5 @@
-export { AgentProvider } from "./AgentProvider";
+export { AgentProvider, type AgentProviderProps } from "./AgentProvider";
+export type { ToolErrorFallbackProps } from "./ToolErrorBoundary";
 export type {
   AgentContextValue,
   ToolRenderFn,
