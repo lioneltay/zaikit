@@ -113,8 +113,8 @@ function Hero() {
         </div>
 
         {/* Install command */}
-        <div className="mx-auto mt-8 inline-flex items-center gap-3 rounded-xl border border-fd-border/40 bg-fd-card/30 px-5 py-2.5 font-mono text-sm text-fd-muted-foreground backdrop-blur-sm">
-          <Terminal className="size-4 text-fd-muted-foreground/60" />
+        <div className="mx-auto mt-8 inline-flex items-center gap-3 rounded-xl border border-fd-border bg-fd-card/60 px-5 py-2.5 font-mono text-sm text-fd-foreground/80 backdrop-blur-sm">
+          <Terminal className="size-4 text-fd-primary/60" />
           <span>
             <span className="text-fd-primary">pnpm</span> add @zaikit/core
             @zaikit/react
@@ -186,8 +186,7 @@ export default function App() {
   return (
     <AgentProvider
       api="/api/chat"
-      threadId="demo"
-      initialMessages={[]}
+      initialThreadId="demo"
     >
       <Chat />
     </AgentProvider>
@@ -199,7 +198,7 @@ async function CodeShowcase() {
     <section className="relative px-4 py-24">
       {/* Section glow */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
-        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/60 to-transparent" />
       </div>
 
       <div className="mx-auto max-w-6xl">
@@ -298,7 +297,7 @@ function Features() {
     <section className="relative px-4 py-24">
       {/* Section glow */}
       <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
-        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/60 to-transparent" />
       </div>
 
       <div className="mx-auto max-w-6xl">
@@ -339,7 +338,7 @@ function Architecture() {
   return (
     <section className="relative px-4 py-24">
       <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
-        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/60 to-transparent" />
       </div>
 
       <div className="mx-auto max-w-4xl">
@@ -414,7 +413,7 @@ function Packages() {
   return (
     <section className="relative px-4 py-24">
       <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
-        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/60 to-transparent" />
       </div>
 
       <div className="mx-auto max-w-3xl text-center">
@@ -490,7 +489,7 @@ function FinalCTA() {
   return (
     <section className="relative px-4 py-32">
       <div className="pointer-events-none absolute inset-x-0 top-0 flex justify-center">
-        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/40 to-transparent" />
+        <div className="h-px w-full max-w-[600px] bg-gradient-to-r from-transparent via-fd-primary/60 to-transparent" />
       </div>
 
       <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
