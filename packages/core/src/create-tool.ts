@@ -1,3 +1,4 @@
+import { trace } from "@opentelemetry/api";
 import { DATA_TOOL_SUSPEND } from "@zaikit/utils";
 import { type Tool, tool } from "ai";
 import { toJSONSchema, type z } from "zod";
@@ -325,6 +326,19 @@ export function createTool(options: any): ZaikitTool<any, any> {
       }
 
       const result = await execute(ctx);
+
+      // Enrich the AI SDK's ai.toolCall span with suspension info.
+      // Skip during resume — the resume span has its own attributes.
+      if (isSuspendResult(result) && injection.resumeData === undefined) {
+        const span = trace.getActiveSpan();
+        if (span) {
+          span.setAttribute("zaikit.tool.suspended", true);
+          span.setAttribute(
+            "zaikit.tool.suspend_payload",
+            JSON.stringify(result.payload),
+          );
+        }
+      }
 
       // Validate output against outputSchema, but skip for SuspendResult
       if (outputSchema && !isSuspendResult(result)) {

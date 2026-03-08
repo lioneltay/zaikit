@@ -25,7 +25,8 @@ async function run(
   });
 
   const mw = stripHtml(options);
-  const resultStream = mw({} as any, () => inputStream);
+  const handler = typeof mw === "function" ? mw : mw.handler;
+  const resultStream = handler({} as any, () => inputStream);
 
   const output: Chunk[] = [];
   const reader = resultStream.getReader();
@@ -134,7 +135,8 @@ describe("stripHtml — default (remove elements)", () => {
     });
 
     const mw = stripHtml();
-    const resultStream = mw({} as any, () => inputStream);
+    const handler = typeof mw === "function" ? mw : mw.handler;
+    const resultStream = handler({} as any, () => inputStream);
     const output: Chunk[] = [];
     const reader = resultStream.getReader();
     while (true) {

@@ -7,6 +7,7 @@
     "human-in-the-loop",
     "full-stack-setup",
     "postgres-memory",
-    "type-safe-tools"
+    "type-safe-tools",
+    "observability"
   ]
 }

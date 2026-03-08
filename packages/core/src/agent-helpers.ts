@@ -1,5 +1,21 @@
-import type { LanguageModelUsage, StepResult, Tool, ToolSet } from "ai";
-import type { CreateAgentOptions } from "./agent-types";
+import type { Memory } from "@zaikit/memory";
+import { isSuspendPart } from "@zaikit/utils";
+import {
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  jsonSchema,
+  type LanguageModelUsage,
+  type StepResult,
+  type Tool,
+  type ToolSet,
+  tool,
+  type UIMessage,
+} from "ai";
+import type {
+  CreateAgentOptions,
+  FrontendToolDef,
+  StreamResult,
+} from "./agent-types";
 import { getToolInjection, runWithToolInjection } from "./tool-injection";
 
 // --- Usage aggregation ---
@@ -164,4 +180,79 @@ export function resolveToolEntries(
       ];
     }),
   );
+}
+
+// --- Pure utilities (extracted from agent.ts) ---
+
+/** Extract context from options — needed because conditional context types prevent direct access. */
+export function optContext(opts: object): unknown {
+  return (opts as { context?: unknown }).context;
+}
+
+export function hasUnresolvedSuspensions(parts: readonly object[]): boolean {
+  return parts.some((p) => isSuspendPart(p) && !p.data.resolved);
+}
+
+/** Combine two optional callbacks into one that fires both (agent-level first, then per-request). */
+export function mergeCallbacks<T>(
+  a?: (arg: T) => void,
+  b?: (arg: T) => void,
+): ((arg: T) => void) | undefined {
+  if (!a) return b;
+  if (!b) return a;
+  return (arg) => {
+    a(arg);
+    b(arg);
+  };
+}
+
+export function buildDynamicTools(defs: FrontendToolDef[]): ToolSet {
+  const result: ToolSet = {};
+  for (const def of defs) {
+    // Strip JSON Schema meta-fields that providers like Gemini reject
+    const { $schema, additionalProperties, ...params } =
+      def.parameters as Record<string, unknown>;
+    // No execute — frontend tools stay at input-available so the client
+    // can provide output via addToolOutput / toolOutputs.
+    result[def.name] = tool({
+      description: def.description,
+      inputSchema: jsonSchema({ type: "object" as const, ...params }),
+    } as any);
+  }
+  return result;
+}
+
+/**
+ * Wrap an agent stream in a persistence layer, returning an HTTP Response.
+ * Used by chat() and the resume/toolOutputs paths.
+ */
+export function streamToResponse(
+  agentStreamResult: StreamResult,
+  messages: UIMessage[],
+  opts: {
+    memory: Memory;
+    threadId: string;
+    messageId?: string;
+  },
+): Response {
+  const uiStream = createUIMessageStream({
+    originalMessages: messages,
+    execute: async ({ writer }) => {
+      for await (const chunk of agentStreamResult.stream as any) {
+        writer.write(chunk as any);
+      }
+    },
+    onFinish: async ({ responseMessage }) => {
+      if (opts.messageId) {
+        await opts.memory.updateMessage(opts.threadId, opts.messageId, {
+          parts: responseMessage.parts,
+          metadata: responseMessage.metadata,
+        });
+      } else {
+        await opts.memory.addMessage(opts.threadId, responseMessage);
+      }
+    },
+  });
+
+  return createUIMessageStreamResponse({ stream: uiStream });
 }

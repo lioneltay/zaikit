@@ -1,5 +1,5 @@
 {
   "title": "@zaikit/core",
   "defaultOpen": true,
-  "pages": ["create-agent", "create-tool", "models"]
+  "pages": ["create-agent", "create-tool", "models", "telemetry"]
 }

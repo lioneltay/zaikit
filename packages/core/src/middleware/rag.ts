@@ -22,42 +22,45 @@ type RagMessage = {
 export function rag(
   retrieve: (messages: UIMessage[]) => Promise<RagMessage> | RagMessage,
 ): Middleware {
-  return (ctx, next) => {
-    const result = retrieve(ctx.messages);
+  return {
+    name: "rag",
+    handler: (ctx, next) => {
+      const result = retrieve(ctx.messages);
 
-    if (result instanceof Promise) {
-      // Async retrieve — need to return a stream that awaits the result
-      return new ReadableStream({
-        async start(controller) {
-          const msg = await result;
-          ctx.messages = [
-            ...ctx.messages,
-            {
-              id: "rag-context",
-              role: msg.role,
-              parts: [{ type: "text", text: msg.content }],
-            },
-          ];
-          const reader = next().getReader();
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            controller.enqueue(value);
-          }
-          controller.close();
+      if (result instanceof Promise) {
+        // Async retrieve — need to return a stream that awaits the result
+        return new ReadableStream({
+          async start(controller) {
+            const msg = await result;
+            ctx.messages = [
+              ...ctx.messages,
+              {
+                id: "rag-context",
+                role: msg.role,
+                parts: [{ type: "text", text: msg.content }],
+              },
+            ];
+            const reader = next().getReader();
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              controller.enqueue(value);
+            }
+            controller.close();
+          },
+        });
+      }
+
+      // Sync retrieve
+      ctx.messages = [
+        ...ctx.messages,
+        {
+          id: "rag-context",
+          role: result.role,
+          parts: [{ type: "text", text: result.content }],
         },
-      });
-    }
-
-    // Sync retrieve
-    ctx.messages = [
-      ...ctx.messages,
-      {
-        id: "rag-context",
-        role: result.role,
-        parts: [{ type: "text", text: result.content }],
-      },
-    ];
-    return next();
+      ];
+      return next();
+    },
   };
 }

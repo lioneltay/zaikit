@@ -11,5 +11,5 @@ export default defineConfig({
   },
   clean: true,
   sourcemap: true,
-  external: ["vitest", "ai/test"],
+  external: ["vitest", "ai/test", "@opentelemetry/api"],
 });

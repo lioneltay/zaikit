@@ -1,0 +1,97 @@
+---
+title: Telemetry
+description: Complete reference for ZAIKit's OpenTelemetry spans and attributes.
+---
+
+ZAIKit emits OpenTelemetry spans for agent runs, steps, middleware, tool calls, and suspend/resume flows. These are in addition to the spans created by the [AI SDK](https://ai-sdk.dev/docs/ai-sdk-core/telemetry) (`ai.streamText`, `ai.streamText.doStream`, `ai.toolCall`).
+
+See the [Observability guide](/guides/observability) for setup instructions.
+
+## Span Hierarchy
+
+```
+agent run: 'my-agent'
+  └─ middleware: 'strip-html'
+       └─ agent step: 0
+            ├─ ai.streamText           (AI SDK)
+            │    └─ ai.streamText.doStream  (AI SDK)
+            └─ ai.toolCall             (AI SDK, enriched by ZAIKit)
+```
+
+Resume flows produce a separate top-level span:
+
+```
+resume: 'confirm_purchase'
+```
+
+## Spans
+
+### `agent run: 'name'`
+
+Wraps the entire agent execution, from the first middleware through all steps to completion.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `zaikit.agent.name` | `string` | Agent name (from `createAgent({ name })`) |
+| `zaikit.agent.thread_id` | `string` | Thread ID for the request |
+| `zaikit.agent.user_id` | `string` | User ID, if provided |
+| `zaikit.agent.step_count` | `number` | Total number of steps completed |
+| `zaikit.agent.finish_reason` | `string` | Why the agent stopped (`"stop"`, `"tool-calls"`, etc.) |
+| `zaikit.agent.total_input_tokens` | `number` | Aggregated input tokens across all steps |
+| `zaikit.agent.total_output_tokens` | `number` | Aggregated output tokens across all steps |
+
+### `agent step: N`
+
+One span per iteration of the agent loop (one LLM call + tool executions).
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `zaikit.step.number` | `number` | Zero-based step index |
+| `zaikit.step.suspended` | `boolean` | Whether a tool suspended during this step |
+| `zaikit.step.suspended_tool` | `string` | Name of the tool that suspended (only if `suspended` is `true`) |
+| `zaikit.step.suspend_payload` | `string` | JSON-serialized suspend payload (only if `suspended` is `true`) |
+
+### `middleware: 'name'`
+
+One span per middleware in the chain, nested in execution order.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `zaikit.middleware.name` | `string` | Middleware name (from `{ name, handler }` form) or `"middleware"` |
+| `zaikit.middleware.index` | `number` | Position in the middleware array |
+
+### `ai.toolCall` (AI SDK span, enriched)
+
+ZAIKit adds attributes to the AI SDK's existing `ai.toolCall` span when a tool suspends during its initial execution. These attributes are **not** added during resume.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `zaikit.tool.suspended` | `boolean` | `true` when the tool called `suspend()` |
+| `zaikit.tool.suspend_payload` | `string` | JSON-serialized payload passed to `suspend()` |
+
+### `resume: 'toolName'`
+
+Created when a suspended tool is resumed via `agent.chat({ resume })`. This is a top-level span, not nested under an agent run.
+
+| Attribute | Type | Description |
+|-----------|------|-------------|
+| `zaikit.resume.tool_call_id` | `string` | The tool call ID being resumed |
+| `zaikit.resume.tool_name` | `string` | Name of the tool |
+| `zaikit.resume.thread_id` | `string` | Thread ID |
+| `zaikit.resume.data` | `string` | JSON-serialized data passed by the client to resume the tool |
+| `zaikit.resume.re_suspended` | `boolean` | Whether the tool suspended again after resuming |
+| `zaikit.resume.output` | `string` | JSON-serialized tool output (only if the tool completed) |
+| `zaikit.resume.suspend_payload` | `string` | JSON-serialized new suspend payload (only if re-suspended) |
+
+## AI SDK Telemetry Metadata
+
+When telemetry is enabled, ZAIKit auto-injects metadata into the AI SDK's `streamText` telemetry settings:
+
+| AI SDK Field | Source |
+|--------------|--------|
+| `functionId` | Agent `name` |
+| `metadata.sessionId` | `threadId` |
+| `metadata.userId` | `userId` (if provided) |
+| `metadata.tags` | `[name]` (if agent has a name) |
+
+This metadata is used by backends like Langfuse for grouping traces by session, user, and function.

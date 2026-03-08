@@ -1,0 +1,118 @@
+---
+title: Observability
+description: Monitor your agents with OpenTelemetry tracing and Langfuse integration.
+---
+
+ZAIKit builds on the [AI SDK's OpenTelemetry support](https://ai-sdk.dev/docs/ai-sdk-core/telemetry) to provide tracing for your agents. When telemetry is enabled, every agent run, step, middleware, tool call, and resume produces OTEL spans that you can send to any compatible backend.
+
+## Enable Telemetry
+
+Pass `telemetry: true` to `createAgent`:
+
+```ts title="agent.ts"
+const agent = createAgent({
+  name: "my-agent",
+  model: openai("gpt-4o"),
+  tools: { deploy_service },
+  memory,
+  telemetry: true,
+});
+```
+
+The agent `name` is used as the OTEL `functionId` and appears in span names. ZAIKit also auto-injects `sessionId` (from `threadId`), `userId`, and `tags` (agent name) into AI SDK telemetry metadata for grouping and filtering.
+
+Per-request overrides are supported:
+
+```ts
+// Disable for a specific request
+await agent.generate({ prompt: "Hi", telemetry: false });
+
+// Override functionId for a specific request
+await agent.chat({ ...body, telemetry: { functionId: "custom-id" } });
+```
+
+## What Gets Traced
+
+The AI SDK creates spans for every `streamText` call (`ai.streamText`, `ai.streamText.doStream`, `ai.toolCall`). ZAIKit wraps these with its own spans for the full agent lifecycle:
+
+```
+agent run: 'my-agent'
+  └─ middleware: 'strip-html'
+       └─ agent step: 0
+            ├─ ai.streamText
+            │    └─ ai.streamText.doStream
+            └─ ai.toolCall (deploy_service)
+```
+
+| ZAIKit Span | Description |
+|-------------|-------------|
+| `agent run: 'name'` | Entire agent execution. Includes step count, finish reason, and token totals. |
+| `agent step: N` | One per iteration of the agent loop. Includes suspension detection. |
+| `middleware: 'name'` | One per middleware in the chain, nested in order. |
+| `resume: 'toolName'` | Tool re-execution during suspend/resume flows. |
+
+### Span Attributes
+
+All ZAIKit attributes are prefixed with `zaikit.*` and cover agent runs, steps, middleware, tool suspension, and resume flows. See the [Telemetry Reference](/reference/core/telemetry) for the complete list with descriptions.
+
+## Setting Up Langfuse
+
+[Langfuse](https://langfuse.com) is an open-source observability platform for LLM applications that supports OpenTelemetry ingestion.
+
+### Install
+
+```bash
+pnpm add @opentelemetry/sdk-node @langfuse/node
+```
+
+### Configure
+
+Initialize the Langfuse OTEL exporter before your agent code runs:
+
+```ts title="instrumentation.ts"
+import { NodeSDK } from "@opentelemetry/sdk-node";
+import { LangfuseExporter } from "@langfuse/node";
+
+const sdk = new NodeSDK({
+  traceExporter: new LangfuseExporter({
+    publicKey: process.env.LANGFUSE_PUBLIC_KEY!,
+    secretKey: process.env.LANGFUSE_SECRET_KEY!,
+    baseUrl: process.env.LANGFUSE_BASE_URL ?? "https://cloud.langfuse.com",
+  }),
+});
+
+sdk.start();
+```
+
+Import this file early in your server entry point (before any agent code):
+
+```ts title="server.ts"
+import "./instrumentation.js";
+import { agent } from "./agent/index.js";
+// ...
+```
+
+### Environment Variables
+
+```bash title=".env"
+LANGFUSE_PUBLIC_KEY=pk-lf-...
+LANGFUSE_SECRET_KEY=sk-lf-...
+LANGFUSE_BASE_URL=https://cloud.langfuse.com  # or your self-hosted URL
+```
+
+For self-hosting Langfuse, see the [Langfuse self-hosting docs](https://langfuse.com/docs/deployment/self-host).
+
+## Other OTEL Backends
+
+Any OpenTelemetry-compatible backend works — swap the exporter:
+
+- **Jaeger** — `@opentelemetry/exporter-trace-otlp-http`
+- **Grafana Tempo** — `@opentelemetry/exporter-trace-otlp-http`
+- **Datadog** — `dd-trace` with OTEL support
+- **Honeycomb** — `@honeycombio/opentelemetry-node`
+
+## What's Next
+
+- [AI SDK Telemetry docs](https://ai-sdk.dev/docs/ai-sdk-core/telemetry) — full reference for built-in AI SDK spans and attributes
+- [Middleware & Hooks](/concepts/middleware-and-hooks) — middleware can provide a `name` for better trace readability
+- [Suspend & Resume](/concepts/suspend-resume) — how suspension works and how it appears in traces

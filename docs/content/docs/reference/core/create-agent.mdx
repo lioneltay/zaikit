@@ -35,6 +35,7 @@ const agent = createAgent({
 
 | Option | Type | Required | Description |
 | --- | --- | --- | --- |
+| `name` | `string` | No | Agent name. Used as the default `functionId` for telemetry spans and appears in span names (e.g. `agent run: 'my-agent'`). See [Observability](/guides/observability). |
 | `model` | `LanguageModel` | Yes | Any AI SDK compatible language model. |
 | `system` | `string \| ((context: C) => string \| Promise<string>)` | No | System prompt sent with every request. Can be a function that receives the agent's context and returns the prompt — resolved once per request before the agent loop runs. |
 | `tools` | `T` | No | Object mapping tool names to tool definitions. Values can be plain tools or `{ tool, mapContext }` entries when the agent has a context schema. |
@@ -45,6 +46,7 @@ const agent = createAgent({
 | `onAfterStep` | `(ctx: AfterStepContext) => void \| Promise<void>` | No | Hook that fires after each LLM call. Receives `{ step, steps }` with the full `StepResult`. Throw to abort. |
 | `onBeforeToolCall` | `(ctx: BeforeToolCallContext) => { input? } \| void \| Promise<...>` | No | Hook that fires before each tool execution. Return `{ input }` to override, throw to block. |
 | `onAfterToolCall` | `(ctx: AfterToolCallContext) => { output? } \| void \| Promise<...>` | No | Hook that fires after each tool execution. Return `{ output }` to override. |
+| `telemetry` | `boolean \| Partial<TelemetrySettings>` | No | Enable OpenTelemetry tracing. `true` enables with the agent `name` as `functionId`. Pass an object for fine-grained control. See [Observability](/guides/observability). |
 
 ## Return Type
 
@@ -127,6 +129,8 @@ type StreamOptions<C = undefined> = ([C] extends [undefined]
 | `frontendTools` | `FrontendToolDef[]` | No | Frontend tool definitions to register dynamically. |
 | `onData` | `(part: WriteDataPart) => void` | No | Callback fired for every `writeData` call from any tool during the stream. See [Tool Data](/concepts/tool-data). |
 | `context` | `C` | When agent has `context` | Request-scoped context passed to tools and hooks. |
+| `userId` | `string` | No | User ID. Auto-injected as `metadata.userId` into telemetry when present. |
+| `telemetry` | `boolean \| Partial<TelemetrySettings>` | No | Per-request telemetry override. `false` disables even if the agent has telemetry enabled. See [Observability](/guides/observability). |
 
 ### StreamResult
 
@@ -219,6 +223,8 @@ type GenerateOptions<C = undefined> = ([C] extends [undefined]
 | `frontendTools` | `FrontendToolDef[]` | No | Frontend tool definitions. |
 | `onData` | `(part: WriteDataPart) => void` | No | Callback fired for every `writeData` call from any tool. See [Tool Data](/concepts/tool-data). |
 | `context` | `C` | When agent has `context` | Request-scoped context. |
+| `userId` | `string` | No | User ID. Auto-injected as `metadata.userId` into telemetry when present. |
+| `telemetry` | `boolean \| Partial<TelemetrySettings>` | No | Per-request telemetry override. See [Observability](/guides/observability). |
 
 `generate()` does not support tool suspension. If a tool calls `suspend()`, `generate()` throws an error. Use `chat()` for tools that require human-in-the-loop interaction.
 

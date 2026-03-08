@@ -11,18 +11,21 @@ import {
   createUIMessageStream,
   createUIMessageStreamResponse,
   generateText,
-  jsonSchema,
   Output,
   type StepResult,
   streamText,
   type TelemetrySettings,
   type ToolSet,
-  tool,
   type UIMessage,
 } from "ai";
 import { toJSONSchema, type z } from "zod";
 import {
+  buildDynamicTools,
+  hasUnresolvedSuspensions,
+  mergeCallbacks,
+  optContext,
   resolveToolEntries,
+  streamToResponse,
   sumUsage,
   wrapToolsWithHooks,
 } from "./agent-helpers";
@@ -49,40 +52,21 @@ import { isSuspendResult } from "./suspend";
 import { buildTelemetry } from "./telemetry";
 import { getToolInjection, runWithToolInjection } from "./tool-injection";
 import {
+  captureContext,
+  runInContext,
+  type Span,
+  withSpan,
+  withStreamSpan,
+} from "./tracing";
+import {
   createWriteData,
   createWriteMetadata,
   type ToolDataEvent,
   type WriteDataPart,
 } from "./write-data";
 
-/** Extract context from options — needed because conditional context types prevent direct access */
-function optContext(opts: object): unknown {
-  return (opts as { context?: unknown }).context;
-}
-
-// --- Message part type helpers ---
-
 /** AI SDK protocol chunk type for resolved tool outputs. */
 const TOOL_OUTPUT_AVAILABLE = "tool-output-available" as const;
-
-function hasUnresolvedSuspensions(parts: readonly object[]): boolean {
-  return parts.some((p) => isSuspendPart(p) && !p.data.resolved);
-}
-
-/** Combine two optional callbacks into one that fires both (agent-level first, then per-request). */
-function mergeCallbacks<T>(
-  a?: (arg: T) => void,
-  b?: (arg: T) => void,
-): ((arg: T) => void) | undefined {
-  if (!a) return b;
-  if (!b) return a;
-  return (arg) => {
-    a(arg);
-    b(arg);
-  };
-}
-
-// --- createAgent ---
 
 export function createAgent<
   T extends Record<string, ToolConfigValue<C>>,
@@ -120,22 +104,6 @@ export function createAgent<
     onAfterToolCall,
   });
 
-  function buildDynamicTools(defs: FrontendToolDef[]): ToolSet {
-    const result: ToolSet = {};
-    for (const def of defs) {
-      // Strip JSON Schema meta-fields that providers like Gemini reject
-      const { $schema, additionalProperties, ...params } =
-        def.parameters as Record<string, unknown>;
-      // No execute — frontend tools stay at input-available so the client
-      // can provide output via addToolOutput / toolOutputs.
-      result[def.name] = tool({
-        description: def.description,
-        inputSchema: jsonSchema({ type: "object" as const, ...params }),
-      } as any);
-    }
-    return result;
-  }
-
   function mergeTools(frontendTools?: FrontendToolDef[]): ToolSet {
     if (!frontendTools?.length) return hookedTools;
     return { ...hookedTools, ...buildDynamicTools(frontendTools) };
@@ -156,6 +124,7 @@ export function createAgent<
       maxSteps?: number;
       output?: Output.Output;
       telemetry?: TelemetrySettings;
+      telemetryEnabled?: boolean;
       onResult?: (result: AgentResult) => void;
       onError?: (err: unknown) => void;
       onData?: (part: WriteDataPart) => void;
@@ -167,176 +136,234 @@ export function createAgent<
     // the mapping from tool-input-start/tool-input-available chunks.
     const toolNameMap = new Map<string, string>();
 
+    // Capture the OTEL context so spans created inside start() (which runs
+    // in a new async context) are parented to the caller's active span.
+    const otelCtx = captureContext();
+
     return new ReadableStream({
       async start(controller) {
-        try {
-          // Create writeData that enqueues data parts on this stream's controller
-          const writeDataImpl = createWriteData(
-            (chunk) => controller.enqueue(chunk),
-            callbacks?.onData,
-            callbacks?.onToolData,
-          );
+        // Run inside the captured OTEL context so spans created here (steps,
+        // streamText) are parented to the caller's active span chain.
+        await runInContext(otelCtx, async () => {
+          try {
+            // Create writeData that enqueues data parts on this stream's controller
+            const writeDataImpl = createWriteData(
+              (chunk) => controller.enqueue(chunk),
+              callbacks?.onData,
+              callbacks?.onToolData,
+            );
 
-          // Create writeMetadata that enqueues message-metadata chunks
-          const writeMetadataImpl = createWriteMetadata(
-            (chunk) => controller.enqueue(chunk),
-            callbacks?.onMetadata,
-          );
+            // Create writeMetadata that enqueues message-metadata chunks
+            const writeMetadataImpl = createWriteMetadata(
+              (chunk) => controller.enqueue(chunk),
+              callbacks?.onMetadata,
+            );
 
-          // Wrap loop in ALS so tools can access writeData + writeMetadata (merges with outer context scope)
-          await runWithToolInjection(
-            { writeData: writeDataImpl, writeMetadata: writeMetadataImpl },
-            async () => {
-              let currentModelMessages = await convertToModelMessages(
-                ctx.messages,
-              );
-              let isFirstStep = true;
-              let stepNumber = 0;
-              const allSteps: StepResult<ToolSet>[] = [];
+            // Wrap loop in ALS so tools can access writeData + writeMetadata (merges with outer context scope)
+            await runWithToolInjection(
+              { writeData: writeDataImpl, writeMetadata: writeMetadataImpl },
+              async () => {
+                let currentModelMessages = await convertToModelMessages(
+                  ctx.messages,
+                );
+                let isFirstStep = true;
+                let stepNumber = 0;
+                const allSteps: StepResult<ToolSet>[] = [];
 
-              while (true) {
-                // Per-step overrides via prepareStep (ephemeral — starts from base each time)
-                const overrides =
-                  (await prepareStep?.({
-                    steps: allSteps,
-                    stepNumber,
-                    model: ctx.model,
-                    messages: currentModelMessages,
-                    context: getToolInjection().context as C,
-                  })) ?? {};
+                const telemetryOn = callbacks?.telemetryEnabled ?? false;
+                let lastStepResult:
+                  | "suspend"
+                  | "stop"
+                  | "max-steps"
+                  | "continue" = "stop";
 
-                // Apply activeTools filter
-                let stepTools = ctx.tools;
-                if (overrides.activeTools) {
-                  stepTools = Object.fromEntries(
-                    Object.entries(ctx.tools).filter(([name]) =>
-                      (overrides.activeTools as string[]).includes(name),
-                    ),
+                while (true) {
+                  const currentStepNumber = stepNumber;
+
+                  const runStep = async (stepSpan?: Span) => {
+                    // Per-step overrides via prepareStep (ephemeral — starts from base each time)
+                    const overrides =
+                      (await prepareStep?.({
+                        steps: allSteps,
+                        stepNumber: currentStepNumber,
+                        model: ctx.model,
+                        messages: currentModelMessages,
+                        context: getToolInjection().context as C,
+                      })) ?? {};
+
+                    // Apply activeTools filter
+                    let stepTools = ctx.tools;
+                    if (overrides.activeTools) {
+                      stepTools = Object.fromEntries(
+                        Object.entries(ctx.tools).filter(([name]) =>
+                          (overrides.activeTools as string[]).includes(name),
+                        ),
+                      );
+                    }
+
+                    const result = streamText({
+                      model: overrides.model ?? ctx.model,
+                      system: overrides.system ?? ctx.system,
+                      tools: stepTools,
+                      messages: overrides.messages ?? currentModelMessages,
+                      toolChoice: overrides.toolChoice,
+                      providerOptions: overrides.providerOptions,
+                      output: callbacks?.output,
+                      experimental_telemetry: callbacks?.telemetry,
+                    });
+
+                    const uiStream = result.toUIMessageStream({
+                      sendStart: isFirstStep,
+                      sendFinish: false,
+                    });
+                    isFirstStep = false;
+
+                    let hasSuspension = false;
+                    let suspendedToolName: string | undefined;
+                    let suspendPayload: unknown;
+
+                    // Consume the stream chunk-by-chunk. This replaces SuspendResult
+                    // tool outputs with data-tool-suspend parts and detects suspension.
+                    for await (const chunk of uiStream) {
+                      if (
+                        (chunk.type === "tool-input-start" ||
+                          chunk.type === "tool-input-available") &&
+                        "toolName" in chunk
+                      ) {
+                        toolNameMap.set(
+                          chunk.toolCallId,
+                          chunk.toolName as string,
+                        );
+                      }
+
+                      if (
+                        chunk.type === TOOL_OUTPUT_AVAILABLE &&
+                        isSuspendResult(chunk.output)
+                      ) {
+                        hasSuspension = true;
+                        suspendedToolName =
+                          toolNameMap.get(chunk.toolCallId) ?? "unknown";
+                        suspendPayload = chunk.output.payload;
+                        controller.enqueue({
+                          type: DATA_TOOL_SUSPEND,
+                          id: chunk.toolCallId,
+                          data: {
+                            toolCallId: chunk.toolCallId,
+                            toolName: suspendedToolName,
+                            payload: suspendPayload,
+                          },
+                        });
+                        continue;
+                      }
+
+                      controller.enqueue(chunk);
+                    }
+
+                    if (stepSpan) {
+                      stepSpan.setAttribute(
+                        "zaikit.step.suspended",
+                        hasSuspension,
+                      );
+                      if (hasSuspension && suspendedToolName) {
+                        stepSpan.setAttribute(
+                          "zaikit.step.suspended_tool",
+                          suspendedToolName,
+                        );
+                        stepSpan.setAttribute(
+                          "zaikit.step.suspend_payload",
+                          JSON.stringify(suspendPayload),
+                        );
+                      }
+                    }
+
+                    // Stream consumed — check stop conditions
+                    if (hasSuspension) return "suspend" as const;
+
+                    // Accumulate step results
+                    const resultSteps = await result.steps;
+                    allSteps.push(
+                      ...(resultSteps as unknown as StepResult<ToolSet>[]),
+                    );
+
+                    const finishReason = await result.finishReason;
+
+                    // Step-level after hook — receives current step and all steps
+                    if (onAfterStep) {
+                      const currentStep = allSteps[allSteps.length - 1];
+                      await onAfterStep({
+                        step: currentStep,
+                        steps: [...allSteps],
+                      });
+                    }
+
+                    if (finishReason === "stop") return "stop" as const;
+
+                    // Check maxSteps before continuing to next step
+                    if (
+                      callbacks?.maxSteps !== undefined &&
+                      currentStepNumber + 1 >= callbacks.maxSteps
+                    ) {
+                      return "max-steps" as const;
+                    }
+
+                    // Chain: append response messages for the next step
+                    const response = await result.response;
+                    currentModelMessages = [
+                      ...currentModelMessages,
+                      ...response.messages,
+                    ];
+                    return "continue" as const;
+                  };
+
+                  const stepResult = telemetryOn
+                    ? await withSpan(
+                        `agent step: ${currentStepNumber}`,
+                        { "zaikit.step.number": currentStepNumber },
+                        (span) => runStep(span),
+                      )
+                    : await runStep();
+
+                  lastStepResult = stepResult;
+                  if (stepResult !== "continue") break;
+                  stepNumber++;
+                }
+
+                // Emit structured result before closing the stream
+                const lastStep = allSteps[allSteps.length - 1];
+
+                // Parse structured output from the last step's text
+                let parsedOutput: unknown;
+                if (callbacks?.output && lastStep?.finishReason === "stop") {
+                  parsedOutput = await callbacks.output.parseCompleteOutput(
+                    { text: lastStep.text },
+                    {
+                      response: lastStep.response,
+                      usage: lastStep.usage,
+                      finishReason: lastStep.finishReason,
+                    },
                   );
                 }
 
-                const result = streamText({
-                  model: overrides.model ?? ctx.model,
-                  system: overrides.system ?? ctx.system,
-                  tools: stepTools,
-                  messages: overrides.messages ?? currentModelMessages,
-                  toolChoice: overrides.toolChoice,
-                  providerOptions: overrides.providerOptions,
-                  output: callbacks?.output,
-                  experimental_telemetry: callbacks?.telemetry,
+                callbacks?.onResult?.({
+                  text: lastStep?.text ?? "",
+                  output: parsedOutput,
+                  steps: allSteps,
+                  finishReason:
+                    lastStepResult === "suspend"
+                      ? "suspended"
+                      : (lastStep?.finishReason ?? "stop"),
+                  usage: sumUsage(allSteps),
                 });
+              },
+            );
 
-                const uiStream = result.toUIMessageStream({
-                  sendStart: isFirstStep,
-                  sendFinish: false,
-                });
-                isFirstStep = false;
-
-                let hasSuspension = false;
-
-                // Consume the stream chunk-by-chunk. This replaces SuspendResult
-                // tool outputs with data-tool-suspend parts and detects suspension.
-                for await (const chunk of uiStream) {
-                  if (
-                    (chunk.type === "tool-input-start" ||
-                      chunk.type === "tool-input-available") &&
-                    "toolName" in chunk
-                  ) {
-                    toolNameMap.set(chunk.toolCallId, chunk.toolName as string);
-                  }
-
-                  if (
-                    chunk.type === TOOL_OUTPUT_AVAILABLE &&
-                    isSuspendResult(chunk.output)
-                  ) {
-                    hasSuspension = true;
-                    controller.enqueue({
-                      type: DATA_TOOL_SUSPEND,
-                      id: chunk.toolCallId,
-                      data: {
-                        toolCallId: chunk.toolCallId,
-                        toolName:
-                          toolNameMap.get(chunk.toolCallId) ?? "unknown",
-                        payload: chunk.output.payload,
-                      },
-                    });
-                    continue;
-                  }
-
-                  controller.enqueue(chunk);
-                }
-
-                // Stream consumed — check stop conditions
-                if (hasSuspension) break;
-
-                // Accumulate step results
-                const resultSteps = await result.steps;
-                allSteps.push(
-                  ...(resultSteps as unknown as StepResult<ToolSet>[]),
-                );
-
-                const finishReason = await result.finishReason;
-
-                // Step-level after hook — receives current step and all steps
-                if (onAfterStep) {
-                  const currentStep = allSteps[allSteps.length - 1];
-                  await onAfterStep({
-                    step: currentStep,
-                    steps: [...allSteps],
-                  });
-                }
-
-                if (finishReason === "stop") break;
-
-                // Check maxSteps before continuing to next step
-                if (
-                  callbacks?.maxSteps !== undefined &&
-                  stepNumber + 1 >= callbacks.maxSteps
-                ) {
-                  break;
-                }
-
-                // Chain: append response messages for the next step
-                const response = await result.response;
-                currentModelMessages = [
-                  ...currentModelMessages,
-                  ...response.messages,
-                ];
-                stepNumber++;
-              }
-
-              // Emit structured result before closing the stream
-              const lastStep = allSteps[allSteps.length - 1];
-
-              // Parse structured output from the last step's text
-              let parsedOutput: unknown;
-              if (callbacks?.output && lastStep?.finishReason === "stop") {
-                parsedOutput = await callbacks.output.parseCompleteOutput(
-                  { text: lastStep.text },
-                  {
-                    response: lastStep.response,
-                    usage: lastStep.usage,
-                    finishReason: lastStep.finishReason,
-                  },
-                );
-              }
-
-              callbacks?.onResult?.({
-                text: lastStep?.text ?? "",
-                output: parsedOutput,
-                steps: allSteps,
-                finishReason: lastStep?.finishReason ?? "stop",
-                usage: sumUsage(allSteps),
-              });
-            },
-          );
-
-          controller.enqueue({ type: "finish" });
-          controller.close();
-        } catch (err) {
-          callbacks?.onError?.(err);
-          controller.error(err);
-        }
+            controller.enqueue({ type: "finish" });
+            controller.close();
+          } catch (err) {
+            callbacks?.onError?.(err);
+            controller.error(err);
+          }
+        });
       },
     });
   }
@@ -384,17 +411,53 @@ export function createAgent<
       threadId: opts.threadId,
       userId: opts.userId,
     });
-    const chain = composeMiddleware(middleware, (ctx) =>
-      coreAgentStream(ctx, {
-        maxSteps: opts.maxSteps,
-        output: outputSpec,
-        telemetry,
-        onResult: resolveResult,
-        onError: rejectResult,
-        onData: mergeCallbacks(agentOnData, opts.onData),
-        onToolData: mergeCallbacks(agentOnToolData, opts.onToolData),
-        onMetadata: mergeCallbacks(agentOnMetadata, opts.onMetadata),
-      }),
+    const telemetryEnabled = !!telemetry?.isEnabled;
+
+    // The run span is set inside withStreamSpan's callback, before
+    // runAgent(). The onResult callback reads it synchronously to set
+    // span attributes before the stream closes (and the span ends).
+    let runSpan: Span | undefined;
+
+    const chain = composeMiddleware(
+      middleware,
+      (ctx) =>
+        coreAgentStream(ctx, {
+          maxSteps: opts.maxSteps,
+          output: outputSpec,
+          telemetry,
+          telemetryEnabled,
+          onResult: (result) => {
+            if (runSpan) {
+              runSpan.setAttribute(
+                "zaikit.agent.step_count",
+                result.steps.length,
+              );
+              runSpan.setAttribute(
+                "zaikit.agent.finish_reason",
+                result.finishReason,
+              );
+              const { inputTokens, outputTokens } = result.usage ?? {};
+              if (inputTokens != null) {
+                runSpan.setAttribute(
+                  "zaikit.agent.total_input_tokens",
+                  inputTokens,
+                );
+              }
+              if (outputTokens != null) {
+                runSpan.setAttribute(
+                  "zaikit.agent.total_output_tokens",
+                  outputTokens,
+                );
+              }
+            }
+            resolveResult(result);
+          },
+          onError: rejectResult,
+          onData: mergeCallbacks(agentOnData, opts.onData),
+          onToolData: mergeCallbacks(agentOnToolData, opts.onToolData),
+          onMetadata: mergeCallbacks(agentOnMetadata, opts.onMetadata),
+        }),
+      telemetryEnabled,
     );
 
     // Build middleware context
@@ -409,47 +472,25 @@ export function createAgent<
     };
 
     // Run under ALS so tools can access context
-    const resultStream = runWithToolInjection(
-      { context: optContext(opts) },
-      () => chain(ctx),
-    );
+    const runAgent = () =>
+      runWithToolInjection({ context: optContext(opts) }, () => chain(ctx));
+
+    const resultStream = telemetryEnabled
+      ? withStreamSpan(
+          name ? `agent run: '${name}'` : "agent run",
+          {
+            ...(name && { "zaikit.agent.name": name }),
+            ...(opts.threadId && { "zaikit.agent.thread_id": opts.threadId }),
+            ...(opts.userId && { "zaikit.agent.user_id": opts.userId }),
+          },
+          (span) => {
+            runSpan = span;
+            return runAgent();
+          },
+        )
+      : runAgent();
 
     return { stream: resultStream, result: resultPromise };
-  }
-
-  /**
-   * Wrap an agent stream in a persistence layer, returning an HTTP Response.
-   * Used by chat() and the resume/toolOutputs paths.
-   */
-  function streamToResponse(
-    agentStreamResult: StreamResult,
-    messages: UIMessage[],
-    opts: {
-      memory: Memory;
-      threadId: string;
-      messageId?: string;
-    },
-  ): Response {
-    const uiStream = createUIMessageStream({
-      originalMessages: messages,
-      execute: async ({ writer }) => {
-        for await (const chunk of agentStreamResult.stream as any) {
-          writer.write(chunk as any);
-        }
-      },
-      onFinish: async ({ responseMessage }) => {
-        if (opts.messageId) {
-          await opts.memory.updateMessage(opts.threadId, opts.messageId, {
-            parts: responseMessage.parts,
-            metadata: responseMessage.metadata,
-          });
-        } else {
-          await opts.memory.addMessage(opts.threadId, responseMessage);
-        }
-      },
-    });
-
-    return createUIMessageStreamResponse({ stream: uiStream });
   }
 
   // Fire-and-forget title generation
@@ -624,22 +665,65 @@ export function createAgent<
           mergeCallbacks(agentOnMetadata, callbacks.onMetadata),
         );
 
+        // Build resolved telemetry for this resume path
+        const resumeTelemetry = buildTelemetry({
+          defaults: agentTelemetry,
+          overrides: telemetry,
+          agentName: name,
+          threadId,
+          userId,
+        });
+        const resumeTelemetryEnabled = !!resumeTelemetry?.isEnabled;
+
         // Re-execute tool with writeData, writeMetadata, resumeData, resumeHistory, and toolName
-        const output = await runWithToolInjection(
-          {
-            context,
-            resumeData: resume.data,
-            resumeHistory,
-            writeData: writeDataImpl,
-            writeMetadata: writeMetadataImpl,
-            toolName,
-          },
-          () =>
-            execute(toolInput, {
-              toolCallId: resume.toolCallId,
-              messages: modelMessages,
-            }),
-        );
+        const executeTool = () =>
+          runWithToolInjection(
+            {
+              context,
+              resumeData: resume.data,
+              resumeHistory,
+              writeData: writeDataImpl,
+              writeMetadata: writeMetadataImpl,
+              toolName,
+            },
+            () =>
+              execute(toolInput, {
+                toolCallId: resume.toolCallId,
+                messages: modelMessages,
+              }),
+          );
+
+        const output = resumeTelemetryEnabled
+          ? await withSpan(
+              `resume: '${toolName}'`,
+              {
+                "zaikit.resume.tool_call_id": resume.toolCallId,
+                "zaikit.resume.tool_name": toolName,
+                "zaikit.resume.thread_id": threadId,
+              },
+              async (span) => {
+                span.setAttribute(
+                  "zaikit.resume.data",
+                  JSON.stringify(resume.data),
+                );
+                const result = await executeTool();
+                const reSuspended = isSuspendResult(result);
+                span.setAttribute("zaikit.resume.re_suspended", reSuspended);
+                if (reSuspended) {
+                  span.setAttribute(
+                    "zaikit.resume.suspend_payload",
+                    JSON.stringify(result.payload),
+                  );
+                } else {
+                  span.setAttribute(
+                    "zaikit.resume.output",
+                    JSON.stringify(result),
+                  );
+                }
+                return result;
+              },
+            )
+          : await executeTool();
 
         if (isSuspendResult(output)) {
           // Tool re-suspended — stream a new suspend part (overwrites the
