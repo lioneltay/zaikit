@@ -317,7 +317,7 @@ function Features() {
             <Link
               key={feature.title}
               href={feature.href}
-              className="group relative rounded-2xl border border-fd-border bg-fd-card/60 p-6 transition-all hover:border-fd-primary/30 hover:bg-fd-card/80"
+              className="group relative rounded-2xl border border-fd-border bg-fd-card p-6 transition-all hover:border-fd-primary/30 hover:bg-fd-card/80"
             >
               <div className="mb-4 inline-flex rounded-xl border border-fd-primary/20 bg-fd-primary/5 p-2.5">
                 <feature.icon className="size-5 text-fd-primary" />
@@ -380,7 +380,7 @@ function Architecture() {
             <div key={step.title} className="relative">
               <Link
                 href={step.href}
-                className="block rounded-2xl border border-fd-border bg-fd-card/60 p-6 transition-all hover:border-fd-primary/30 hover:bg-fd-card/80"
+                className="block rounded-2xl border border-fd-border bg-fd-card p-6 transition-all hover:border-fd-primary/30 hover:bg-fd-card/80"
               >
                 <div className="mb-3 flex items-center gap-2">
                   <span className="flex size-6 items-center justify-center rounded-full bg-fd-primary/10 font-mono text-xs font-bold text-fd-primary">
@@ -471,7 +471,7 @@ function Packages() {
             <Link
               key={pkg}
               href={href}
-              className="rounded-xl border border-fd-border bg-fd-card/50 px-4 py-3 transition-colors hover:border-fd-primary/30 hover:bg-fd-card/70"
+              className="rounded-xl border border-fd-border bg-fd-card px-4 py-3 transition-colors hover:border-fd-primary/30 hover:bg-fd-card/80"
             >
               <span className="block font-mono text-sm text-fd-primary">
                 {pkg}

@@ -42,9 +42,9 @@
   --color-fd-muted-foreground: oklch(0.58 0 0);
   --color-fd-popover: oklch(0.145 0.005 260);
   --color-fd-popover-foreground: oklch(0.93 0 0);
-  --color-fd-card: oklch(0.145 0.005 260);
+  --color-fd-card: oklch(0.19 0.01 260);
   --color-fd-card-foreground: oklch(0.93 0 0);
-  --color-fd-border: oklch(0.22 0.005 260);
+  --color-fd-border: oklch(0.32 0.01 260);
   --color-fd-primary: oklch(0.7 0.17 162);
   --color-fd-primary-foreground: oklch(0.115 0.005 260);
   --color-fd-secondary: oklch(0.17 0.01 162);
