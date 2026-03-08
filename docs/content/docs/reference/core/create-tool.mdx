@@ -207,3 +207,9 @@ Both `suspendSchema` and `resumeSchema` are validated at runtime:
 - `suspend(data)` calls `suspendSchema.parse(data)` before creating the `SuspendResult`.
 - On resume, `resumeSchema.parse(resumeData)` is called before the execute function receives it.
 - If `outputSchema` is provided, non-suspend results are validated with `outputSchema.parse(result)`.
+
+## Related
+
+- [Creating Tools](/guides/creating-tools) -- Step-by-step guide to building tools
+- [Human-in-the-Loop](/guides/human-in-the-loop) -- Full walkthrough of suspend/resume tools with React components
+- [Type-Safe Tools](/guides/type-safe-tools) -- Generate typed render props from your tool definitions

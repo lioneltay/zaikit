@@ -94,6 +94,7 @@ type ToolRenderProps<
   TArgs = Record<string, unknown>,
   TSuspend = unknown,
   TResume = unknown,
+  TData extends Record<string, unknown> = Record<string, unknown>,
 > = {
   toolCallId: string;
   toolName: string;
@@ -104,6 +105,7 @@ type ToolRenderProps<
   error: string | undefined;
   resume: (data: TResume) => void;
   data: ToolDataPart[];
+  toolData: TypedToolData<TData>;
 };
 ```
 
@@ -117,7 +119,20 @@ type ToolRenderProps<
 | `result` | `unknown` | The tool's return value. Only meaningful when `state === "result"`. |
 | `error` | `string \| undefined` | Error message from the tool execution. Only present when `state === "error"`. |
 | `resume` | `(data: TResume) => void` | Call this to resume a suspended tool with the user's response. Routes to `resumeTool` internally. |
-| `data` | `ToolDataPart[]` | Custom data parts emitted by this tool call via `writeData`. Each entry has `{ type, id, data }`. See [Tool Data](/concepts/tool-data). |
+| `data` | `ToolDataPart[]` | Raw data parts emitted by this tool call via `writeData`. Each entry has `{ type, id, data }`. See [Tool Data](/concepts/tool-data). |
+| `toolData` | `TypedToolData<TData>` | Typed tool data parts emitted via `writeToolData`, grouped by type key. Each value is an array of `{ id, data }` entries. See [Tool Data](/concepts/tool-data). |
+
+### TypedToolData
+
+```ts
+type TypedToolData<
+  T extends Record<string, unknown> = Record<string, unknown>,
+> = {
+  [K in keyof T]?: Array<{ id: string; data: T[K] }>;
+};
+```
+
+When the tool declares a `dataSchema`, `TData` maps each key to its schema type. For example, a tool with `dataSchema: { progress: z.object({ step: z.number() }) }` produces `toolData.progress?: Array<{ id: string; data: { step: number } }>`.
 
 ## ToolRenderState
 
@@ -131,6 +146,10 @@ type ToolRenderState = "call" | "suspended" | "result" | "error";
 | `"suspended"` | The tool has suspended and is waiting for user input. `suspendPayload` is available. |
 | `"result"` | The tool has completed. `result` is available. |
 | `"error"` | The tool execution failed. `error` contains the error message. |
+
+## Error Handling
+
+Every tool renderer registered via `useToolRenderer` is wrapped in a `ToolErrorBoundary` by `AgentProvider`. If your render function throws, the error is caught and only that tool's UI is affected. Pass the [`toolErrorFallback`](/reference/react/agent-provider#toolErrorFallback) prop on `AgentProvider` to customize what is rendered on error.
 
 ## Lifecycle
 
@@ -157,3 +176,9 @@ useToolRenderer("confirm_purchase", (props) => {
   // props.resume accepts ConfirmPurchaseResume
 });
 ```
+
+## Related
+
+- [Creating Tools](/guides/creating-tools) -- How to define tools on the backend
+- [Human-in-the-Loop](/guides/human-in-the-loop) -- Full walkthrough of building tool renderers for suspend/resume
+- [Type-Safe Tools](/guides/type-safe-tools) -- Generate typed props via codegen

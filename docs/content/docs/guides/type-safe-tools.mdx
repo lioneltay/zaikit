@@ -287,3 +287,9 @@ If the diff is non-empty, the agent's tools have changed but the generated types
 - The generated file should not be edited by hand -- it will be overwritten on the next run
 - If `tsconfig.json` cannot be auto-detected (e.g., in a monorepo with multiple configs), use the `--tsconfig` flag explicitly
 - The `--export` flag defaults to `agent`, matching `export const agent = createAgent(...)`. If your export is named differently, specify it: `--export myAgent`
+
+## What's Next
+
+- **[CLI & Codegen Reference](/reference/codegen-react/cli)** -- Full CLI flags and programmatic API
+- **[createTool Reference](/reference/core/create-tool)** -- The `__toolTypes` phantom brand that codegen reads
+- **[useToolRenderer Reference](/reference/react/use-tool-renderer)** -- Register renderers with typed or untyped props

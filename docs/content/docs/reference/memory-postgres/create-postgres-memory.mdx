@@ -123,3 +123,8 @@ The `thread_id` foreign key on `zaikit_messages` uses `ON DELETE CASCADE`. Delet
 ### Updated Timestamps
 
 Both `addMessage` and `updateMessage` touch the parent thread's `updated_at` timestamp, ensuring the thread list stays sorted by recent activity.
+
+## Related
+
+- [PostgreSQL Memory](/guides/postgres-memory) -- Setup guide with Docker Compose and server endpoints
+- [Memory & Thread Types](/reference/memory/types) -- The Memory interface all adapters implement

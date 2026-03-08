@@ -50,7 +50,6 @@ type WriteDataPart = {
   data: unknown;       // Arbitrary payload
   id?: string;         // Auto-generated if not provided
   transient?: boolean; // If true, appears in stream but NOT persisted in message
-  scope?: "tool" | "message";
 };
 ```
 
@@ -60,24 +59,33 @@ type WriteDataPart = {
 | `data` | `unknown` | Required | Arbitrary payload. Must be JSON-serializable. |
 | `id` | `string` | Auto-generated | Unique ID. Same `type` + `id` = update in place (AI SDK deduplication). |
 | `transient` | `boolean` | `false` | When `true`, the part appears in the stream but is not persisted in the stored message. |
-| `scope` | `"tool" \| "message"` | `"tool"` | Controls how the part is associated on the frontend. |
 
 ## Scoping: Tool vs Message
 
-The `scope` field determines how a data part is associated on the frontend.
+Scoping is determined by which function you call, not by a field on the data part.
 
-**`scope: "tool"`** (default when called from a tool): The data part is associated with the specific tool call. On the frontend, these parts are stripped from the message's parts array and attached to the corresponding tool part's `data` array. This is the right choice when the data is contextual to a particular tool invocation.
+**`writeToolData`** (tool-scoped): Available in the execute context when the tool declares a `dataSchema`. The framework automatically associates the data part with the current tool call. On the frontend, these parts appear in `ToolRenderProps.toolData`, grouped by type key.
 
 ```ts
-// This progress update is tied to this specific tool call
-writeData({ type: "progress", data: { percent: 50 } });
+const analyze_data = createTool({
+  description: "Analyze a dataset",
+  inputSchema: z.object({ datasetId: z.string() }),
+  dataSchema: {
+    progress: z.object({ step: z.number(), total: z.number() }),
+  },
+  execute: async ({ input, writeToolData }) => {
+    // Tool-scoped — tied to this specific tool call
+    writeToolData("progress", { step: 1, total: 3 });
+    // ...
+  },
+});
 ```
 
-**`scope: "message"`**: The data part is a standalone message-level part, not tied to any tool call. It remains in the message's parts array directly.
+**`writeData`** (message-scoped): Always available in the execute context. Data parts emitted via `writeData` are standalone message-level parts, not tied to any tool call.
 
 ```ts
-// This artifact is not tied to any specific tool call
-writeData({ type: "artifact", data: { html: "<div>...</div>" }, scope: "message" });
+// Message-scoped — not tied to any specific tool call
+writeData({ type: "artifact", data: { html: "<div>...</div>" } });
 ```
 
 ## Deduplication
@@ -188,7 +196,7 @@ const research_tool = createTool({
 });
 ```
 
-The parent tool's `writeData` is tool-scoped by default, so forwarded data parts are associated with the `research_tool` call on the frontend.
+The parent tool's `writeData` emits message-scoped parts, so forwarded data appears as standalone parts in the stream.
 
 ## Resume Behavior
 
@@ -198,9 +206,8 @@ When a tool is re-executed during a resume, `writeData` calls made during re-exe
 
 | Concept | Description |
 |---|---|
-| `writeData` | Function available in tool execute context. Emits a custom data part to the stream. |
-| `scope: "tool"` | Data part is associated with the tool call. Appears in `ToolRenderProps.data`. |
-| `scope: "message"` | Data part is standalone, not tied to a tool call. |
+| `writeData` | Message-scoped. Always available in the execute context. Emits a standalone data part to the stream. |
+| `writeToolData` | Tool-scoped. Available when the tool declares a `dataSchema`. Automatically associated with the tool call. Appears in `ToolRenderProps.toolData`. |
 | `transient: true` | Data part is streamed but not persisted in the message. |
 | Deduplication | Same `type` + `id` = update in place. Auto-generated `id` if not provided. |
 | `onData` | Callback on `stream()` / `generate()` options. Fires for every `writeData` call. |

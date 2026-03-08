@@ -35,7 +35,7 @@ const get_weather = createTool({
 
 ## The Execute Function
 
-The `execute` function receives a context object with `{ input, writeData }`, where `input` is the parsed and validated result of your Zod schema. The return value can be any serializable value -- it gets sent back to the LLM as the tool result.
+The `execute` function receives a context object with `{ input, writeData, writeMetadata }`, where `input` is the parsed and validated result of your Zod schema. The return value can be any serializable value -- it gets sent back to the LLM as the tool result.
 
 ```ts
 const search_database = createTool({
@@ -57,10 +57,10 @@ const search_database = createTool({
 The full type signature is:
 
 ```ts
-execute: (ctx: { input: INPUT; writeData: WriteDataFn }) => Promise<OUTPUT>
+execute: (ctx: { input: INPUT; writeData: WriteDataFn; writeMetadata: WriteMetadataFn }) => Promise<OUTPUT>
 ```
 
-`INPUT` is inferred from your `inputSchema`, so you get full type safety on `input` without manual annotations. The `writeData` function lets you emit custom data parts to the stream mid-execution -- see [Tool Data](/concepts/tool-data) for details.
+`INPUT` is inferred from your `inputSchema`, so you get full type safety on `input` without manual annotations. The `writeData` function lets you emit custom data parts to the stream mid-execution -- see [Tool Data](/concepts/tool-data) for details. The `writeMetadata` function lets you write key-value metadata that is deep-merged into `message.metadata` on the client.
 
 ## Naming Tools
 
@@ -177,6 +177,24 @@ const delete_records = createTool({
 });
 ```
 
+**Which approach to use?** Throwing is simpler and works well for unexpected failures. The tool's render state becomes `"error"` and the error message is forwarded to the LLM so it can explain what went wrong. Returning an error object is better when you want to give the LLM structured context (e.g. available table names) so it can retry or adjust its approach.
+
+### Error boundaries on the frontend
+
+On the React side, `@zaikit/react` wraps every tool renderer in a `ToolErrorBoundary`. If your render function throws, only that tool's UI is affected -- the rest of the chat keeps working. By default, a broken renderer renders nothing (and the error is logged to the console). To show custom error UI, pass the `toolErrorFallback` prop on [`AgentProvider`](/reference/react/agent-provider):
+
+```tsx
+import type { ToolErrorFallbackProps } from "@zaikit/react";
+
+function ToolError({ toolName, error }: ToolErrorFallbackProps) {
+  return <div>Tool "{toolName}" failed: {error.message}</div>;
+}
+
+<AgentProvider toolErrorFallback={ToolError} ...>
+```
+
+See the [`AgentProvider` reference](/reference/react/agent-provider#toolErrorFallback) for the full `ToolErrorFallbackProps` type.
+
 ## Tools with Context
 
 When a tool needs request-scoped data (user ID, permissions, tenant info) that comes from your server rather than the LLM, use the `context` option:
@@ -290,9 +308,33 @@ const process_document = createTool({
 });
 ```
 
-Data parts with `scope: "tool"` (the default) are attached to the tool part's `data` array on the frontend, accessible via `ToolRenderProps`. Set `transient: true` for data that should only appear during streaming and not be persisted.
+Data parts emitted via `writeData` are message-scoped. To emit tool-scoped data that appears in `ToolRenderProps.toolData`, declare a `dataSchema` on the tool and use `writeToolData`. Set `transient: true` for data that should only appear during streaming and not be persisted.
 
 See [Tool Data](/concepts/tool-data) for the full guide on scoping, deduplication, and frontend access.
+
+## Sub-Agents
+
+A tool can invoke another agent using `agent.generate()`. This lets you compose specialized agents as building blocks. Since tools are closures, the sub-agent is simply referenced from the surrounding scope -- no registry needed.
+
+```ts
+const researchAgent = createAgent({
+  model: openai("gpt-4o-mini"),
+  system: "You are a research assistant. Provide concise, factual answers.",
+});
+
+const research_tool = createTool({
+  description: "Research a topic using a specialized agent",
+  inputSchema: z.object({ query: z.string() }),
+  execute: async ({ input }) => {
+    const result = await researchAgent.generate({
+      prompt: input.query,
+    });
+    return result.text;
+  },
+});
+```
+
+The parent agent calls `research_tool` like any other tool, and the sub-agent runs its own independent loop (with its own model, system prompt, and tools if needed). See [`generate()`](/reference/core/create-agent#generate) for the full API.
 
 ## What's Next
 
@@ -300,3 +342,5 @@ See [Tool Data](/concepts/tool-data) for the full guide on scoping, deduplicatio
 - **[Tool Data](/concepts/tool-data)** -- Emit progress indicators, previews, and artifacts from tools
 - **[Human-in-the-Loop](/guides/human-in-the-loop)** -- Add `suspendSchema` and `resumeSchema` to pause tools for user approval
 - **[Type-Safe Tools](/guides/type-safe-tools)** -- Generate typed props for your tool renderer components
+- **[createTool Reference](/reference/core/create-tool)** -- Full API reference for `createTool`
+- **[createAgent Reference](/reference/core/create-agent)** -- Full API reference for `createAgent` including `generate()` for sub-agents

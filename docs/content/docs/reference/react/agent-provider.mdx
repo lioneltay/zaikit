@@ -42,6 +42,7 @@ type AgentProviderProps = {
   fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
   body?: Record<string, unknown>;
+  toolErrorFallback?: React.ComponentType<ToolErrorFallbackProps> | null;
   children: React.ReactNode;
 };
 ```
@@ -54,6 +55,7 @@ type AgentProviderProps = {
 | `fetchMessages` | `(threadId: string) => Promise<UIMessage[]>` | No | Called after resume to re-fetch the latest messages from the server. Required if you use suspend/resume. |
 | `onFinish` | `() => void` | No | Called when a streaming response completes. Useful for refreshing thread lists or triggering side effects. |
 | `body` | `Record<string, unknown>` | No | Extra fields merged into every request body sent to the backend. Use this to pass data like context, session tokens, or feature flags that the server needs but the LLM doesn't. |
+| `toolErrorFallback` | `React.ComponentType<ToolErrorFallbackProps> \| null` | No | Custom component rendered when a tool renderer throws. Defaults to `null` (render nothing). See [toolErrorFallback](#toolErrorFallback). |
 | `children` | `React.ReactNode` | Yes | Child components that can access agent state via `useAgent()`. |
 
 ## Sending Extra Data with `body`
@@ -140,6 +142,40 @@ function App() {
 }
 ```
 
+## toolErrorFallback
+
+Every tool renderer is wrapped in a `ToolErrorBoundary`. If a render function throws, only that tool's UI is affected -- the rest of the chat continues working. By default, a broken renderer renders nothing and the error is logged to the console.
+
+Pass a `toolErrorFallback` component to show custom error UI:
+
+```tsx
+import type { ToolErrorFallbackProps } from "@zaikit/react";
+
+function ToolError({ toolName, toolCallId, error }: ToolErrorFallbackProps) {
+  return <div>Tool "{toolName}" failed: {error.message}</div>;
+}
+
+<AgentProvider toolErrorFallback={ToolError} ...>
+```
+
+### ToolErrorFallbackProps
+
+`ToolErrorFallbackProps` is exported from `@zaikit/react`.
+
+```ts
+type ToolErrorFallbackProps = {
+  toolName: string;
+  toolCallId: string;
+  error: Error;
+};
+```
+
+| Property | Type | Description |
+| --- | --- | --- |
+| `toolName` | `string` | The name of the tool whose renderer threw. |
+| `toolCallId` | `string` | The unique tool call ID for the failed render. |
+| `error` | `Error` | The error thrown by the render function. |
+
 ## Frontend Tool Pattern
 
 Register frontend tools (tools that execute on the client) using `useTool`:
@@ -164,3 +200,9 @@ function FrontendTools() {
   return null;
 }
 ```
+
+## Related
+
+- [Full-Stack Setup](/guides/full-stack-setup) -- Complete guide to wiring AgentProvider to a backend
+- [useAgent](/reference/react/use-agent) -- Access agent state from child components
+- [useToolRenderer](/reference/react/use-tool-renderer) -- Register tool render functions

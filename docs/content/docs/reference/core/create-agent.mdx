@@ -47,6 +47,9 @@ const agent = createAgent({
 | `onBeforeToolCall` | `(ctx: BeforeToolCallContext) => { input? } \| void \| Promise<...>` | No | Hook that fires before each tool execution. Return `{ input }` to override, throw to block. |
 | `onAfterToolCall` | `(ctx: AfterToolCallContext) => { output? } \| void \| Promise<...>` | No | Hook that fires after each tool execution. Return `{ output }` to override. |
 | `telemetry` | `boolean \| Partial<TelemetrySettings>` | No | Enable OpenTelemetry tracing. `true` enables with the agent `name` as `functionId`. Pass an object for fine-grained control. See [Observability](/guides/observability). |
+| `onData` | `(part: WriteDataPart) => void` | No | Callback fired for every `writeData` call from any tool. See [Tool Data](/concepts/tool-data). |
+| `onToolData` | `(event: ToolDataEvent) => void` | No | Callback fired for every `writeToolData` call. The event includes `toolName`, `toolCallId`, `type`, and `data`. See [Tool Data](/concepts/tool-data). |
+| `onMetadata` | `(metadata: Record<string, unknown>) => void` | No | Callback fired for every `writeMetadata` call. Receives the metadata object that was written. |
 
 ## Return Type
 
@@ -106,16 +109,15 @@ console.log(agentResult.finishReason); // "stop" | "tool-calls" | ...
 ### StreamOptions
 
 ```ts
-type StreamOptions<C = undefined> = ([C] extends [undefined]
+type StreamOptions<C = undefined, T extends ToolSet = ToolSet> = ([C] extends [undefined]
   ? { context?: never }
-  : { context: C }) & {
+  : { context: C }) & DataCallbacks<T> & {
   messages: UIMessage[];
   model?: LanguageModel;
   threadId?: string;
   maxSteps?: number;
   output?: z.ZodType;
   frontendTools?: FrontendToolDef[];
-  onData?: (part: WriteDataPart) => void;
 };
 ```
 
@@ -128,6 +130,8 @@ type StreamOptions<C = undefined> = ([C] extends [undefined]
 | `output` | `z.ZodType` | No | Zod schema for structured output. Parsed result is available on `AgentResult.output`. |
 | `frontendTools` | `FrontendToolDef[]` | No | Frontend tool definitions to register dynamically. |
 | `onData` | `(part: WriteDataPart) => void` | No | Callback fired for every `writeData` call from any tool during the stream. See [Tool Data](/concepts/tool-data). |
+| `onToolData` | `(event: ToolDataEvent) => void` | No | Callback fired for every `writeToolData` call. See [Tool Data](/concepts/tool-data). |
+| `onMetadata` | `(metadata: Record<string, unknown>) => void` | No | Callback fired for every `writeMetadata` call. |
 | `context` | `C` | When agent has `context` | Request-scoped context passed to tools and hooks. |
 | `userId` | `string` | No | User ID. Auto-injected as `metadata.userId` into telemetry when present. |
 | `telemetry` | `boolean \| Partial<TelemetrySettings>` | No | Per-request telemetry override. `false` disables even if the agent has telemetry enabled. See [Observability](/guides/observability). |
@@ -202,14 +206,13 @@ When `output` is combined with tools, the agent runs the full tool loop and prod
 ### GenerateOptions
 
 ```ts
-type GenerateOptions<C = undefined> = ([C] extends [undefined]
+type GenerateOptions<C = undefined, T extends ToolSet = ToolSet> = ([C] extends [undefined]
   ? { context?: never }
-  : { context: C }) & {
+  : { context: C }) & DataCallbacks<T> & {
   model?: LanguageModel;
   maxSteps?: number;
   output?: z.ZodType;
   frontendTools?: FrontendToolDef[];
-  onData?: (part: WriteDataPart) => void;
 } & ({ prompt: string } | { messages: UIMessage[] });
 ```
 
@@ -222,6 +225,8 @@ type GenerateOptions<C = undefined> = ([C] extends [undefined]
 | `output` | `z.ZodType` | No | Zod schema for structured output. The model is constrained to JSON mode and the result is parsed and typed. |
 | `frontendTools` | `FrontendToolDef[]` | No | Frontend tool definitions. |
 | `onData` | `(part: WriteDataPart) => void` | No | Callback fired for every `writeData` call from any tool. See [Tool Data](/concepts/tool-data). |
+| `onToolData` | `(event: ToolDataEvent) => void` | No | Callback fired for every `writeToolData` call. See [Tool Data](/concepts/tool-data). |
+| `onMetadata` | `(metadata: Record<string, unknown>) => void` | No | Callback fired for every `writeMetadata` call. |
 | `context` | `C` | When agent has `context` | Request-scoped context. |
 | `userId` | `string` | No | User ID. Auto-injected as `metadata.userId` into telemetry when present. |
 | `telemetry` | `boolean \| Partial<TelemetrySettings>` | No | Per-request telemetry override. See [Observability](/guides/observability). |
@@ -360,3 +365,10 @@ app.post("/api/chat", async (req, res) => {
   // Pipe response.body to res
 });
 ```
+
+## Related
+
+- [Creating Tools](/guides/creating-tools) -- Guide to building tools for your agent
+- [Full-Stack Setup](/guides/full-stack-setup) -- Wire up a backend agent with a React frontend
+- [Human-in-the-Loop](/guides/human-in-the-loop) -- Suspend/resume tools for user approval flows
+- [Observability](/guides/observability) -- Enable telemetry and trace agent runs
