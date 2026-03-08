@@ -38,6 +38,11 @@ export type FrontendToolRegistration = {
 };
 
 export type AgentContextValue = {
+  threadId: string;
+  setThreadId: (id: string) => void;
+  createNewThread: () => string;
+  loadOlderMessages: () => Promise<void>;
+  isLoadingMessages: boolean;
   messages: UIMessage[];
   rawMessages: UIMessage[];
   status: string;

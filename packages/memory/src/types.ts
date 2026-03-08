@@ -11,6 +11,8 @@ export type Thread = {
 export type GetMessagesOptions = {
   /** Return the most recent N messages. Omit for all messages. */
   limit?: number;
+  /** Cursor: return messages before this message ID. */
+  before?: string;
 };
 
 export type Memory = {

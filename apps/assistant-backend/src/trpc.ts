@@ -43,13 +43,14 @@ export function createAppRouter(agent: Agent<any, any>) {
           z.object({
             threadId: z.string(),
             limit: z.number().int().positive().optional(),
+            before: z.string().optional(),
           }),
         )
         .query(async ({ input }) => {
-          return memory.getMessages(
-            input.threadId,
-            input.limit ? { limit: input.limit } : undefined,
-          );
+          return memory.getMessages(input.threadId, {
+            limit: input.limit,
+            before: input.before,
+          });
         }),
     }),
   });

@@ -68,7 +68,6 @@ const defaultOpts = {
 const defaultHookOpts = {
   api: "/api/chat",
   threadId: "thread-1",
-  initialMessages: [] as UIMessage[],
   getFrontendTools: () => [],
   isFrontendTool: () => false,
 };

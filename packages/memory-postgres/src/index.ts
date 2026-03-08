@@ -45,14 +45,6 @@ export function createPostgresMemory({
         seq BIGSERIAL
       )
     `;
-    // Add seq column to existing tables (idempotent migration)
-    await sql`
-      ALTER TABLE zaikit_messages ADD COLUMN IF NOT EXISTS seq BIGSERIAL
-    `;
-    // Replace old created_at index with seq-based index for deterministic ordering
-    await sql`
-      DROP INDEX IF EXISTS idx_zaikit_messages_thread_id
-    `;
     await sql`
       CREATE INDEX IF NOT EXISTS idx_zaikit_messages_thread_seq ON zaikit_messages(thread_id, seq)
     `;
@@ -114,21 +106,51 @@ export function createPostgresMemory({
 
     async getMessages(threadId, options) {
       const limit = options?.limit;
-      const rows =
-        limit != null
-          ? await sql`
-              SELECT id, role, parts, metadata FROM (
-                SELECT id, role, parts, metadata, seq FROM zaikit_messages
-                WHERE thread_id = ${threadId}
-                ORDER BY seq DESC
-                LIMIT ${limit}
-              ) sub ORDER BY seq
-            `
-          : await sql`
-              SELECT id, role, parts, metadata FROM zaikit_messages
-              WHERE thread_id = ${threadId}
-              ORDER BY seq
-            `;
+      const before = options?.before;
+
+      let cursorSeq: number | null = null;
+      if (before != null) {
+        const [cursorRow] = await sql`
+          SELECT seq FROM zaikit_messages
+          WHERE id = ${before} AND thread_id = ${threadId}
+        `;
+        if (!cursorRow) return [];
+        cursorSeq = cursorRow.seq as number;
+      }
+
+      let rows: postgres.RowList<postgres.Row[]>;
+      if (cursorSeq != null && limit != null) {
+        rows = await sql`
+          SELECT id, role, parts, metadata FROM (
+            SELECT id, role, parts, metadata, seq FROM zaikit_messages
+            WHERE thread_id = ${threadId} AND seq < ${cursorSeq}
+            ORDER BY seq DESC
+            LIMIT ${limit}
+          ) sub ORDER BY seq
+        `;
+      } else if (cursorSeq != null) {
+        rows = await sql`
+          SELECT id, role, parts, metadata FROM zaikit_messages
+          WHERE thread_id = ${threadId} AND seq < ${cursorSeq}
+          ORDER BY seq
+        `;
+      } else if (limit != null) {
+        rows = await sql`
+          SELECT id, role, parts, metadata FROM (
+            SELECT id, role, parts, metadata, seq FROM zaikit_messages
+            WHERE thread_id = ${threadId}
+            ORDER BY seq DESC
+            LIMIT ${limit}
+          ) sub ORDER BY seq
+        `;
+      } else {
+        rows = await sql`
+          SELECT id, role, parts, metadata FROM zaikit_messages
+          WHERE thread_id = ${threadId}
+          ORDER BY seq
+        `;
+      }
+
       return rows.map(
         (row): UIMessage => ({
           id: row.id,

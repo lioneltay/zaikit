@@ -118,16 +118,32 @@ export function createMongoMemory({
 
     async getMessages(threadId, options) {
       const limit = options?.limit;
-      const docs =
-        limit != null
-          ? (
-              await messages
-                .find({ threadId })
-                .sort({ seq: -1 })
-                .limit(limit)
-                .toArray()
-            ).reverse()
-          : await messages.find({ threadId }).sort({ seq: 1 }).toArray();
+      const before = options?.before;
+
+      let cursorSeq: number | null = null;
+      if (before != null) {
+        const cursorDoc = await messages.findOne({
+          messageId: before,
+          threadId,
+        });
+        if (!cursorDoc) return [];
+        cursorSeq = cursorDoc.seq;
+      }
+
+      const filter: Record<string, unknown> = { threadId };
+      if (cursorSeq != null) {
+        filter.seq = { $lt: cursorSeq };
+      }
+
+      let docs: MessageDoc[];
+      if (limit != null) {
+        docs = (
+          await messages.find(filter).sort({ seq: -1 }).limit(limit).toArray()
+        ).reverse();
+      } else {
+        docs = await messages.find(filter).sort({ seq: 1 }).toArray();
+      }
+
       return docs.map(
         (doc): UIMessage => ({
           id: doc.messageId,

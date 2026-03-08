@@ -10,7 +10,7 @@ import {
 import { AgentProvider } from "@zaikit/react";
 import { DevTools } from "@zaikit/sandbox/devtools";
 import type { UIMessage } from "ai";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgentChat } from "./AgentChat";
 import ConversationList from "./ConversationList";
 import { ToolRenderers } from "./tools";
@@ -24,8 +24,9 @@ const DRAWER_COLLAPSED_WIDTH = 0;
 
 export default function App() {
   const [threads, setThreads] = useState<Thread[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
-  const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("threadId"),
+  );
   const [showDebug, setShowDebug] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [userId, setUserId] = useState(
@@ -36,17 +37,6 @@ export default function App() {
     setUserId(id);
     localStorage.setItem("userId", id);
   };
-  const initialThreadId = useRef(
-    new URLSearchParams(window.location.search).get("threadId"),
-  );
-
-  const handleSelectThread = useCallback(async (id: string) => {
-    const msgs = await trpc.thread.getMessages.query({ threadId: id });
-    // tRPC serialization makes some required UIMessage properties optional,
-    // creating a structural mismatch with the AI SDK's UIMessage type.
-    setInitialMessages(msgs as unknown as UIMessage[]);
-    setActiveThreadId(id);
-  }, []);
 
   // Persist activeThreadId in URL
   useEffect(() => {
@@ -59,25 +49,24 @@ export default function App() {
     history.replaceState(null, "", url.toString());
   }, [activeThreadId]);
 
-  // Load threads; restore from URL or start a fresh chat
+  // Load threads; if no thread active yet, start a fresh chat
+  const activeThreadIdRef = useRef(activeThreadId);
+  activeThreadIdRef.current = activeThreadId;
   useEffect(() => {
     trpc.thread.list.query().then((loadedThreads) => {
       setThreads(loadedThreads);
-      const urlThreadId = initialThreadId.current;
-      if (urlThreadId && loadedThreads.some((t) => t.id === urlThreadId)) {
-        handleSelectThread(urlThreadId);
-      } else {
-        // Always land on a fresh chat
+      if (!activeThreadIdRef.current) {
         setActiveThreadId(crypto.randomUUID());
-        setInitialMessages([]);
       }
     });
-  }, [handleSelectThread]);
+  }, []);
+
+  const handleSelectThread = (id: string) => {
+    setActiveThreadId(id);
+  };
 
   const handleCreateThread = () => {
-    const id = crypto.randomUUID();
-    setActiveThreadId(id);
-    setInitialMessages([]);
+    setActiveThreadId(crypto.randomUUID());
   };
 
   const handleDeleteThread = async (id: string) => {
@@ -85,7 +74,6 @@ export default function App() {
     setThreads((prev) => prev.filter((t) => t.id !== id));
     if (activeThreadId === id) {
       setActiveThreadId(null);
-      setInitialMessages([]);
     }
   };
 
@@ -145,14 +133,14 @@ export default function App() {
           )}
           {activeThreadId ? (
             <AgentProvider
-              key={activeThreadId}
               api="http://localhost:7301/api/chat"
               threadId={activeThreadId}
-              initialMessages={initialMessages}
+              onThreadChange={setActiveThreadId}
               body={{ userId }}
-              fetchMessages={(threadId) =>
+              fetchMessages={(threadId, opts) =>
                 trpc.thread.getMessages.query({
                   threadId,
+                  before: opts?.before,
                 }) as unknown as Promise<UIMessage[]>
               }
               onFinish={async () => {

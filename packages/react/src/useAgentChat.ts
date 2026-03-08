@@ -7,7 +7,7 @@ import {
 } from "@zaikit/utils";
 import type { UIMessage } from "ai";
 import { lastAssistantMessageIsCompleteWithToolCalls } from "ai";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
 import { AgentChatTransport } from "./agent-chat-transport";
 import type { FrontendToolRegistration } from "./types";
 
@@ -18,8 +18,6 @@ import type { FrontendToolRegistration } from "./types";
 export type UseAgentChatOptions = {
   api: string;
   threadId: string;
-  initialMessages: UIMessage[];
-  fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
   onFinish?: () => void;
   body?: Record<string, unknown>;
   getFrontendTools: () => FrontendToolRegistration[];
@@ -76,13 +74,14 @@ export function buildSendBody(
 export function useAgentChat({
   api,
   threadId,
-  initialMessages,
-  fetchMessages,
   onFinish,
   body: extraBody,
   getFrontendTools,
   isFrontendTool,
 }: UseAgentChatOptions) {
+  const threadIdRef = useRef(threadId);
+  threadIdRef.current = threadId;
+
   const transport = useMemo(
     () =>
       new AgentChatTransport({
@@ -90,17 +89,17 @@ export function useAgentChat({
         prepareSendMessagesRequest: ({ messages }) =>
           buildSendBody(messages, {
             extraBody,
-            threadId,
+            threadId: threadIdRef.current,
             getFrontendTools,
             isFrontendTool,
           }),
       }),
-    [api, threadId, extraBody, getFrontendTools, isFrontendTool],
+    [api, extraBody, getFrontendTools, isFrontendTool],
   );
 
   const chat = useChat({
+    id: threadId,
     transport,
-    messages: initialMessages,
     onFinish: () => onFinish?.(),
     sendAutomaticallyWhen: lastAssistantMessageIsCompleteWithToolCalls,
   });
@@ -126,17 +125,13 @@ export function useAgentChat({
       await chat.resumeStream({
         body: {
           ...extraBody,
-          threadId,
+          threadId: threadIdRef.current,
           resume: { toolCallId, data },
           frontendTools,
         },
       });
-      if (fetchMessages) {
-        const msgs = await fetchMessages(threadId);
-        chat.setMessages(msgs);
-      }
     },
-    [chat, threadId, extraBody, fetchMessages, getFrontendTools],
+    [chat, extraBody, getFrontendTools],
   );
 
   return {

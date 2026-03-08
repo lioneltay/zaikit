@@ -1,5 +1,5 @@
 import { Box } from "@mui/material";
-import { useLoaderData, useParams } from "@tanstack/react-router";
+import { useParams } from "@tanstack/react-router";
 import { AgentProvider } from "@zaikit/react";
 import type { UIMessage } from "ai";
 import { useEffect, useMemo, useState } from "react";
@@ -17,8 +17,6 @@ export function ThreadView() {
     agentName: string;
     threadId: string;
   };
-  const initialMessages = (useLoaderData({ strict: false }) ??
-    []) as UIMessage[];
 
   const [showInfoDialog, setShowInfoDialog] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
@@ -52,10 +50,8 @@ export function ThreadView() {
         sx={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}
       >
         <AgentProvider
-          key={`${agentName}-${threadId}`}
           api={`${BASE}/agents/${agentName}/chat`}
           threadId={threadId}
-          initialMessages={initialMessages}
           fetchMessages={(tid) =>
             fetchMessages(agentName, tid) as Promise<UIMessage[]>
           }

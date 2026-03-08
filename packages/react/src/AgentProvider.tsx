@@ -1,7 +1,14 @@
 import { getToolName } from "@zaikit/utils";
 import type { UIMessage } from "ai";
 import type React from "react";
-import { createContext, useCallback, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   ToolErrorBoundary,
   type ToolErrorFallbackProps,
@@ -19,21 +26,53 @@ export const AgentContext = createContext<AgentContextValue | null>(null);
 
 export type AgentProviderProps = {
   api: string;
-  threadId: string;
-  initialMessages: UIMessage[];
-  fetchMessages?: (threadId: string) => Promise<UIMessage[]>;
+  fetchMessages?: (
+    threadId: string,
+    opts?: { before?: string },
+  ) => Promise<UIMessage[]>;
+  onThreadChange?: (threadId: string) => void;
   onFinish?: () => void;
   body?: Record<string, unknown>;
   /** Custom fallback component rendered when a tool renderer throws. Defaults to `null` (render nothing). */
   toolErrorFallback?: React.ComponentType<ToolErrorFallbackProps> | null;
   children: React.ReactNode;
-};
+} & (
+  | { threadId: string; initialThreadId?: never } // controlled
+  | { initialThreadId: string; threadId?: never } // uncontrolled
+);
 
-export function AgentProvider({
-  children,
-  toolErrorFallback,
-  ...chatOptions
-}: AgentProviderProps) {
+export function AgentProvider(props: AgentProviderProps) {
+  const {
+    api,
+    fetchMessages,
+    onThreadChange,
+    onFinish,
+    body,
+    toolErrorFallback,
+    children,
+  } = props;
+
+  const isControlled = "threadId" in props && props.threadId !== undefined;
+  const [internalThreadId, setInternalThreadId] = useState(
+    () => (isControlled ? props.threadId : props.initialThreadId) as string,
+  );
+  const activeThreadId = isControlled
+    ? (props.threadId as string)
+    : internalThreadId;
+
+  const setThreadId = useCallback(
+    (id: string) => {
+      if (!isControlled) setInternalThreadId(id);
+      onThreadChange?.(id);
+    },
+    [isControlled, onThreadChange],
+  );
+
+  const createNewThread = useCallback(() => {
+    const id = crypto.randomUUID();
+    setThreadId(id);
+    return id;
+  }, [setThreadId]);
   const frontendToolsRef = useRef(new Map<string, FrontendToolRegistration>());
 
   const getFrontendTools = useCallback(
@@ -46,10 +85,63 @@ export function AgentProvider({
   );
 
   const chat = useAgentChat({
-    ...chatOptions,
+    api,
+    threadId: activeThreadId,
+    onFinish,
+    body,
     getFrontendTools,
     isFrontendTool,
   });
+
+  // Load messages on mount and on thread change
+  const fetchMessagesRef = useRef(fetchMessages);
+  fetchMessagesRef.current = fetchMessages;
+  const setMessagesRef = useRef(chat.setMessages);
+  setMessagesRef.current = chat.setMessages;
+
+  const switchCountRef = useRef(0);
+  const rawMessagesRef = useRef(chat.rawMessages);
+  rawMessagesRef.current = chat.rawMessages;
+  const [isLoadingMessages, setIsLoadingMessages] = useState(!!fetchMessages);
+
+  useEffect(() => {
+    const fetch = fetchMessagesRef.current;
+    if (fetch) {
+      const switchId = ++switchCountRef.current;
+      setIsLoadingMessages(true);
+      setMessagesRef.current([]);
+      fetch(activeThreadId)
+        .then((msgs) => {
+          if (switchCountRef.current !== switchId) return;
+          setMessagesRef.current(msgs);
+        })
+        .catch(() => {
+          // fetchMessages rejected — messages stay empty for this thread
+        })
+        .finally(() => {
+          if (switchCountRef.current === switchId) {
+            setIsLoadingMessages(false);
+          }
+        });
+    }
+  }, [activeThreadId]);
+
+  const activeThreadIdRef = useRef(activeThreadId);
+  activeThreadIdRef.current = activeThreadId;
+
+  const loadOlderMessages = useCallback(async () => {
+    const fetch = fetchMessagesRef.current;
+    if (!fetch) return;
+    const currentMessages = rawMessagesRef.current;
+    const oldest = currentMessages[0];
+    if (!oldest) return;
+    const threadAtStart = activeThreadIdRef.current;
+    const older = await fetch(threadAtStart, { before: oldest.id });
+    if (activeThreadIdRef.current !== threadAtStart) return; // thread changed during fetch
+    if (older.length > 0) {
+      setMessagesRef.current([...older, ...rawMessagesRef.current]);
+    }
+  }, []);
 
   const registryRef = useRef(new Map<string, { render: ToolRenderFn }>());
   const [, setRegistryVersion] = useState(0);
@@ -160,6 +252,11 @@ export function AgentProvider({
 
   const value: AgentContextValue = useMemo(
     () => ({
+      threadId: activeThreadId,
+      setThreadId,
+      createNewThread,
+      loadOlderMessages,
+      isLoadingMessages,
       messages: chat.messages,
       rawMessages: chat.rawMessages,
       status: chat.status,
@@ -174,6 +271,11 @@ export function AgentProvider({
       getRegisteredRenderers,
     }),
     [
+      activeThreadId,
+      setThreadId,
+      createNewThread,
+      loadOlderMessages,
+      isLoadingMessages,
       chat.messages,
       chat.rawMessages,
       chat.status,

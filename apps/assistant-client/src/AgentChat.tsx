@@ -125,6 +125,7 @@ export function AgentChat({
     sendMessage,
     status,
     hasSuspendedTools,
+    isLoadingMessages,
     renderToolPart,
   } = useAgent();
   const [input, setInput] = useState("");
@@ -166,7 +167,7 @@ export function AgentChat({
               flex: messages.length === 0 ? 1 : undefined,
             }}
           >
-            {messages.length === 0 && !isLoading && (
+            {messages.length === 0 && !isLoading && !isLoadingMessages && (
               <Box
                 sx={{
                   flex: 1,

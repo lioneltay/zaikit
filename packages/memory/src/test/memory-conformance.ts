@@ -234,6 +234,73 @@ export function memoryConformanceTests<TContext = void>({
         expect(msgs[0].id).toBe("m1");
       });
 
+      it("getMessages with before cursor returns messages before the cursor", async () => {
+        await memory.createThread("t1");
+        for (let i = 1; i <= 5; i++) {
+          await memory.addMessage("t1", {
+            id: `m${i}`,
+            role: i % 2 === 1 ? "user" : "assistant",
+            parts: [{ type: "text", text: `msg ${i}` }],
+          });
+        }
+
+        const msgs = await memory.getMessages("t1", { before: "m4" });
+        expect(msgs).toHaveLength(3);
+        expect(msgs[0].id).toBe("m1");
+        expect(msgs[1].id).toBe("m2");
+        expect(msgs[2].id).toBe("m3");
+      });
+
+      it("getMessages with before + limit returns limited messages before cursor", async () => {
+        await memory.createThread("t1");
+        for (let i = 1; i <= 5; i++) {
+          await memory.addMessage("t1", {
+            id: `m${i}`,
+            role: i % 2 === 1 ? "user" : "assistant",
+            parts: [{ type: "text", text: `msg ${i}` }],
+          });
+        }
+
+        const msgs = await memory.getMessages("t1", {
+          before: "m5",
+          limit: 2,
+        });
+        expect(msgs).toHaveLength(2);
+        expect(msgs[0].id).toBe("m3");
+        expect(msgs[1].id).toBe("m4");
+      });
+
+      it("getMessages with before at first message returns empty", async () => {
+        await memory.createThread("t1");
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "user",
+          parts: [{ type: "text", text: "first" }],
+        });
+        await memory.addMessage("t1", {
+          id: "m2",
+          role: "assistant",
+          parts: [{ type: "text", text: "second" }],
+        });
+
+        const msgs = await memory.getMessages("t1", { before: "m1" });
+        expect(msgs).toHaveLength(0);
+      });
+
+      it("getMessages with nonexistent before cursor returns empty", async () => {
+        await memory.createThread("t1");
+        await memory.addMessage("t1", {
+          id: "m1",
+          role: "user",
+          parts: [{ type: "text", text: "hello" }],
+        });
+
+        const msgs = await memory.getMessages("t1", {
+          before: "nonexistent",
+        });
+        expect(msgs).toHaveLength(0);
+      });
+
       it("getMessages with no options returns all (backwards compat)", async () => {
         await memory.createThread("t1");
         await memory.addMessage("t1", {
