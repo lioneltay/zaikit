@@ -12,7 +12,8 @@
     "lint:fix": "biome check . --write",
     "format": "biome format .",
     "format:fix": "biome format . --write",
-    "release": "bash scripts/release.sh"
+    "release": "bash scripts/release.sh",
+    "reset-services": "docker compose down -v && docker compose up -d"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

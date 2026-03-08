@@ -140,6 +140,13 @@ export function userMessage(text: string, id?: string): UIMessage {
   };
 }
 
+/** Drain a ReadableStream, discarding all chunks. */
+export async function drain(stream: ReadableStream<unknown>): Promise<void> {
+  for await (const _ of stream as any) {
+    // consume
+  }
+}
+
 /** Drain a streaming Response, return parsed messages from memory. */
 export async function chatAndConsume(
   agent: Agent,

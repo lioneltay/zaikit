@@ -2,8 +2,13 @@
 
 ## Brain Dump
 
-- Home Page
-- Blog page
+- [x] Home Page
+- [x] Blog page
+
+home page fixes:
+
+- the code copy button doesnt do anything? can the 3 dots also have the correct colors for mac?
+- The cards should have more contrast somehow, they blend in to the background too much
 
 - creating github issues for docs via fumadocs?
 - note taker skill?
@@ -12,6 +17,10 @@
 - allow ai to take video demos for doc site
 - image generator integration?
 
+- Codegen assumes a single agent at the moment? Or it points to an agent so you can generate as many as you want, maybe a cleaner config file would be nicer than just a cli
+
+- vercel devtools middleware
+
 ## P0 — Polish & Foundations
 
 Things that fix or complete existing work. Do these first.
@@ -19,7 +28,7 @@ Things that fix or complete existing work. Do these first.
 - [x] Make sure renderers have correct state (add a suspend state?)
 - [ ] Configuration demo — ability to select middlewares
 - [ ] Docs server RAG
-- [ ] better demo app using all the features
+- [x] better demo app using all the features
 
 ## P1 — Core Capabilities
 
@@ -75,6 +84,11 @@ Features that expand what you can build with the framework.
 ## P3 — Expand
 
 Integrations, advanced features, and exploratory ideas.
+
+### Typed Metadata
+
+- [ ] Agent-level metadata schema (Zod) for `writeMetadata()` — currently untyped `Record<string, unknown>`
+- [ ] Codegen extraction of metadata schema for typed `message.metadata` on the client
 
 ### DX
 

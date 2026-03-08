@@ -2,10 +2,12 @@ import AddIcon from "@mui/icons-material/Add";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import ChevronLeftIcon from "@mui/icons-material/ChevronLeft";
 import DeleteIcon from "@mui/icons-material/Delete";
+import PersonIcon from "@mui/icons-material/Person";
 import {
   Box,
   Button,
   IconButton,
+  InputBase,
   List,
   ListItemButton,
   ListItemIcon,
@@ -22,6 +24,8 @@ type ConversationListProps = {
   onCreate: () => void;
   onDelete: (id: string) => void;
   onCollapse: () => void;
+  userId: string;
+  onUserIdChange: (id: string) => void;
 };
 
 export default function ConversationList({
@@ -31,6 +35,8 @@ export default function ConversationList({
   onCreate,
   onDelete,
   onCollapse,
+  userId,
+  onUserIdChange,
 }: ConversationListProps) {
   return (
     <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
@@ -147,6 +153,42 @@ export default function ConversationList({
           </ListItemButton>
         ))}
       </List>
+
+      <Box
+        sx={{
+          px: 1.5,
+          py: 1.5,
+          borderTop: "1px solid rgba(255,255,255,0.1)",
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+          <PersonIcon sx={{ fontSize: 16, color: "rgba(255,255,255,0.4)" }} />
+          <Typography
+            sx={{ fontSize: 11, color: "rgba(255,255,255,0.4)", flexShrink: 0 }}
+          >
+            User ID
+          </Typography>
+        </Box>
+        <InputBase
+          value={userId}
+          onChange={(e) => onUserIdChange(e.target.value)}
+          fullWidth
+          sx={{
+            mt: 0.5,
+            px: 1,
+            py: 0.25,
+            fontSize: 13,
+            color: "rgba(255,255,255,0.85)",
+            bgcolor: "rgba(255,255,255,0.06)",
+            borderRadius: "6px",
+            border: "1px solid rgba(255,255,255,0.1)",
+            "&:hover": { borderColor: "rgba(255,255,255,0.2)" },
+            "& .MuiInputBase-input": {
+              padding: 0,
+            },
+          }}
+        />
+      </Box>
     </Box>
   );
 }

@@ -464,7 +464,9 @@ const get_recent_activity = createTool({
 // ---------------------------------------------------------------------------
 
 export const agent = createAgent({
+  name: "acme-assistant",
   model,
+  telemetry: true,
   context: z.object({
     userId: z.string(),
     orgId: z.string(),

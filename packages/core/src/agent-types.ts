@@ -5,6 +5,7 @@ import type {
   ModelMessage,
   PrepareStepResult,
   StepResult,
+  TelemetrySettings,
   Tool,
   ToolSet,
   UIMessage,
@@ -133,6 +134,8 @@ export type CreateAgentOptions<
 > = ([C] extends [undefined]
   ? { context?: never }
   : { context: z.ZodType<C> }) & {
+  /** Agent name. Used as the default `functionId` for telemetry. */
+  name?: string;
   model: LanguageModel;
   system?: string | ((context: C) => string | Promise<string>);
   tools?: T & ValidateMappedTools<T, C>;
@@ -152,6 +155,16 @@ export type CreateAgentOptions<
     | Promise<{ output?: unknown } | undefined>
     | { output?: unknown }
     | undefined;
+
+  /**
+   * Enable AI SDK telemetry. Pass `true` to enable with defaults (uses
+   * agent `name` as `functionId`), or pass a `TelemetrySettings` object
+   * for full control.
+   *
+   * Requires OpenTelemetry to be set up in the host application.
+   * @see https://ai-sdk.dev/docs/ai-sdk-core/telemetry
+   */
+  telemetry?: boolean | TelemetrySettings;
 } & DataCallbacks;
 
 // --- Frontend tool types ---
@@ -169,24 +182,17 @@ export type ChatOptions<C = undefined, T extends ToolSet = ToolSet> = ([
 ] extends [undefined]
   ? { context?: never }
   : { context: C }) &
-  DataCallbacks<T> &
-  (
-    | {
-        threadId: string;
-        message: UIMessage;
-        ownerId?: string;
-        frontendTools?: FrontendToolDef[];
-      }
-    | {
-        threadId: string;
-        resume: { toolCallId: string; data: unknown };
-        frontendTools?: FrontendToolDef[];
-      }
-    | {
-        threadId: string;
-        toolOutputs: { toolCallId: string; output: unknown }[];
-        frontendTools?: FrontendToolDef[];
-      }
+  DataCallbacks<T> & {
+    threadId: string;
+    /** User ID. Auto-injected as `metadata.userId` into telemetry when present. */
+    userId?: string;
+    frontendTools?: FrontendToolDef[];
+    /** Per-request telemetry override. `true`/`false` to enable/disable, or an object to merge with agent defaults. */
+    telemetry?: boolean | Partial<TelemetrySettings>;
+  } & (
+    | { message: UIMessage }
+    | { resume: { toolCallId: string; data: unknown } }
+    | { toolOutputs: { toolCallId: string; output: unknown }[] }
   );
 
 // --- Stream / Generate types ---
@@ -208,9 +214,13 @@ export type StreamOptions<C = undefined, T extends ToolSet = ToolSet> = ([
     messages: UIMessage[];
     model?: LanguageModel;
     threadId?: string;
+    /** User ID. Auto-injected as `metadata.userId` into telemetry when present. */
+    userId?: string;
     maxSteps?: number;
     output?: z.ZodType;
     frontendTools?: FrontendToolDef[];
+    /** Per-request telemetry override. `true`/`false` to enable/disable, or an object to merge with agent defaults. */
+    telemetry?: boolean | Partial<TelemetrySettings>;
   };
 
 export type StreamResult = {
@@ -225,8 +235,12 @@ export type BaseGenerateOptions<C = undefined, T extends ToolSet = ToolSet> = ([
   : { context: C }) &
   DataCallbacks<T> & {
     model?: LanguageModel;
+    /** User ID. Auto-injected as `metadata.userId` into telemetry when present. */
+    userId?: string;
     maxSteps?: number;
     frontendTools?: FrontendToolDef[];
+    /** Per-request telemetry override. `true`/`false` to enable/disable, or an object to merge with agent defaults. */
+    telemetry?: boolean | Partial<TelemetrySettings>;
   } & ({ prompt: string } | { messages: UIMessage[] });
 
 export type GenerateOptions<
@@ -243,6 +257,7 @@ export type GenerateResult<OUTPUT extends z.ZodType = never> = AgentResult & {
 // --- Agent type ---
 
 export type Agent<T extends ToolSet = ToolSet, C = undefined> = {
+  name: string | undefined;
   tools: T;
   memory: Memory | undefined;
   model: LanguageModel;

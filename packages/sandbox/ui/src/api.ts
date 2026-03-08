@@ -29,7 +29,7 @@ export type AgentDetail = {
 export type Thread = {
   id: string;
   title: string | null;
-  ownerId: string | null;
+  userId: string | null;
   createdAt: string;
   updatedAt: string;
 };

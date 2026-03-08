@@ -95,7 +95,7 @@ export function createSandboxExpress(
       const name = param(req, "name");
       const memory = getMemory(name);
       if (!memory) return res.status(404).json({ error: "Agent not found" });
-      res.json(await memory.listThreads({ ownerId: name }));
+      res.json(await memory.listThreads({ userId: name }));
     },
   );
 

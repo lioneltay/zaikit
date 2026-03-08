@@ -1,3 +1,4 @@
+import "./instrumentation";
 import { serve } from "@hono/node-server";
 import { fetchRequestHandler } from "@trpc/server/adapters/fetch";
 import { createSandboxHono } from "@zaikit/sandbox/hono";
@@ -30,11 +31,13 @@ app.all("/trpc/*", async (c) => {
 // Streaming chat endpoint
 app.post("/api/chat", async (c) => {
   const body = await c.req.json();
-  // In a real app, context would come from auth middleware / session.
+  // In a real app, context and userId would come from auth middleware / session.
+  const userId = body.userId ?? "user-123";
   return agent.chat({
     ...body,
+    userId,
     context: {
-      userId: "user-123",
+      userId: userId,
       orgId: "acme",
       orgName: "Acme Corp",
     },

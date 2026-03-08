@@ -9,8 +9,8 @@ export type MiddlewareContext = {
   system: string | undefined;
   /** Mutable: tools available to the LLM. */
   tools: ToolSet;
-  /** Read-only: thread identifier. */
-  readonly threadId: string;
+  /** Read-only: thread identifier (present when called via chat or when explicitly provided). */
+  readonly threadId?: string;
   /** Abort the response with an error message. Throws internally. */
   abort: (message: string) => never;
 };

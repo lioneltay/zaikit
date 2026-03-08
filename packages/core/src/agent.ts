@@ -15,6 +15,7 @@ import {
   Output,
   type StepResult,
   streamText,
+  type TelemetrySettings,
   type ToolSet,
   tool,
   type UIMessage,
@@ -45,6 +46,7 @@ import {
   type MiddlewareContext,
 } from "./middleware/core";
 import { isSuspendResult } from "./suspend";
+import { buildTelemetry } from "./telemetry";
 import { getToolInjection, runWithToolInjection } from "./tool-injection";
 import {
   createWriteData,
@@ -89,6 +91,7 @@ export function createAgent<
   options: CreateAgentOptions<T, C>,
 ): Agent<ResolveToolsConfig<T> & ToolSet, C> {
   const {
+    name,
     model,
     system,
     memory,
@@ -101,6 +104,15 @@ export function createAgent<
     onToolData: agentOnToolData,
     onMetadata: agentOnMetadata,
   } = options;
+
+  // Resolve telemetry: boolean → TelemetrySettings.
+  // At agent level, `true` enables with name as functionId; `false` means no telemetry.
+  const agentTelemetry: TelemetrySettings | undefined =
+    options.telemetry === true
+      ? { isEnabled: true, functionId: name }
+      : options.telemetry === false
+        ? undefined
+        : options.telemetry;
   const contextSchema = optContext(options) as z.ZodType | undefined;
   const resolvedTools = resolveToolEntries(options.tools ?? {});
   const hookedTools = wrapToolsWithHooks(resolvedTools, {
@@ -143,6 +155,7 @@ export function createAgent<
     callbacks?: {
       maxSteps?: number;
       output?: Output.Output;
+      telemetry?: TelemetrySettings;
       onResult?: (result: AgentResult) => void;
       onError?: (err: unknown) => void;
       onData?: (part: WriteDataPart) => void;
@@ -210,6 +223,7 @@ export function createAgent<
                   toolChoice: overrides.toolChoice,
                   providerOptions: overrides.providerOptions,
                   output: callbacks?.output,
+                  experimental_telemetry: callbacks?.telemetry,
                 });
 
                 const uiStream = result.toUIMessageStream({
@@ -363,10 +377,18 @@ export function createAgent<
       : undefined;
 
     // Compose middleware around core loop
+    const telemetry = buildTelemetry({
+      defaults: agentTelemetry,
+      overrides: opts.telemetry,
+      agentName: name,
+      threadId: opts.threadId,
+      userId: opts.userId,
+    });
     const chain = composeMiddleware(middleware, (ctx) =>
       coreAgentStream(ctx, {
         maxSteps: opts.maxSteps,
         output: outputSpec,
+        telemetry,
         onResult: resolveResult,
         onError: rejectResult,
         onData: mergeCallbacks(agentOnData, opts.onData),
@@ -382,7 +404,7 @@ export function createAgent<
       model: opts.model ?? model,
       system: resolvedSystem,
       tools: mergedTools,
-      threadId: opts.threadId ?? crypto.randomUUID(),
+      threadId: opts.threadId,
       abort: createAbort(),
     };
 
@@ -431,7 +453,11 @@ export function createAgent<
   }
 
   // Fire-and-forget title generation
-  async function generateThreadTitle(threadId: string, userMessage: UIMessage) {
+  async function generateThreadTitle(
+    threadId: string,
+    userMessage: UIMessage,
+    userId?: string,
+  ) {
     try {
       if (!memory) return;
       const thread = await memory.getThread(threadId);
@@ -445,11 +471,22 @@ export function createAgent<
         .join(" ");
       if (!userText.trim()) return;
 
+      const titleFunctionId = agentTelemetry?.functionId
+        ? `${agentTelemetry.functionId}-title-generation`
+        : "title-generation";
+
       const titleResult = await generateText({
         model,
         system:
           "Generate a concise 3-6 word title for this conversation based on the user's message. Return only the title, no quotes or punctuation.",
         prompt: userText,
+        experimental_telemetry: buildTelemetry({
+          defaults: agentTelemetry,
+          overrides: { functionId: titleFunctionId },
+          agentName: name,
+          threadId,
+          userId,
+        }),
       });
       const title = titleResult.text.trim();
       if (title) {
@@ -479,11 +516,21 @@ export function createAgent<
     opts: {
       threadId: string;
       resume: { toolCallId: string; data: unknown };
+      userId?: string;
       frontendTools?: FrontendToolDef[];
+      telemetry?: boolean | Partial<TelemetrySettings>;
       context?: unknown;
     } & DataCallbacks,
   ): Promise<Response> {
-    const { threadId, resume, frontendTools, context, ...callbacks } = opts;
+    const {
+      threadId,
+      resume,
+      userId,
+      frontendTools,
+      telemetry,
+      context,
+      ...callbacks
+    } = opts;
     if (!memory) {
       throw new Error(
         "handleResume requires memory to be configured on the agent",
@@ -650,7 +697,9 @@ export function createAgent<
         const sr = await agentStream({
           messages: continuationMessages,
           threadId,
+          userId,
           frontendTools,
+          telemetry,
           context,
           ...callbacks,
         } as StreamOptions<C>);
@@ -688,12 +737,21 @@ export function createAgent<
     opts: {
       threadId: string;
       toolOutputs: { toolCallId: string; output: unknown }[];
+      userId?: string;
       frontendTools?: FrontendToolDef[];
+      telemetry?: boolean | Partial<TelemetrySettings>;
       context?: unknown;
     } & DataCallbacks,
   ): Promise<Response> {
-    const { threadId, toolOutputs, frontendTools, context, ...callbacks } =
-      opts;
+    const {
+      threadId,
+      toolOutputs,
+      userId,
+      frontendTools,
+      telemetry,
+      context,
+      ...callbacks
+    } = opts;
 
     if (!memory) {
       throw new Error(
@@ -742,7 +800,9 @@ export function createAgent<
     const sr = await agentStream({
       messages: allMessages,
       threadId,
+      userId,
       frontendTools,
+      telemetry,
       context,
       ...callbacks,
     } as StreamOptions<C>);
@@ -753,6 +813,7 @@ export function createAgent<
   // while Agent<T, C> exposes StreamOptions<C, T> (typed onToolData).
   // The typed narrowing is purely at the consumer side — runtime is identical.
   return {
+    name,
     tools: resolvedTools as ResolveToolsConfig<T> & ToolSet,
     memory,
     model,
@@ -770,14 +831,24 @@ export function createAgent<
         throw new Error("chat() requires memory to be configured on the agent");
       }
 
-      const { frontendTools, onData, onToolData, onMetadata } = options;
+      const {
+        threadId,
+        userId,
+        frontendTools,
+        telemetry: requestTelemetry,
+        onData,
+        onToolData,
+        onMetadata,
+      } = options;
       const context = optContext(options);
 
       if ("resume" in options) {
         return handleResume({
-          threadId: options.threadId,
+          threadId,
           resume: options.resume,
+          userId,
           frontendTools,
+          telemetry: requestTelemetry,
           context,
           onData,
           onToolData,
@@ -787,9 +858,11 @@ export function createAgent<
 
       if ("toolOutputs" in options) {
         return handleToolOutputs({
-          threadId: options.threadId,
+          threadId,
           toolOutputs: options.toolOutputs,
+          userId,
           frontendTools,
+          telemetry: requestTelemetry,
           context,
           onData,
           onToolData,
@@ -797,23 +870,25 @@ export function createAgent<
         });
       }
 
-      const { threadId, message, ownerId } = options;
+      const { message } = options;
 
       const thread = await memory.getThread(threadId);
       if (!thread) {
-        await memory.createThread(threadId, undefined, ownerId);
+        await memory.createThread(threadId, undefined, userId);
       }
 
       await memory.addMessage(threadId, message);
       const messages = await memory.getMessages(threadId);
 
       // Title generation runs in parallel — fire-and-forget
-      generateThreadTitle(threadId, message);
+      generateThreadTitle(threadId, message, userId);
 
       const sr = await agentStream({
         messages,
         threadId,
+        userId,
         frontendTools,
+        telemetry: requestTelemetry,
         context,
         onData,
         onToolData,
@@ -839,10 +914,12 @@ export function createAgent<
       const { stream, result } = await agentStream({
         messages,
         model: opts.model,
+        userId: opts.userId,
         maxSteps: opts.maxSteps ?? 10,
         output: opts.output,
         frontendTools: opts.frontendTools,
         context: optContext(opts),
+        telemetry: opts.telemetry,
         onData: opts.onData,
         onToolData: opts.onToolData,
         onMetadata: opts.onMetadata,

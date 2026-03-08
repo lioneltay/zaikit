@@ -10,7 +10,7 @@ type MongoMemoryOptions = {
 type ThreadDoc = {
   _id: string;
   title: string | null;
-  ownerId: string | null;
+  userId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -41,7 +41,7 @@ export function createMongoMemory({
   const counters = db.collection<CounterDoc>("zaikit_counters");
 
   async function initialize() {
-    await threads.createIndex({ ownerId: 1 });
+    await threads.createIndex({ userId: 1 });
     await messages.createIndex({ messageId: 1, threadId: 1 }, { unique: true });
     await messages.createIndex({ threadId: 1, seq: 1 });
   }
@@ -59,7 +59,7 @@ export function createMongoMemory({
     return {
       id: doc._id,
       title: doc.title,
-      ownerId: doc.ownerId,
+      userId: doc.userId,
       createdAt: doc.createdAt,
       updatedAt: doc.updatedAt,
     };
@@ -71,12 +71,12 @@ export function createMongoMemory({
       await client.close();
     },
 
-    async createThread(id, title, ownerId) {
+    async createThread(id, title, userId) {
       const now = new Date();
       const doc: ThreadDoc = {
         _id: id,
         title: title ?? null,
-        ownerId: ownerId ?? null,
+        userId: userId ?? null,
         createdAt: now,
         updatedAt: now,
       };
@@ -91,7 +91,7 @@ export function createMongoMemory({
     },
 
     async listThreads(opts) {
-      const filter = opts?.ownerId ? { ownerId: opts.ownerId } : {};
+      const filter = opts?.userId ? { userId: opts.userId } : {};
       const docs = await threads.find(filter).sort({ updatedAt: -1 }).toArray();
       return docs.map(toThread);
     },
@@ -105,7 +105,7 @@ export function createMongoMemory({
     async updateThread(id, updates) {
       const $set: Record<string, unknown> = { updatedAt: new Date() };
       if (updates.title !== undefined) $set.title = updates.title;
-      if (updates.ownerId !== undefined) $set.ownerId = updates.ownerId;
+      if (updates.userId !== undefined) $set.userId = updates.userId;
 
       const result = await threads.findOneAndUpdate(
         { _id: id },

@@ -1,5 +1,5 @@
 export type { Memory, Thread } from "@zaikit/memory";
-export type { PrepareStepResult, StepResult } from "ai";
+export type { PrepareStepResult, StepResult, TelemetrySettings } from "ai";
 export { convertToModelMessages, streamText } from "ai";
 export { createAgent } from "./agent";
 export type {

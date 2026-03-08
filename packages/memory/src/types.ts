@@ -3,7 +3,7 @@ import type { UIMessage } from "ai";
 export type Thread = {
   id: string;
   title: string | null;
-  ownerId: string | null;
+  userId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -19,13 +19,13 @@ export type Memory = {
   /** Close connections and release resources. */
   close(): Promise<void>;
 
-  createThread(id: string, title?: string, ownerId?: string): Promise<Thread>;
+  createThread(id: string, title?: string, userId?: string): Promise<Thread>;
   getThread(id: string): Promise<Thread | null>;
-  listThreads(opts?: { ownerId?: string }): Promise<Thread[]>;
+  listThreads(opts?: { userId?: string }): Promise<Thread[]>;
   deleteThread(id: string): Promise<void>;
   updateThread(
     id: string,
-    updates: { title?: string; ownerId?: string },
+    updates: { title?: string; userId?: string },
   ): Promise<Thread>;
 
   getMessages(

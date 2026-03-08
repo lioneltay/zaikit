@@ -69,7 +69,7 @@ export function createSandboxHono(
     const name = c.req.param("name");
     const memory = getMemory(name);
     if (!memory) return c.json({ error: "Agent not found" }, 404);
-    return c.json(await memory.listThreads({ ownerId: name }));
+    return c.json(await memory.listThreads({ userId: name }));
   });
 
   app.get("/api/agents/:name/threads/:threadId/messages", async (c) => {

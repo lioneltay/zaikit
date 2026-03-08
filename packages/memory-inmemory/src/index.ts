@@ -9,12 +9,12 @@ export function createInMemoryMemory(): Memory {
     async initialize() {},
     async close() {},
 
-    async createThread(id, title, ownerId) {
+    async createThread(id, title, userId) {
       const now = new Date();
       const thread: Thread = {
         id,
         title: title ?? null,
-        ownerId: ownerId ?? null,
+        userId: userId ?? null,
         createdAt: now,
         updatedAt: now,
       };
@@ -29,8 +29,8 @@ export function createInMemoryMemory(): Memory {
 
     async listThreads(opts) {
       let result = Array.from(threads.values());
-      if (opts?.ownerId) {
-        result = result.filter((t) => t.ownerId === opts.ownerId);
+      if (opts?.userId) {
+        result = result.filter((t) => t.userId === opts.userId);
       }
       // Sort by updatedAt descending (newest first), matching postgres behavior
       result.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
@@ -48,7 +48,7 @@ export function createInMemoryMemory(): Memory {
       const updated: Thread = {
         ...thread,
         ...(updates.title !== undefined ? { title: updates.title } : {}),
-        ...(updates.ownerId !== undefined ? { ownerId: updates.ownerId } : {}),
+        ...(updates.userId !== undefined ? { userId: updates.userId } : {}),
         updatedAt: new Date(),
       };
       threads.set(id, updated);

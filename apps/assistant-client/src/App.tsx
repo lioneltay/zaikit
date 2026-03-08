@@ -17,6 +17,8 @@ import { ToolRenderers } from "./tools";
 import type { Thread } from "./trpc";
 import { trpc } from "./trpc";
 
+const DEFAULT_USER_ID = "user-123";
+
 const DRAWER_WIDTH = 280;
 const DRAWER_COLLAPSED_WIDTH = 0;
 
@@ -26,6 +28,14 @@ export default function App() {
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [showDebug, setShowDebug] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [userId, setUserId] = useState(
+    () => localStorage.getItem("userId") || DEFAULT_USER_ID,
+  );
+
+  const handleUserIdChange = (id: string) => {
+    setUserId(id);
+    localStorage.setItem("userId", id);
+  };
   const initialThreadId = useRef(
     new URLSearchParams(window.location.search).get("threadId"),
   );
@@ -108,6 +118,8 @@ export default function App() {
             onCreate={handleCreateThread}
             onDelete={handleDeleteThread}
             onCollapse={() => setSidebarOpen(false)}
+            userId={userId}
+            onUserIdChange={handleUserIdChange}
           />
         </Drawer>
 
@@ -137,6 +149,7 @@ export default function App() {
               api="http://localhost:7301/api/chat"
               threadId={activeThreadId}
               initialMessages={initialMessages}
+              body={{ userId }}
               fetchMessages={(threadId) =>
                 trpc.thread.getMessages.query({
                   threadId,

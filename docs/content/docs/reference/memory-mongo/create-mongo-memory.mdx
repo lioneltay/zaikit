@@ -68,7 +68,7 @@ Creates the following collections and indexes:
 | --- | --- | --- |
 | `_id` | `string` | Thread ID (typically a UUID) |
 | `title` | `string \| null` | Thread title |
-| `ownerId` | `string \| null` | Optional owner identifier |
+| `userId` | `string \| null` | Optional user identifier |
 | `createdAt` | `Date` | Creation timestamp |
 | `updatedAt` | `Date` | Last update timestamp |
 
@@ -91,7 +91,7 @@ Used internally to generate monotonically increasing sequence numbers for messag
 
 | Collection | Index | Properties |
 | --- | --- | --- |
-| `zaikit_threads` | `{ ownerId: 1 }` | For filtering by owner |
+| `zaikit_threads` | `{ userId: 1 }` | For filtering by user |
 | `zaikit_messages` | `{ messageId: 1, threadId: 1 }` | Unique, for upsert lookups |
 | `zaikit_messages` | `{ threadId: 1, seq: 1 }` | For ordered message retrieval |
 

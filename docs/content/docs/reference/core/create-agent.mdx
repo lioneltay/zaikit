@@ -265,10 +265,11 @@ const mainAgent = createAgent({
 ```ts
 type ChatOptions<C = undefined> =
   ([C] extends [undefined] ? { context?: never } : { context: C }) &
+  { threadId: string; userId?: string; frontendTools?: FrontendToolDef[]; telemetry?: boolean | Partial<TelemetrySettings> } &
   (
-    | { threadId: string; message: UIMessage; ownerId?: string; frontendTools?: FrontendToolDef[] }
-    | { threadId: string; resume: { toolCallId: string; data: unknown }; frontendTools?: FrontendToolDef[] }
-    | { threadId: string; toolOutputs: { toolCallId: string; output: unknown }[]; frontendTools?: FrontendToolDef[] }
+    | { message: UIMessage }
+    | { resume: { toolCallId: string; data: unknown } }
+    | { toolOutputs: { toolCallId: string; output: unknown }[] }
   );
 ```
 
@@ -276,7 +277,7 @@ type ChatOptions<C = undefined> =
 
 When the body contains `message`, the agent:
 
-1. Creates the thread if it does not exist. If `ownerId` is provided, it is stored on the new thread.
+1. Creates the thread if it does not exist. If `userId` is provided, it is stored on the new thread.
 2. Persists the user message via `memory.addMessage`.
 3. Loads the full conversation via `memory.getMessages`.
 4. Fires off a background title generation request (fire-and-forget).

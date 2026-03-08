@@ -36,7 +36,7 @@ You must call `initialize()` before using the memory. This runs `CREATE TABLE IF
 |---|---|---|
 | `id` | `TEXT PRIMARY KEY` | Thread ID (typically a UUID from `crypto.randomUUID()`) |
 | `title` | `TEXT` | Thread title (nullable, auto-generated from the first message) |
-| `owner_id` | `TEXT` | Optional owner identifier for access control and filtering |
+| `user_id` | `TEXT` | Optional user identifier for access control and filtering |
 | `created_at` | `TIMESTAMPTZ` | Creation timestamp |
 | `updated_at` | `TIMESTAMPTZ` | Last update timestamp (updated on every message) |
 
@@ -102,21 +102,21 @@ The memory object implements the full `Memory` interface. Use it in your server 
 
 ### List Threads
 
-Returns all threads sorted by most recently updated. Optionally filter by `ownerId`:
+Returns all threads sorted by most recently updated. Optionally filter by `userId`:
 
 ```ts
 const threads = await memory.listThreads();
-// [{ id, title, ownerId, createdAt, updatedAt }, ...]
+// [{ id, title, userId, createdAt, updatedAt }, ...]
 
-// Filter by owner
-const myThreads = await memory.listThreads({ ownerId: "user-123" });
+// Filter by user
+const myThreads = await memory.listThreads({ userId: "user-123" });
 ```
 
 ### Get a Single Thread
 
 ```ts
 const thread = await memory.getThread("thread-abc-123");
-// { id, title, ownerId, createdAt, updatedAt } or null
+// { id, title, userId, createdAt, updatedAt } or null
 ```
 
 ### Delete a Thread
@@ -132,7 +132,7 @@ await memory.deleteThread("thread-abc-123");
 ```ts
 const updated = await memory.updateThread("thread-abc-123", {
   title: "Weather discussion",
-  ownerId: "user-456",
+  userId: "user-456",
 });
 ```
 
@@ -175,7 +175,7 @@ The `Thread` type returned by memory methods:
 type Thread = {
   id: string;
   title: string | null;
-  ownerId: string | null;
+  userId: string | null;
   createdAt: Date;
   updatedAt: Date;
 };

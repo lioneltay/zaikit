@@ -34,14 +34,17 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/google-vertex": "^4",
+    "@ai-sdk/provider": "^3",
     "@zaikit/memory": "workspace:*",
     "@zaikit/utils": "workspace:*",
     "ai": "^6",
-    "@ai-sdk/google-vertex": "^4",
-    "@ai-sdk/provider": "^3",
     "zod": "^4"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1",
+    "@opentelemetry/sdk-trace-base": "^2",
+    "@opentelemetry/sdk-trace-node": "^2",
     "@zaikit/memory-inmemory": "workspace:*",
     "@zaikit/typescript-config": "workspace:*",
     "tsup": "^8",

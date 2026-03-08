@@ -13,6 +13,7 @@ import type { Middleware } from "../src/middleware/core";
 import { mapChunks } from "../src/stream-utils";
 import {
   chatAndConsume,
+  drain,
   mockModel,
   multiToolCallResponse,
   textResponse,
@@ -393,7 +394,7 @@ describe("agent integration tests", () => {
     ).rejects.toThrow("No suspended tool found");
   });
 
-  it("sets ownerId on thread when provided", async () => {
+  it("sets userId on thread when provided", async () => {
     const memory = createInMemoryMemory();
     const agent = createAgent({
       model: mockModel([textResponse("Hi")]),
@@ -403,11 +404,11 @@ describe("agent integration tests", () => {
     await chatAndConsume(agent, {
       threadId: "t1",
       message: userMessage("Hello"),
-      ownerId: "user-42",
+      userId: "user-42",
     });
 
     const thread = await memory.getThread("t1");
-    expect(thread?.ownerId).toBe("user-42");
+    expect(thread?.userId).toBe("user-42");
   });
 
   it("resumes one of multiple suspended tools without continuing LLM", async () => {
@@ -1727,9 +1728,7 @@ describe("stream() with output", () => {
     });
 
     // Consume the stream
-    for await (const _ of stream as any) {
-      // drain
-    }
+    await drain(stream);
 
     const agentResult = await result;
     expect(agentResult.output).toEqual({ city: "NYC", temp: 72 });
@@ -1761,9 +1760,7 @@ describe("maxSteps enforcement", () => {
       maxSteps: 3,
     });
 
-    for await (const _ of stream as any) {
-      // drain
-    }
+    await drain(stream);
 
     const agentResult = await result;
     // Should only have 3 steps despite 5 responses available
@@ -2054,9 +2051,7 @@ describe("writeData", () => {
       onData: (part) => receivedParts.push(part),
     });
 
-    for await (const _ of stream as any) {
-      // drain
-    }
+    await drain(stream);
     await result;
 
     expect(receivedParts).toHaveLength(1);
@@ -2597,8 +2592,7 @@ describe("writeData", () => {
     const { stream } = await agent.stream({
       messages: [userMessage("Go")],
     });
-    for await (const _ of stream as any) {
-    }
+    await drain(stream);
 
     expect(hasWriteToolData).toBe(false);
   });
@@ -2634,8 +2628,7 @@ describe("writeData", () => {
       onToolData: (event) => toolDataEvents.push(event),
     });
 
-    for await (const _ of stream as any) {
-    }
+    await drain(stream);
 
     // onData fires for both
     expect(onDataParts).toHaveLength(2);
@@ -2832,8 +2825,7 @@ describe("writeMetadata", () => {
       onMetadata: (meta) => received.push(meta),
     });
 
-    for await (const _ of stream as any) {
-    }
+    await drain(stream);
     await result;
 
     expect(received).toHaveLength(1);
@@ -3134,8 +3126,7 @@ describe("agent-level data callbacks", () => {
     const { stream, result } = await agent.stream({
       messages: [userMessage("Go")],
     });
-    for await (const _ of stream as any) {
-    }
+    await drain(stream);
     await result;
 
     expect(received).toHaveLength(1);
@@ -3318,8 +3309,7 @@ describe("agent-level data callbacks", () => {
       messages: [userMessage("Go")],
       onData: () => order.push("per-request"),
     });
-    for await (const _ of stream as any) {
-    }
+    await drain(stream);
     await result;
 
     expect(order).toEqual(["agent", "per-request"]);
@@ -3392,5 +3382,22 @@ describe("agent-level data callbacks", () => {
 
     expect(received).toHaveLength(1);
     expect(received[0]).toEqual({ suggestions: ["a", "b"] });
+  });
+});
+
+describe("agent name", () => {
+  it("exposes name on the agent", () => {
+    const agent = createAgent({
+      name: "my-agent",
+      model: mockModel([textResponse("ok")]),
+    });
+    expect(agent.name).toBe("my-agent");
+  });
+
+  it("name is undefined when not provided", () => {
+    const agent = createAgent({
+      model: mockModel([textResponse("ok")]),
+    });
+    expect(agent.name).toBeUndefined();
   });
 });

@@ -12,7 +12,7 @@ export function createAppRouter(agent: Agent<any, any>) {
   return t.router({
     thread: t.router({
       list: t.procedure
-        .input(z.object({ ownerId: z.string().optional() }).optional())
+        .input(z.object({ userId: z.string().optional() }).optional())
         .query(async ({ input }) => {
           return memory.listThreads(input ?? undefined);
         }),
@@ -28,13 +28,13 @@ export function createAppRouter(agent: Agent<any, any>) {
           z.object({
             id: z.string(),
             title: z.string().optional(),
-            ownerId: z.string().optional(),
+            userId: z.string().optional(),
           }),
         )
         .mutation(async ({ input }) => {
           return memory.updateThread(input.id, {
             title: input.title,
-            ownerId: input.ownerId,
+            userId: input.userId,
           });
         }),
 

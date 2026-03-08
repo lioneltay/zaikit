@@ -54,7 +54,7 @@ export function memoryConformanceTests<TContext = void>({
 
         expect(thread.id).toBe("t1");
         expect(thread.title).toBe("My Thread");
-        expect(thread.ownerId).toBe("user-1");
+        expect(thread.userId).toBe("user-1");
         expect(thread.createdAt).toBeInstanceOf(Date);
         expect(thread.updatedAt).toBeInstanceOf(Date);
 
@@ -62,14 +62,14 @@ export function memoryConformanceTests<TContext = void>({
         expect(retrieved).not.toBeNull();
         expect(retrieved?.id).toBe("t1");
         expect(retrieved?.title).toBe("My Thread");
-        expect(retrieved?.ownerId).toBe("user-1");
+        expect(retrieved?.userId).toBe("user-1");
       });
 
-      it("creates a thread with defaults (no title, no ownerId)", async () => {
+      it("creates a thread with defaults (no title, no userId)", async () => {
         const thread = await memory.createThread("t1");
 
         expect(thread.title).toBeNull();
-        expect(thread.ownerId).toBeNull();
+        expect(thread.userId).toBeNull();
       });
 
       it("returns null for nonexistent thread", async () => {
@@ -89,14 +89,14 @@ export function memoryConformanceTests<TContext = void>({
         expect(threads[1].id).toBe("t1");
       });
 
-      it("filters threads by ownerId", async () => {
+      it("filters threads by userId", async () => {
         await memory.createThread("t1", "A", "user-1");
         await memory.createThread("t2", "B", "user-2");
         await memory.createThread("t3", "C", "user-1");
 
-        const threads = await memory.listThreads({ ownerId: "user-1" });
+        const threads = await memory.listThreads({ userId: "user-1" });
         expect(threads).toHaveLength(2);
-        expect(threads.every((t) => t.ownerId === "user-1")).toBe(true);
+        expect(threads.every((t) => t.userId === "user-1")).toBe(true);
       });
 
       it("updates thread title", async () => {
@@ -111,13 +111,13 @@ export function memoryConformanceTests<TContext = void>({
         expect(retrieved?.title).toBe("New Title");
       });
 
-      it("updates thread ownerId", async () => {
+      it("updates thread userId", async () => {
         await memory.createThread("t1", "Thread", "user-1");
 
         const updated = await memory.updateThread("t1", {
-          ownerId: "user-2",
+          userId: "user-2",
         });
-        expect(updated.ownerId).toBe("user-2");
+        expect(updated.userId).toBe("user-2");
       });
 
       it("throws when updating nonexistent thread", async () => {
@@ -334,7 +334,7 @@ export function memoryConformanceTests<TContext = void>({
         const thread = await mem2.getThread("t1");
         expect(thread).not.toBeNull();
         expect(thread?.title).toBe("Persisted Thread");
-        expect(thread?.ownerId).toBe("user-1");
+        expect(thread?.userId).toBe("user-1");
 
         const msgs = await mem2.getMessages("t1");
         expect(msgs).toHaveLength(1);
